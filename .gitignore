@@ -1,0 +1,35 @@
+# Dependencias
+node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Variables de entorno
+.env
+.env.local
+.env.*
+!.env.example
+
+# Logs y cobertura
+logs/
+*.log
+npm-debug.log*
+coverage/
+
+# Banco local SQLite (inclui arquivos auxiliares -wal e -shm)
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Uploads locais
+backend/uploads/
+
+# Sistema / editores
+.DS_Store
+.idea/
+.vscode/
