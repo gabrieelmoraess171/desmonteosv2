@@ -3,6 +3,7 @@ import {
   Upload,
   ImagePlus,
   Package,
+  ShoppingCart,
   Brain,
   Edit,
   CheckSquare,
@@ -25,6 +26,7 @@ export type SidebarKey =
   | 'nova'
   | 'importar'
   | 'lotes'
+  | 'vendas'
   | 'ia'
   | 'editor'
   | 'aprovacao'
@@ -44,6 +46,7 @@ export const NAV_ITEMS: SidebarNavItem[] = [
   { icon: Home, label: 'Dashboard', key: 'dashboard' },
   { icon: Upload, label: 'Nova peça', key: 'nova' },
   { icon: ImagePlus, label: 'Importar lote', key: 'importar' },
+  { icon: ShoppingCart, label: 'Vendas', key: 'vendas' },
   { icon: Package, label: 'Estoque', key: 'lotes' },
   { icon: Brain, label: 'Análise com IA', key: 'ia' },
   { icon: Edit, label: 'Editor de anúncios', key: 'editor' },
@@ -65,6 +68,7 @@ interface SidebarProps {
   onLogout?: () => void;
   userName?: string;
   companyName?: string;
+  badges?: Partial<Record<SidebarKey, number>>;
 }
 
 export default function Sidebar({
@@ -77,6 +81,7 @@ export default function Sidebar({
   onLogout,
   userName = '',
   companyName = '',
+  badges = {},
 }: SidebarProps) {
   const cleanName = userName.trim();
   const displayName = cleanName || 'Operador';
@@ -131,6 +136,7 @@ export default function Sidebar({
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item) => {
           const active = item.key === activeKey;
+          const badge = Number(badges[item.key] || 0);
 
           return (
             <button
@@ -154,18 +160,34 @@ export default function Sidebar({
               {active && (
                 <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan to-accent shadow-[0_0_14px_rgba(76,157,255,0.8)]" />
               )}
-              <item.icon
-                className={`h-5 w-5 shrink-0 transition-transform duration-300 ${
-                  active ? 'text-accent' : 'group-hover:scale-105'
-                }`}
-              />
+              <span className="relative shrink-0">
+                <item.icon
+                  className={`h-5 w-5 transition-transform duration-300 ${
+                    active ? 'text-accent' : 'group-hover:scale-105'
+                  }`}
+                />
+                {badge > 0 && collapsed ? (
+                  <span className="absolute -right-1.5 -top-1.5 hidden h-4 min-w-4 rounded-full bg-danger px-1 text-[9px] font-bold leading-4 text-white lg:inline-flex lg:items-center lg:justify-center">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                ) : null}
+              </span>
               <span
-                className={`truncate font-medium ${
+                className={`min-w-0 flex-1 truncate text-left font-medium ${
                   collapsed ? 'lg:hidden' : ''
                 }`}
               >
                 {item.label}
               </span>
+              {badge > 0 ? (
+                <span
+                  className={`rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-bold leading-none text-white ${
+                    collapsed ? 'lg:hidden' : ''
+                  }`}
+                >
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              ) : null}
             </button>
           );
         })}

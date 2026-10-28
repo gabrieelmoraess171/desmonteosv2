@@ -256,7 +256,8 @@ app.get('/api/pecas', async (req, res) => {
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
          p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia,
          p.quantidade, p.preco, p.ml_ativo,
-         p.ml_titulo, p.ml_item_id, p.ml_status, p.ml_thumbnail, p.ml_health,
+         p.ml_titulo, p.ml_item_id, p.ml_permalink, p.ml_status,
+         p.ml_thumbnail, p.ml_health,
          p.peso_kg, p.comprimento_cm, p.largura_cm, p.altura_cm,
          LENGTH(TRIM(COALESCE(p.descricao, ''))) AS descricao_len`
       : 'p.*';
@@ -683,27 +684,6 @@ app.post('/api/seed', async (req, res) => {
       message: 'Demonstração criada com peças, vendas, perguntas e reclamações!',
       ...resultado
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET todas vendas (histórico bruto da API)
-app.get('/api/vendas', async (req, res) => {
-  try {
-    const vendas = await db.all(`
-      SELECT
-        v.*,
-        p.nome as peca_nome,
-        p.carro as peca_carro,
-        (SELECT COUNT(*) FROM venda_itens vi WHERE vi.venda_id = v.id) as itens_count,
-        (SELECT GROUP_CONCAT(vi.sku, ', ') FROM venda_itens vi WHERE vi.venda_id = v.id) as itens_skus
-      FROM vendas v
-      LEFT JOIN pecas p ON v.peca_id = p.id
-      ORDER BY v.data_venda DESC, v.id DESC
-      LIMIT 50
-    `);
-    res.json(vendas);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

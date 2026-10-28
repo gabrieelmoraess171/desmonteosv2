@@ -198,7 +198,7 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
       void carregar(true);
     };
 
-    const intervalo = window.setInterval(atualizar, 30000);
+    const intervalo = window.setInterval(atualizar, 20000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {

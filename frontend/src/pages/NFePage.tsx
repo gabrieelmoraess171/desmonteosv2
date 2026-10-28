@@ -39,6 +39,9 @@ interface VendaMlHoje {
   metodo_pagamento?: string | null;
   status: string;
   data_venda: string;
+  financeiro_status?: string | null;
+  financeiro_agendada_para?: string | null;
+  data_prevista_recebimento?: string | null;
   enviada_financeiro?: number | null;
   enviada_financeiro_em?: string | null;
   peca_nome?: string | null;
@@ -116,6 +119,21 @@ function dataLocalISO(): string {
   const mes = String(agora.getMonth() + 1).padStart(2, '0');
   const dia = String(agora.getDate()).padStart(2, '0');
   return `${ano}-${mes}-${dia}`;
+}
+
+function rotuloEnvioFinanceiro(venda: VendaMlHoje, hoje: string): string {
+  if (venda.financeiro_status === 'agendada') {
+    const data = String(venda.financeiro_agendada_para || '').slice(0, 10);
+    if (!data) return 'Data do envio pendente';
+    if (data === hoje) return 'Informe a NF-e já emitida';
+    const dataFormatada = new Date(`${data}T00:00:00`).toLocaleDateString(
+      'pt-BR',
+      { day: 'numeric', month: 'long' }
+    );
+    return `Para enviar no dia ${dataFormatada}`;
+  }
+  if (venda.financeiro_status === 'enviada') return 'Enviada hoje';
+  return 'Informe a NF-e já emitida';
 }
 
 function formatarHora(valor: string): string {
@@ -239,7 +257,6 @@ export default function NFePage({
     totais: { vendas: 0, faturamento: 0 },
   });
   const [loading, setLoading] = useState(true);
-  const [dias, setDias] = useState(7);
   const [modo, setModo] = useState<'pendentes' | 'todas'>('pendentes');
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
@@ -262,7 +279,7 @@ export default function NFePage({
 
     try {
       const { data } = await axios.get<RespostaVendasMl>(
-        `/api/vendas/hoje-ml?dias=${dias}`,
+        `/api/vendas/hoje-ml?data=${dataLocalISO()}`,
         { timeout: 12000 }
       );
       // Se uma venda foi marcada como enviada enquanto esta busca estava em
@@ -310,7 +327,7 @@ export default function NFePage({
         window.clearTimeout(timerLote.current);
       }
     };
-  }, [dias]);
+  }, []);
 
   // Atualiza a fila sozinha quando uma venda nova chega do Mercado Livre,
   // sem atrapalhar a seleção que o usuário já fez.
@@ -439,6 +456,7 @@ export default function NFePage({
           ? {
               ...venda,
               enviada_financeiro: enviada ? 1 : 0,
+              financeiro_status: enviada ? 'enviada' : 'disponivel',
               enviada_financeiro_em: enviada
                 ? new Date().toISOString()
                 : null,
@@ -571,33 +589,16 @@ export default function NFePage({
               NF-e e financeiro
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">
-              A lista mostra apenas as vendas que ainda não foram enviadas ao
-              financeiro. Ao abrir a conversa no WhatsApp, a venda é marcada como
-              enviada e sai da fila.
+              A lista contém somente vendas disponíveis para envio ou agendadas
+              para hoje. Ao abrir a conversa no WhatsApp, a venda é marcada como
+              enviada e sai da fila de pendentes.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1 text-xs font-semibold">
-              {[
-                { valor: 1, label: 'Hoje' },
-                { valor: 7, label: '7 dias' },
-                { valor: 30, label: '30 dias' },
-              ].map((opcao) => (
-                <button
-                  key={opcao.valor}
-                  type="button"
-                  onClick={() => setDias(opcao.valor)}
-                  className={`rounded-lg px-3 py-1.5 transition-colors ${
-                    dias === opcao.valor
-                      ? 'bg-accent text-white'
-                      : 'text-muted hover:text-ink'
-                  }`}
-                >
-                  {opcao.label}
-                </button>
-              ))}
-            </div>
+            <span className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-ink">
+              Agenda de {new Date(`${dados.data}T00:00:00`).toLocaleDateString('pt-BR')}
+            </span>
             <button
               type="button"
               onClick={() => void carregar()}
@@ -644,7 +645,7 @@ export default function NFePage({
             {formatarMoeda(faturamentoPendente)}
           </p>
           <p className="mt-1 text-xs text-muted">
-            {dias === 1 ? 'de hoje' : `dos últimos ${dias} dias`} a enviar
+            disponíveis ou agendadas para hoje
           </p>
         </div>
 
@@ -674,7 +675,7 @@ export default function NFePage({
             {enviadas.length}
           </p>
           <p className="mt-1 text-xs text-muted">
-            de {dados.vendas.length} venda(s) no período
+            de {dados.vendas.length} venda(s) na agenda de hoje
           </p>
         </div>
       </div>
@@ -689,7 +690,7 @@ export default function NFePage({
               Mensagens por venda
             </h3>
             <p className="mt-1 text-xs text-muted">
-              {dias === 1 ? 'Hoje' : `Últimos ${dias} dias`}
+              Agenda de hoje
               {' • '}
               {selecionadasVisiveis} selecionada(s)
             </p>
@@ -793,14 +794,12 @@ export default function NFePage({
             <p className="mt-3 font-medium">
               {modo === 'pendentes'
                 ? 'Nenhuma venda pendente'
-                : dias === 1
-                  ? 'Nenhuma venda registrada hoje'
-                  : `Nenhuma venda registrada nos últimos ${dias} dias`}
+                : 'Nenhuma venda na agenda de hoje'}
             </p>
             <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted">
               {modo === 'pendentes'
-                ? 'Tudo o que estava no período já foi enviado ao financeiro. Use "Todas" para ver o histórico.'
-                : 'Quando as vendas do Mercado Livre forem registradas, as mensagens aparecem aqui prontas para o financeiro.'}
+                ? 'Não há vendas pendentes na agenda de hoje. Agende ou marque uma venda como disponível na aba Vendas.'
+                : 'As vendas disponíveis ou agendadas para hoje aparecerão aqui prontas para o financeiro.'}
             </p>
             {modo === 'pendentes' && dados.vendas.length > 0 && (
               <button
@@ -861,10 +860,10 @@ export default function NFePage({
                           {venda.order_id || `#${venda.id}`}
                         </p>
                         <p className="mt-0.5 text-[11px] text-success">
-                          {venda.status} •{' '}
-                          {dias === 1
-                            ? formatarHora(venda.data_venda)
-                            : formatarDataHora(venda.data_venda)}
+                          {venda.status} • venda em {formatarDataHora(venda.data_venda)}
+                        </p>
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent">
+                          {rotuloEnvioFinanceiro(venda, dados.data)}
                         </p>
                         {venda.enviada_financeiro ? (
                           <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-success">

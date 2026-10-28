@@ -95,9 +95,10 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 - **Dashboard**: saudação personalizada, vendas do dia, perguntas, reclamações e anúncios a revisar. O bloco de desempenho alterna entre **Hoje**, **7**, **15** e **30 dias**. Também mostra estoque do Mercado Livre, ranking por categoria e sugestões de melhoria.
 - **Nova peça**: página de orientação com abertura manual do cadastro. O formulário não abre sozinho ao navegar.
 - **Estoque**: lista todos os anúncios cadastrados, com busca, filtros por status e categoria, edição da ficha completa e exclusão. Clicar em uma peça abre a **ficha completa** com anúncio, aplicação, ficha técnica, peso, medidas, descrição, fotos, preço e estoque. Cada peça é um anúncio individual.
-- **Atendimento**: perguntas sem resposta e reclamações abertas do Mercado Livre. Cada pergunta mostra a foto do anúncio, permite gerar uma **sugestão de resposta com IA** e responder. Clicar em uma reclamação abre o **detalhe completo** no padrão visual do Mercado Livre, com comprador, CPF, endereço, telefone, produtos, valores e histórico do caso.
-- **NF-e**: carrega as vendas do Mercado Livre registradas no dia e monta **uma mensagem por venda** com peça, comprador, CPF, endereço e preço total. Permite enviar individualmente, enviar em lote (uma conversa a cada 3 segundos) e copiar as mensagens. Não há histórico de pedidos nem cadastro de nova venda nesta aba.
-- **Relatórios**: período **Hoje**, **7**, **15** ou **30 dias** com faturamento, vendas, ticket médio, itens, clientes, evolução diária, estoque, formas de pagamento e ranking de produtos. Exporta CSV e gera impressão/PDF.
+- **Vendas**: aba acima do Estoque com pedidos do Mercado Livre, título, SKU, ID, comprador (incluindo o apelido da conta quando o nome não está disponível), status, valores, detalhes e chat para consultar e responder ao comprador. Cada venda pode ficar fora da fila, disponível para hoje, agendada para uma data ou marcada como enviada ao financeiro.
+- **Atendimento**: perguntas sem resposta e reclamações abertas do Mercado Livre. Cada pergunta mostra a foto do anúncio, permite gerar uma **sugestão de resposta com IA** e responder. A ficha do anúncio abre as fotos do Mercado Livre em carrossel. Clicar em uma reclamação abre o **detalhe completo** no padrão visual do Mercado Livre, com comprador, CPF, endereço, telefone, produtos, valores e histórico do caso.
+- **NF-e**: mostra apenas vendas disponíveis ou agendadas para o dia, com uma mensagem por venda contendo peça, comprador, CPF, endereço e preço total. Permite enviar individualmente, enviar em lote (uma conversa a cada 3 segundos) e copiar as mensagens. Ao abrir o WhatsApp, a venda é marcada como enviada.
+- **Relatórios**: período **Hoje**, **7**, **15** ou **30 dias** com faturamento, vendas, ticket médio, itens, clientes, evolução diária, estoque, formas de pagamento e ranking de produtos. Os indicadores abrem detalhes próprios; previsões de liberação aparecem quando informadas pela API do Mercado Livre, sem estimar datas ausentes. Exporta CSV e gera impressão/PDF.
 - **Marketplaces**: conexão OAuth com o Mercado Livre, credenciais do aplicativo, sincronização por recurso (anúncios, pedidos, perguntas, reclamações e reputação), histórico de execuções e painel de reputação real. Também exibe a Redirect URI e a URL do webhook para copiar.
 - **Configurações**: nome de exibição e, com o acesso do proprietário desbloqueado por PIN, nome da empresa (`Mercadão de Peças` por padrão, exibido abaixo de `DESMONTE OS`) e WhatsApp do financeiro. Também permite criar, alterar e sair do acesso do proprietário.
 - **Sair**: disponível no rodapé do menu. Volta para a tela de boas-vindas, limpa o nome e a conclusão do onboarding, mantém empresa e WhatsApp e bloqueia o acesso do proprietário.
@@ -144,7 +145,7 @@ Se nenhum provedor estiver configurado, falhar ou não retornar texto, a interfa
 
 ## Integração com o Mercado Livre
 
-A integração usa OAuth 2.0 e a API oficial do Mercado Livre. Os dados importados alimentam o Dashboard, o Estoque, o Atendimento e os Relatórios.
+A integração usa OAuth 2.0 e a API oficial do Mercado Livre. Os dados importados alimentam o Dashboard, o Estoque, o Atendimento e os Relatórios. Com o webhook ativo, o sino consulta novas vendas e reclamações periodicamente; as telas de operação atualizam os dados automaticamente enquanto estão abertas.
 
 ### 1. Criar o aplicativo
 
@@ -199,6 +200,8 @@ Variáveis opcionais:
 Ao editar uma peça vinculada, o backend envia primeiro para o Mercado Livre as mudanças de **preço**, **quantidade**, **título** e **status** (ativo/pausado). Se o ML recusar, a alteração local não é aplicada, evitando divergência entre o estoque e o anúncio.
 
 ### 4. Webhook (opcional)
+
+O webhook habilita a atualização automática das vendas e reclamações e, com o sistema aberto, os alertas correspondentes no sino e na tela. Sem webhook, sincronize pedidos pela aba **Vendas** e vendas/reclamações pela tela **Marketplaces**.
 
 Cadastre no aplicativo do Mercado Livre a URL:
 
@@ -366,6 +369,8 @@ As demais rotas continuam sem autenticação de funcionário. O PIN do propriet�
 - Reputação real do vendedor em cache (`ml_reputacao_cache`), com selo de origem “API Mercado Livre” e fallback para a estimativa local.
 - Edição de estoque de peças vinculadas envia preço, quantidade, título e status ao ML antes de atualizar o banco local.
 - Relatórios com período, comparação, série diária, ranking, exportação CSV e impressão/PDF, usando a taxa real do ML quando disponível.
+- Vendas separa envios de hoje dos agendados para datas futuras; agendamentos vencidos não entram nos próximos envios e são identificados para reagendamento. O gráfico permite alternar entre bruto, taxa do ML, líquido e cancelamentos.
+- O Estoque identifica anúncios vinculados e abre o anúncio no Mercado Livre; os modais de cadastro e reclamação mantêm cabeçalho visível e rolagem própria.
 - NF-e com uma mensagem por venda, CPF, endereço, envio individual e envio em lote com intervalo de 3 segundos.
 - Nome da empresa e WhatsApp financeiro protegidos por PIN de proprietário com hash `scrypt` e sessão de 12 horas.
 - Onboarding de primeiro acesso e botão **Sair** que retorna à tela de boas-vindas e limpa os dados de sessão.

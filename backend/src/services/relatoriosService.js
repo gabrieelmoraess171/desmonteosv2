@@ -482,6 +482,7 @@ export async function obterRelatorio(db, params = {}) {
             v.cliente_endereco, v.metodo_pagamento, v.status,
             datetime(v.data_venda, 'localtime') AS data_venda,
             datetime(v.data_recebimento, 'localtime') AS data_recebimento,
+            datetime(v.data_prevista_recebimento, 'localtime') AS data_prevista_recebimento,
             v.taxa_ml, v.itens_count,
             p.nome AS peca_nome, p.sku AS peca_sku,
             COALESCE(

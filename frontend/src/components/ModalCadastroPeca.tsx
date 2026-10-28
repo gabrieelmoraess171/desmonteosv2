@@ -66,6 +66,8 @@ export interface PecaCompleta {
   quantidade?: number | null;
   preco?: number | null;
   ml_ativo?: number | boolean | null;
+  ml_item_id?: string | null;
+  ml_permalink?: string | null;
   imagens_count?: number | null;
 }
 
@@ -729,14 +731,14 @@ export default function ModalCadastroPeca({
   const precoAtual = parsePreco(formData.preco);
 
   return createPortal(
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-2 backdrop-blur-md sm:p-4">
+    <div className="modal-backdrop overscroll-contain fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-2 backdrop-blur-md sm:p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-cadastro-peca-title"
         className="modal-panel glass-panel flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border-white/20 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl"
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-7">
+        <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-4 border-b border-white/10 bg-[#0b1628]/95 px-5 py-5 backdrop-blur-xl sm:px-7">
           <div className="min-w-0">
             <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
               <Sparkles className="h-3 w-3" />
@@ -767,7 +769,7 @@ export default function ModalCadastroPeca({
         <form
           id="peca-cadastro-form"
           onSubmit={handleSubmit}
-          className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7"
+          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7"
           noValidate
         >
           {error && (

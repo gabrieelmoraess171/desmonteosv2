@@ -939,24 +939,53 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
   };
 }
 
-export async function obterVendasMlHoje(db, dias = 1) {
-  const periodo = Math.min(Math.max(Math.trunc(Number(dias) || 1), 1), 30);
-  const desde = `-${periodo - 1} days`;
+export async function obterVendasMlHoje(db, dataAlvo = dataLocalISO()) {
+  const data = /^\d{4}-\d{2}-\d{2}$/.test(String(dataAlvo || ''))
+    ? String(dataAlvo)
+    : dataLocalISO();
   const vendas = await db.all(
     `SELECT v.id, v.order_id, v.valor, v.plataforma, v.cliente,
             v.cliente_email, v.cliente_fone, v.cliente_cpf,
             v.cliente_endereco, v.metodo_pagamento, v.status,
             v.enviada_financeiro, v.enviada_financeiro_em,
+            COALESCE(v.financeiro_status,
+              CASE WHEN v.enviada_financeiro = 1 THEN 'enviada' ELSE 'pendente' END
+            ) AS financeiro_status,
+            v.financeiro_agendada_para, v.data_prevista_recebimento,
             datetime(v.data_venda, 'localtime') AS data_venda,
             v.itens_count, p.nome AS peca_nome, p.carro AS peca_carro,
             p.sku AS peca_sku
      FROM vendas v
      LEFT JOIN pecas p ON p.id = v.peca_id
-     WHERE DATE(v.data_venda, 'localtime') >= DATE('now', 'localtime', ?)
+     WHERE (
+         (
+           v.financeiro_status = 'disponivel'
+           AND COALESCE(v.enviada_financeiro, 0) = 0
+           AND (
+             (
+               v.financeiro_agendada_para IS NOT NULL
+               AND DATE(v.financeiro_agendada_para) = DATE(?)
+             )
+             OR (
+               v.financeiro_agendada_para IS NULL
+               AND DATE(v.data_venda, 'localtime') = DATE(?)
+             )
+           )
+         )
+         OR (
+           v.financeiro_status = 'agendada'
+           AND DATE(v.financeiro_agendada_para) = DATE(?)
+         )
+         OR (
+           v.financeiro_status = 'enviada'
+           AND DATE(v.enviada_financeiro_em, 'localtime') = DATE(?)
+         )
+       )
        AND (v.plataforma LIKE '%ML%' OR v.plataforma LIKE '%Mercado Livre%')
        AND v.status NOT IN (${STATUS_INVALIDOS})
-     ORDER BY v.data_venda DESC, v.id DESC`,
-    [desde]
+     ORDER BY COALESCE(v.financeiro_agendada_para, DATE(v.data_venda, 'localtime')) ASC,
+              v.data_venda DESC, v.id DESC`,
+    [data, data, data, data]
   );
 
   const ids = vendas.map((venda) => venda.id);
@@ -989,6 +1018,9 @@ export async function obterVendasMlHoje(db, dias = 1) {
     ...venda,
     valor: numero(venda.valor),
     enviada_financeiro: Number(venda.enviada_financeiro) || 0,
+    financeiro_status: venda.financeiro_status || 'pendente',
+    financeiro_agendada_para: venda.financeiro_agendada_para || null,
+    data_prevista_recebimento: venda.data_prevista_recebimento || null,
     itens: itensPorVenda.get(venda.id) || []
   }));
 
@@ -1001,7 +1033,7 @@ export async function obterVendasMlHoje(db, dias = 1) {
   );
 
   return {
-    data: dataLocalISO(),
+    data,
     vendas: vendasComItens,
     totais: {
       vendas: vendasComItens.length,

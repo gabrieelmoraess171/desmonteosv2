@@ -1252,15 +1252,23 @@ function montarPayloadVenda(order) {
     taxa_ml: taxa,
     data_venda: dataSql(dataVenda),
     data_recebimento: dataSql(dataRecebimento),
+    data_prevista_recebimento: dataSql(pagamento.money_release_date),
     last_updated: dataSql(order.last_updated) || new Date().toISOString(),
     metodo_pagamento: texto(
       pagamento.payment_method_id || pagamento.payment_type,
       80
     ),
-    ml_pack_id: texto(order.pack_id, 120),
+    ml_pack_id: texto(order.pack_id || order.id, 120),
     ml_status: texto(order.status, 80),
     buyer: {
-      name: texto(buyer.nickname || buyer.name, 200),
+      id: texto(buyer.id, 40),
+      nickname: texto(buyer.nickname, 80),
+      name: texto(
+        [buyer.first_name, buyer.last_name].filter(Boolean).join(' ') ||
+          buyer.nickname ||
+          buyer.name,
+        200
+      ),
       email: texto(buyer.email, 200),
       phone: texto(
         typeof telefone === 'object'
@@ -2120,6 +2128,20 @@ export async function obterPedidoMl(orderId) {
   return mlFetch(`/orders/${encodeURIComponent(id)}`);
 }
 
+export async function obterImagensAnuncioMl(itemId) {
+  const id = texto(itemId, 100);
+  if (!id) throw new MercadoLivreError('Anúncio do Mercado Livre inválido.', 400);
+
+  const anuncio = await mlFetch(`/items/${encodeURIComponent(id)}`);
+  const urls = Array.isArray(anuncio?.pictures)
+    ? anuncio.pictures
+        .map((imagem) => normalizarImagemMl(imagem?.secure_url || imagem?.url))
+        .filter(Boolean)
+    : [];
+
+  return { itemId: id, imagens: [...new Set(urls)] };
+}
+
 export async function obterEnvioMl(shipmentId) {
   const id = texto(shipmentId, 100);
 
@@ -2151,6 +2173,215 @@ export async function enviarMensagemReclamacao(mlClaimId, mensagem) {
       })
     }
   );
+}
+
+function textoMensagemPack(item) {
+  const bruto =
+    item?.text?.plain ||
+    item?.text?.text ||
+    (typeof item?.text === 'string' ? item.text : '') ||
+    item?.message ||
+    '';
+
+  return texto(htmlParaTexto(bruto), 6000);
+}
+
+function mapearMensagemPack(item, sellerId, indice = 0) {
+  const fromId = String(item?.from?.user_id ?? item?.from?.id ?? '');
+  const papelApi = String(item?.from?.role || '').toLowerCase();
+  const papel =
+    papelApi === 'seller' || fromId === String(sellerId)
+      ? 'vendedor'
+      : 'comprador';
+
+  return {
+    id: item?.id || `msg-${indice}`,
+    papel,
+    texto: textoMensagemPack(item),
+    data: dataSql(
+      item?.message_date?.created ||
+        item?.message_date?.received ||
+        item?.date ||
+        item?.date_received ||
+        null
+    ),
+    status: texto(item?.status, 40)
+  };
+}
+
+async function buscarMensagensPack(packId, sellerId) {
+  const caminho = `/messages/packs/${encodeURIComponent(
+    packId
+  )}/sellers/${encodeURIComponent(sellerId)}`;
+
+  try {
+    return await mlFetch(`${caminho}?tag=post_sale&limit=50`);
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      return await mlFetch(`${caminho}?limit=50`);
+    }
+
+    throw error;
+  }
+}
+
+async function persistirContatoVenda(vendaId, dados = {}) {
+  const db = getDb();
+  const packId = texto(dados.packId, 120);
+  const buyerId = texto(dados.buyerId, 40);
+  const nickname = texto(dados.nickname, 80);
+
+  if (!vendaId || (!packId && !buyerId && !nickname)) return;
+
+  await db.run(
+    `UPDATE vendas SET
+       ml_pack_id = COALESCE(?, ml_pack_id),
+       ml_buyer_id = COALESCE(?, ml_buyer_id),
+       ml_buyer_nickname = COALESCE(NULLIF(?, ''), ml_buyer_nickname),
+       last_updated = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [packId || null, buyerId || null, nickname, vendaId]
+  );
+}
+
+export async function obterMensagensVenda(vendaId) {
+  const db = getDb();
+  const venda = await db.get('SELECT * FROM vendas WHERE id = ?', [vendaId]);
+
+  if (!venda) {
+    const error = new MercadoLivreError('Venda não encontrada.', 404);
+    throw error;
+  }
+
+  const integracao = await obterIntegracao();
+
+  if (!integracao) {
+    return {
+      mensagens: [],
+      conversaDisponivel: false,
+      aviso:
+        'Conecte a conta do Mercado Livre em Marketplaces para ver e responder o chat desta venda.'
+    };
+  }
+
+  let packId = texto(venda.ml_pack_id || venda.order_id, 120);
+  let buyerId = texto(venda.ml_buyer_id, 40);
+  let nickname = texto(venda.ml_buyer_nickname, 80);
+
+  if (venda.order_id && (!buyerId || !venda.ml_pack_id)) {
+    try {
+      const pedido = await obterPedidoMl(venda.order_id);
+      packId = texto(pedido?.pack_id || pedido?.id || packId, 120);
+      buyerId = texto(pedido?.buyer?.id || buyerId, 40);
+      nickname = texto(pedido?.buyer?.nickname || nickname, 80);
+      await persistirContatoVenda(venda.id, { packId, buyerId, nickname });
+    } catch {
+      // Segue com o que já está salvo no banco.
+    }
+  }
+
+  if (!packId) {
+    return {
+      mensagens: [],
+      conversaDisponivel: false,
+      aviso: 'Esta venda ainda não tem o identificador de conversa do Mercado Livre.'
+    };
+  }
+
+  try {
+    const dados = await buscarMensagensPack(packId, integracao.user_id);
+    const lista = Array.isArray(dados?.messages)
+      ? dados.messages
+      : Array.isArray(dados)
+        ? dados
+        : [];
+
+    return {
+      mensagens: lista
+        .map((item, indice) =>
+          mapearMensagemPack(item, integracao.user_id, indice)
+        )
+        .filter((item) => item.texto)
+        .sort((a, b) => String(a.data || '').localeCompare(String(b.data || ''))),
+      conversaDisponivel: true,
+      packId,
+      buyerId
+    };
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      return {
+        mensagens: [],
+        conversaDisponivel: true,
+        packId,
+        buyerId,
+        aviso: 'Ainda não há mensagens nesta venda.'
+      };
+    }
+
+    return {
+      mensagens: [],
+      conversaDisponivel: false,
+      packId,
+      buyerId,
+      aviso:
+        error?.message ||
+        'Não foi possível carregar o chat desta venda no Mercado Livre.'
+    };
+  }
+}
+
+export async function enviarMensagemVenda(vendaId, mensagem) {
+  const conteudo = texto(mensagem, 4000);
+
+  if (!conteudo) {
+    throw new MercadoLivreError('Escreva uma mensagem antes de enviar.', 400);
+  }
+
+  const db = getDb();
+  const venda = await db.get('SELECT * FROM vendas WHERE id = ?', [vendaId]);
+
+  if (!venda) {
+    throw new MercadoLivreError('Venda não encontrada.', 404);
+  }
+
+  const integracao = await obterIntegracaoObrigatoria();
+  let packId = texto(venda.ml_pack_id || venda.order_id, 120);
+  let buyerId = texto(venda.ml_buyer_id, 40);
+
+  if (!buyerId || !packId) {
+    const pedido = await obterPedidoMl(venda.order_id);
+    packId = texto(pedido?.pack_id || pedido?.id || packId, 120);
+    buyerId = texto(pedido?.buyer?.id || buyerId, 40);
+    await persistirContatoVenda(venda.id, {
+      packId,
+      buyerId,
+      nickname: texto(pedido?.buyer?.nickname, 80)
+    });
+  }
+
+  if (!packId || !buyerId) {
+    throw new MercadoLivreError(
+      'Não foi possível identificar o comprador desta venda no Mercado Livre.',
+      400
+    );
+  }
+
+  await mlFetch(
+    `/messages/packs/${encodeURIComponent(packId)}/sellers/${encodeURIComponent(
+      integracao.user_id
+    )}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: { user_id: Number(integracao.user_id) || integracao.user_id },
+        to: { user_id: Number(buyerId) || buyerId },
+        text: conteudo
+      })
+    }
+  );
+
+  return obterMensagensVenda(venda.id);
 }
 
 export async function obterMensagensReclamacao(mlClaimId) {

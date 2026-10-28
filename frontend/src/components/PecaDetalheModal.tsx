@@ -5,6 +5,8 @@ import {
   CalendarDays,
   Car,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   Image as ImageIcon,
   Layers,
@@ -38,6 +40,7 @@ export interface PecaDetalhe extends PecaCompleta {
   preco: number;
   ml_ativo: number;
   ml_status?: string | null;
+  ml_item_id?: string | null;
   ml_health?: number | null;
   ml_thumbnail?: string | null;
   ml_permalink?: string | null;
@@ -89,6 +92,8 @@ export default function PecaDetalheModal({
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [imagemAtiva, setImagemAtiva] = useState(0);
+  const [imagensAnuncio, setImagensAnuncio] = useState<string[]>([]);
+  const [avisoImagens, setAvisoImagens] = useState('');
 
   useEffect(() => {
     if (!pecaId) {
@@ -101,11 +106,38 @@ export default function PecaDetalheModal({
     setLoading(true);
     setErro('');
     setImagemAtiva(0);
+    setImagensAnuncio([]);
+    setAvisoImagens('');
 
     axios
       .get<PecaDetalhe>(`/api/pecas/${pecaId}`, { timeout: 12000 })
-      .then(({ data }) => {
-        if (ativo) setPeca(data);
+      .then(async ({ data }) => {
+        if (!ativo) return;
+        setPeca(data);
+
+        if (!data.ml_item_id) return;
+
+        try {
+          const resposta = await axios.get<{ imagens?: string[] }>(
+            `/api/mercadolivre/pecas/${pecaId}/imagens`,
+            { timeout: 15000 }
+          );
+          if (ativo) {
+            setImagensAnuncio(
+              Array.isArray(resposta.data?.imagens)
+                ? resposta.data.imagens.filter(Boolean)
+                : []
+            );
+          }
+        } catch (error: unknown) {
+          if (!ativo) return;
+          setAvisoImagens(
+            axios.isAxiosError<{ error?: string }>(error)
+              ? error.response?.data?.error ||
+                  'Não foi possível carregar as fotos atuais do anúncio.'
+              : 'Não foi possível carregar as fotos atuais do anúncio.'
+          );
+        }
       })
       .catch((error: unknown) => {
         if (!ativo) return;
@@ -140,29 +172,53 @@ export default function PecaDetalheModal({
 
   const imagens = useMemo(() => {
     if (!peca) return [];
-    if (peca.imagens?.length) return peca.imagens;
-    if (peca.imagem_principal) {
-      return [
-        {
-          id: 0,
-          caminho: peca.imagem_principal,
-          is_principal: 1,
-          ordem: 0,
-        },
-      ];
-    }
-    if (peca.ml_thumbnail) {
-      return [
-        {
-          id: 0,
-          caminho: String(peca.ml_thumbnail).replace(/^http:\/\//i, 'https://'),
-          is_principal: 1,
-          ordem: 0,
-        },
-      ];
-    }
-    return [];
-  }, [peca]);
+    const imagensLocais =
+      peca.imagens?.length
+        ? peca.imagens
+        : peca.imagem_principal
+          ? [
+              {
+                id: 0,
+                caminho: peca.imagem_principal,
+                is_principal: 1,
+                ordem: 0,
+              },
+            ]
+          : peca.ml_thumbnail
+            ? [
+                {
+                  id: 0,
+                  caminho: String(peca.ml_thumbnail).replace(
+                    /^http:\/\//i,
+                    'https://'
+                  ),
+                  is_principal: 1,
+                  ordem: 0,
+                },
+              ]
+            : [];
+    const urls = new Set<string>();
+    return [
+      ...imagensAnuncio.map((caminho, indice) => ({
+        id: -(indice + 1),
+        caminho,
+        is_principal: indice === 0 ? 1 : 0,
+        ordem: indice,
+      })),
+      ...imagensLocais,
+    ].filter((imagem) => {
+      if (urls.has(imagem.caminho)) return false;
+      urls.add(imagem.caminho);
+      return true;
+    });
+  }, [imagensAnuncio, peca]);
+
+  const avancarImagem = (direcao: number) => {
+    if (imagens.length < 2) return;
+    setImagemAtiva(
+      (atual) => (atual + direcao + imagens.length) % imagens.length
+    );
+  };
 
   const atributos = useMemo(() => {
     if (!peca) return [];
@@ -261,12 +317,12 @@ export default function PecaDetalheModal({
           ) : peca ? (
             <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-secondary">
+                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-secondary">
                   {imagens.length > 0 ? (
                     <img
                       src={imagens[imagemAtiva]?.caminho}
                       alt={peca.nome}
-                      className="aspect-square w-full object-cover"
+                      className="aspect-square w-full object-contain"
                     />
                   ) : (
                     <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 text-muted">
@@ -274,16 +330,39 @@ export default function PecaDetalheModal({
                       <p className="text-xs">Nenhuma foto cadastrada</p>
                     </div>
                   )}
+                  {imagens.length > 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => avancarImagem(-1)}
+                        aria-label="Foto anterior"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full border border-white/20 bg-black/65 p-2 text-white shadow-lg hover:bg-black/85"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => avancarImagem(1)}
+                        aria-label="Próxima foto"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-white/20 bg-black/65 p-2 text-white shadow-lg hover:bg-black/85"
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </button>
+                      <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        {imagemAtiva + 1} / {imagens.length}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
 
                 {imagens.length > 1 && (
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
                     {imagens.map((imagem, indice) => (
                       <button
                         key={imagem.id || indice}
                         type="button"
                         onClick={() => setImagemAtiva(indice)}
-                        className={`overflow-hidden rounded-xl border transition-all ${
+                        className={`w-16 shrink-0 overflow-hidden rounded-xl border transition-all ${
                           indice === imagemAtiva
                             ? 'border-accent ring-2 ring-accent/30'
                             : 'border-white/10 opacity-70 hover:opacity-100'
@@ -298,6 +377,11 @@ export default function PecaDetalheModal({
                     ))}
                   </div>
                 )}
+                {avisoImagens ? (
+                  <p className="rounded-xl border border-warning/20 bg-warningSoft px-3 py-2 text-xs text-warning">
+                    {avisoImagens}
+                  </p>
+                ) : null}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">

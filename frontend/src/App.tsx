@@ -24,7 +24,11 @@ import MarketplacesPage from './pages/MarketplacesPage';
 import AnaliseIaPage from './pages/AnaliseIaPage';
 import EditorAnunciosPage from './pages/EditorAnunciosPage';
 import FilaAprovacaoPage from './pages/FilaAprovacaoPage';
+import VendasPage from './pages/VendasPage';
 import ConnectionMonitor from './components/ConnectionMonitor';
+import NotificacoesBell, {
+  type NotificacaoItem,
+} from './components/NotificacoesBell';
 import Onboarding from './components/Onboarding';
 import DashboardCard from './components/DashboardCard';
 import DashboardGreeting from './components/DashboardGreeting';
@@ -190,6 +194,10 @@ const TITULOS: Partial<Record<SidebarKey, { titulo: string; subtitulo: string }>
     titulo: 'Estoque',
     subtitulo: 'Todos os itens e anúncios cadastrados',
   },
+  vendas: {
+    titulo: 'Vendas',
+    subtitulo: 'Pedidos do Mercado Livre, comprador e chat da venda',
+  },
   ia: {
     titulo: 'Análise com IA',
     subtitulo: 'Plano de ação com base nos dados reais do catálogo',
@@ -277,6 +285,15 @@ function App() {
   const [statusInicialRelatorios, setStatusInicialRelatorios] = useState<
     'todas' | 'concluidas' | 'andamento' | 'canceladas' | null
   >(null);
+  const [vendaFocoId, setVendaFocoId] = useState<number | null>(null);
+  const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
+  const [naoLidas, setNaoLidas] = useState(0);
+  const [toasts, setToasts] = useState<NotificacaoItem[]>([]);
+  const [contadoresAlerta, setContadoresAlerta] = useState({
+    vendasHoje: 0,
+    reclamacoesAbertas: 0,
+    perguntasPendentes: 0,
+  });
 
   // Garante que toda troca de aba comece no topo, mesmo quando a aba anterior
   // estava rolada para baixo. O efeito roda depois da renderização da nova tela.
@@ -341,6 +358,151 @@ function App() {
     };
   }, [activeView, fetchDashboard, showOnboarding]);
 
+  useEffect(() => {
+    if (showOnboarding) return;
+
+    let ativo = true;
+    let verificando = false;
+    let inicializado =
+      Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0) > 0 ||
+      Number(readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0) > 0;
+
+    const avisarNavegador = (titulo: string, corpo: string) => {
+      if (!('Notification' in window)) return;
+
+      if (Notification.permission === 'granted') {
+        new Notification(titulo, { body: corpo });
+        return;
+      }
+
+      if (Notification.permission === 'default') {
+        void Notification.requestPermission().then((permissao) => {
+          if (permissao === 'granted') {
+            new Notification(titulo, { body: corpo });
+          }
+        });
+      }
+    };
+
+    const checar = async () => {
+      if (
+        !ativo ||
+        verificando ||
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
+      verificando = true;
+
+      try {
+        const depoisVenda = Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0);
+        const depoisReclamacao = Number(
+          readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0
+        );
+        const { data } = await axios.get('/api/vendas/notificacoes', {
+          params: {
+            vendaId: depoisVenda,
+            reclamacaoId: depoisReclamacao,
+          },
+          timeout: 10000,
+        });
+
+        setContadoresAlerta({
+          vendasHoje: Number(data?.contadores?.vendasHoje) || 0,
+          reclamacoesAbertas: Number(data?.contadores?.reclamacoesAbertas) || 0,
+          perguntasPendentes: Number(data?.contadores?.perguntasPendentes) || 0,
+        });
+
+        const ultimoVenda = Number(data?.ultimos?.vendaId) || 0;
+        const ultimoReclamacao = Number(data?.ultimos?.reclamacaoId) || 0;
+
+        if (!inicializado) {
+          saveStored(STORAGE_KEYS.lastSeenVendaId, String(ultimoVenda));
+          saveStored(STORAGE_KEYS.lastSeenReclamacaoId, String(ultimoReclamacao));
+          inicializado = true;
+          return;
+        }
+
+        const vendasNovas = Array.isArray(data?.vendas) ? data.vendas : [];
+        const reclamacoesNovas = Array.isArray(data?.reclamacoes)
+          ? data.reclamacoes
+          : [];
+        const itens: NotificacaoItem[] = [
+          ...vendasNovas.map(
+            (venda: {
+              id: number;
+              order_id?: string;
+              titulo?: string;
+              cliente?: string;
+              valor?: number;
+              data?: string;
+            }) => ({
+              id: `venda-${venda.id}`,
+              tipo: 'venda' as const,
+              titulo: 'Nova venda no Mercado Livre',
+              detalhe: `${venda.titulo || 'Peça'} • ${
+                venda.cliente || 'Comprador'
+              } • ${formatCurrency(Number(venda.valor) || 0)}`,
+              data: venda.data,
+              destino: 'vendas' as const,
+              vendaId: venda.id,
+            })
+          ),
+          ...reclamacoesNovas.map(
+            (item: {
+              id: number;
+              pedido_id?: string;
+              titulo?: string;
+              motivo?: string;
+              data?: string;
+            }) => ({
+              id: `reclamacao-${item.id}`,
+              tipo: 'reclamacao' as const,
+              titulo: 'Nova reclamação',
+              detalhe: `${item.titulo || item.motivo || 'Reclamação'} • pedido ${
+                item.pedido_id || '—'
+              }`,
+              data: item.data,
+              destino: 'atendimento' as const,
+            })
+          ),
+        ];
+
+        if (itens.length > 0) {
+          setNotificacoes((atual) => [...itens, ...atual].slice(0, 20));
+          setNaoLidas((atual) => atual + itens.length);
+          setToasts((atual) => [...itens, ...atual].slice(0, 4));
+          itens.slice(0, 3).forEach((item) => {
+            avisarNavegador(item.titulo, item.detalhe);
+          });
+        }
+
+        if (ultimoVenda > depoisVenda) {
+          saveStored(STORAGE_KEYS.lastSeenVendaId, String(ultimoVenda));
+        }
+
+        if (ultimoReclamacao > depoisReclamacao) {
+          saveStored(STORAGE_KEYS.lastSeenReclamacaoId, String(ultimoReclamacao));
+        }
+      } catch {
+        // O painel continua sem o sino se a API estiver fora.
+      } finally {
+        verificando = false;
+      }
+    };
+
+    void checar();
+    const intervalo = window.setInterval(() => void checar(), 20000);
+    const aoVisivel = () => void checar();
+    document.addEventListener('visibilitychange', aoVisivel);
+
+    return () => {
+      ativo = false;
+      window.clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', aoVisivel);
+    };
+  }, [showOnboarding]);
+
   // O callback OAuth do Mercado Livre volta para a raiz com ?ml=...
   // A página de Marketplaces lê a mensagem e limpa a URL.
   useEffect(() => {
@@ -353,6 +515,7 @@ function App() {
   const handleNavigate = (key: SidebarKey) => {
     setFocoAtendimento(null);
     setStatusInicialRelatorios(null);
+    if (key !== 'vendas') setVendaFocoId(null);
     setActiveView(key);
     setMobileMenuOpen(false);
     window.scrollTo(0, 0);
@@ -515,6 +678,12 @@ function App() {
         onLogout={() => setShowLogoutConfirm(true)}
         userName={userName}
         companyName={companyName}
+        badges={{
+          vendas: contadoresAlerta.vendasHoje,
+          atendimento:
+            contadoresAlerta.reclamacoesAbertas +
+            contadoresAlerta.perguntasPendentes,
+        }}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -547,6 +716,23 @@ function App() {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <NotificacoesBell
+                  itens={notificacoes}
+                  naoLidas={naoLidas}
+                  onMarcarLidas={() => setNaoLidas(0)}
+                  onAbrir={(item) => {
+                    setNaoLidas(0);
+                    if (item.destino === 'vendas') {
+                      setVendaFocoId(item.vendaId || null);
+                      setFocoAtendimento(null);
+                      setActiveView('vendas');
+                    } else {
+                      setFocoAtendimento('reclamacoes');
+                      setActiveView('atendimento');
+                    }
+                    window.scrollTo(0, 0);
+                  }}
+                />
                 <ConnectionMonitor onStatusChange={setApiOnline} />
                 {lastUpdated && (
                   <span className="hidden text-xs text-muted lg:inline">
@@ -654,7 +840,7 @@ function App() {
                     subtitle={`${formatCurrency(
                       stats.faturamentoHoje
                     )} faturados hoje`}
-                    onClick={() => handleNavigate('pedidos')}
+                    onClick={() => handleNavigate('vendas')}
                   />
 
                   <DashboardCard
@@ -730,6 +916,16 @@ function App() {
 
             {activeView === 'lotes' && (
               <PecasTable onChange={handlePecasChanged} />
+            )}
+
+            {activeView === 'vendas' && (
+              <VendasPage
+                vendaInicialId={vendaFocoId}
+                onOpenAtendimento={() => {
+                  setFocoAtendimento('reclamacoes');
+                  setActiveView('atendimento');
+                }}
+              />
             )}
 
             {activeView === 'nova' && (
@@ -822,6 +1018,32 @@ function App() {
           </div>
         </footer>
       </div>
+
+      {toasts.length > 0 ? (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(92vw,22rem)] flex-col gap-2">
+          {toasts.map((toast) => (
+            <button
+              key={toast.id}
+              type="button"
+              onClick={() => {
+                setToasts((atual) => atual.filter((item) => item.id !== toast.id));
+                setNaoLidas(0);
+                if (toast.destino === 'vendas') {
+                  setVendaFocoId(toast.vendaId || null);
+                  setActiveView('vendas');
+                } else {
+                  setFocoAtendimento('reclamacoes');
+                  setActiveView('atendimento');
+                }
+              }}
+              className="pointer-events-auto rounded-2xl border border-line bg-sidebar p-4 text-left shadow-2xl"
+            >
+              <p className="text-sm font-bold text-ink">{toast.titulo}</p>
+              <p className="mt-1 text-xs text-muted">{toast.detalhe}</p>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {showLogoutConfirm && (
         <div

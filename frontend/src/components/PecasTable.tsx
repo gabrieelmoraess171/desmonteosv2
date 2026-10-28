@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Edit3,
+  ExternalLink,
   Eye,
   Image as ImageIcon,
   Package,
@@ -26,6 +27,7 @@ interface Peca extends PecaCompleta {
   imagem_principal?: string | null;
   imagens_count?: number;
   ml_thumbnail?: string | null;
+  ml_permalink?: string | null;
   status?: 'inativo' | 'revisar' | 'pronto';
   motivos?: string[];
 }
@@ -98,6 +100,14 @@ function formatarMoeda(valor: number): string {
     style: 'currency',
     currency: 'BRL',
   }).format(Number(valor) || 0);
+}
+
+function urlAnuncio(peca: Peca): string | null {
+  if (!peca.ml_item_id) return null;
+  return (
+    peca.ml_permalink ||
+    `https://www.mercadolivre.com.br/p/${encodeURIComponent(peca.ml_item_id)}`
+  );
 }
 
 export default function PecasTable({
@@ -505,9 +515,24 @@ export default function PecasTable({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="max-w-[260px] truncate font-medium text-ink">
-                            {peca.nome}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="max-w-[260px] truncate font-medium text-ink">
+                              {peca.nome}
+                            </p>
+                            {urlAnuncio(peca) && (
+                              <a
+                                href={urlAnuncio(peca) || undefined}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                                title="Abrir anúncio no Mercado Livre"
+                                aria-label={`Abrir anúncio de ${peca.nome} no Mercado Livre`}
+                                className="inline-flex shrink-0 items-center justify-center rounded-md border border-ml/25 bg-ml/10 p-1 text-ml transition-colors hover:bg-ml/20"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted">
                             <span className="font-mono text-accent">
                               {peca.sku || 'Sem SKU'}
@@ -705,9 +730,24 @@ export default function PecasTable({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="line-clamp-2 text-sm font-semibold leading-snug text-ink">
-                          {peca.nome}
-                        </p>
+                        <div className="flex min-w-0 items-start gap-2">
+                          <p className="line-clamp-2 text-sm font-semibold leading-snug text-ink">
+                            {peca.nome}
+                          </p>
+                          {urlAnuncio(peca) && (
+                            <a
+                              href={urlAnuncio(peca) || undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                              title="Abrir anúncio no Mercado Livre"
+                              aria-label={`Abrir anúncio de ${peca.nome} no Mercado Livre`}
+                              className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded-md border border-ml/25 bg-ml/10 p-1 text-ml transition-colors hover:bg-ml/20"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
                         <span
                           className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.className}`}
                         >

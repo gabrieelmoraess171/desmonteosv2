@@ -252,8 +252,13 @@ export async function initDatabase() {
     taxa_ml: 'REAL DEFAULT 0',
     ml_pack_id: 'TEXT',
     ml_status: "TEXT DEFAULT ''",
+    ml_buyer_id: 'TEXT',
+    ml_buyer_nickname: "TEXT DEFAULT ''",
+    data_prevista_recebimento: 'TEXT',
     enviada_financeiro: 'INTEGER DEFAULT 0',
-    enviada_financeiro_em: 'TEXT'
+    enviada_financeiro_em: 'TEXT',
+    financeiro_status: "TEXT DEFAULT 'disponivel'",
+    financeiro_agendada_para: 'TEXT'
   };
 
   for (const [nome, definicao] of Object.entries(novasColunasVendas)) {
@@ -261,6 +266,25 @@ export async function initDatabase() {
       await db.exec(`ALTER TABLE vendas ADD COLUMN ${nome} ${definicao}`);
     }
   }
+
+  if (!nomesColunas.includes('financeiro_status')) {
+    await db.run(
+      `UPDATE vendas
+          SET financeiro_status = CASE
+            WHEN enviada_financeiro = 1 THEN 'enviada'
+            ELSE 'pendente'
+          END`
+    );
+  }
+
+  await db.run(
+    `UPDATE vendas
+        SET financeiro_status = 'pendente'
+      WHERE financeiro_status = 'disponivel'
+        AND COALESCE(enviada_financeiro, 0) = 0
+        AND financeiro_agendada_para IS NULL
+        AND COALESCE(DATE(data_venda, 'localtime'), '') <> DATE('now', 'localtime')`
+  );
 
   // Preferências centrais e credencial do único proprietário da operação.
   await db.exec(`

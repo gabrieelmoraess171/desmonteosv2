@@ -5,6 +5,8 @@ export const STORAGE_KEYS = {
   companyName: 'desmonte.companyName',
   financeWhatsApp: 'desmonte.financeWhatsApp',
   onboardingCompleted: 'desmonte.onboardingCompleted',
+  lastSeenVendaId: 'desmonte.lastSeenVendaId',
+  lastSeenReclamacaoId: 'desmonte.lastSeenReclamacaoId',
 } as const;
 
 export const SESSION_KEYS = {

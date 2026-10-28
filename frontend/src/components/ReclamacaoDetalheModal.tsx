@@ -424,7 +424,7 @@ export default function ReclamacaoDetalheModal({
 
   return createPortal(
     <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
+      className="modal-backdrop overscroll-contain fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -436,7 +436,7 @@ export default function ReclamacaoDetalheModal({
         aria-labelledby="reclamacao-detalhe-titulo"
         className="modal-panel flex max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-[#f5f5f5] text-[#333] shadow-2xl sm:max-h-[92vh] sm:rounded-2xl"
       >
-        <header className="flex shrink-0 items-center justify-between gap-3 bg-[#fff159] px-4 py-3 sm:px-6">
+        <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 bg-[#fff159] px-4 py-3 shadow-sm sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3483fa] text-white">
               <ShieldAlert className="h-5 w-5" />
@@ -460,7 +460,7 @@ export default function ReclamacaoDetalheModal({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
           {loading ? (
             <div className="flex min-h-[320px] items-center justify-center gap-3 text-sm text-[#666]">
               <Loader2 className="h-5 w-5 animate-spin text-[#3483fa]" />

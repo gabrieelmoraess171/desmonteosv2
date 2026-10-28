@@ -4,6 +4,7 @@ import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock,
   CreditCard,
@@ -28,6 +29,11 @@ import type { SidebarKey } from '../components/Sidebar';
 type PeriodoRelatorio = 'hoje' | '7' | '15' | '30' | 'custom';
 type StatusRelatorio = 'todas' | 'concluidas' | 'andamento' | 'canceladas';
 type ModoValor = 'bruto' | 'liquido';
+type ModoGrafico =
+  | 'bruto'
+  | 'taxa'
+  | 'liquido'
+  | 'cancelamentos';
 
 interface ItemVenda {
   sku: string;
@@ -58,6 +64,7 @@ interface VendaRelatorio {
   is_ml: boolean;
   data_venda: string;
   data_recebimento?: string | null;
+  data_prevista_recebimento?: string | null;
   itens_count: number;
   itens: ItemVenda[];
   peca_nome?: string | null;
@@ -485,10 +492,12 @@ export default function RelatoriosPage({
   const [taxaTexto, setTaxaTexto] = useState('17');
   const [taxaMl, setTaxaMl] = useState(17);
   const modoValor: ModoValor = 'liquido';
+  const [modoGrafico, setModoGrafico] = useState<ModoGrafico>('liquido');
   const [relatorio, setRelatorio] = useState<Relatorio>(relatorioInicial);
   const [vendaAberta, setVendaAberta] = useState<VendaRelatorio | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [indicadorAberto, setIndicadorAberto] = useState<string | null>(null);
 
   useEffect(() => {
     if (statusInicial) setStatus(statusInicial);
@@ -557,7 +566,7 @@ export default function RelatoriosPage({
       void carregarRef.current(true);
     };
 
-    const intervalo = window.setInterval(atualizar, 45000);
+    const intervalo = window.setInterval(atualizar, 30000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -832,25 +841,27 @@ export default function RelatoriosPage({
 
   const valorDoPonto = useCallback(
     (ponto: PontoSerie) => {
-      if (status === 'canceladas') return ponto.valorCancelado;
-      return modoValor === 'liquido'
-        ? ponto.faturamentoLiquido
-        : ponto.faturamentoBruto;
+      switch (modoGrafico) {
+        case 'bruto':
+          return ponto.faturamentoBruto;
+        case 'taxa':
+          return ponto.taxaMl;
+        case 'cancelamentos':
+          return ponto.valorCancelado;
+        default:
+          return ponto.faturamentoLiquido;
+      }
     },
-    [modoValor, status]
+    [modoGrafico]
   );
 
   const maxPagamento = useMemo(
     () =>
       Math.max(
         1,
-        ...relatorio.pagamentos.map((pagamento) =>
-          modoValor === 'liquido'
-            ? pagamento.faturamentoLiquido
-            : pagamento.faturamentoBruto
-        )
+        ...relatorio.pagamentos.map((pagamento) => pagamento.faturamentoLiquido)
       ),
-    [modoValor, relatorio.pagamentos]
+    [relatorio.pagamentos]
   );
 
   const totalSerie = useMemo(
@@ -898,18 +909,22 @@ export default function RelatoriosPage({
     );
     const melhor = pontos.reduce<PontoSerie | null>(
       (atual, ponto) =>
-        !atual || valorDoPonto(ponto) > valorDoPonto(atual) ? ponto : atual,
+        valorDoPonto(ponto) > 0 &&
+        (!atual || valorDoPonto(ponto) > valorDoPonto(atual))
+          ? ponto
+          : atual,
       null
     );
-    const cor =
-      status === 'canceladas'
-        ? '#f87171'
-        : modoValor === 'liquido'
-          ? '#34d399'
-          : '#60a5fa';
+    const cores: Record<ModoGrafico, string> = {
+      bruto: '#60a5fa',
+      taxa: '#fbbf24',
+      liquido: '#34d399',
+      cancelamentos: '#f87171',
+    };
+    const cor = cores[modoGrafico];
 
     return { largura, altura, margem, baseY, max, coords, linha, area, ticks, labels, melhor, cor };
-  }, [relatorio.serie, valorDoPonto, status, modoValor]);
+  }, [relatorio.serie, valorDoPonto, modoGrafico]);
 
   const totaisTabela = useMemo(() => {
     const resumo = relatorio.resumo;
@@ -941,38 +956,160 @@ export default function RelatoriosPage({
     exportarCsv(relatorio, status);
   };
 
-  const legendaSerie =
-    status === 'canceladas'
-      ? 'Valor cancelado'
-      : modoValor === 'liquido'
-        ? 'Faturamento líquido'
-        : 'Faturamento bruto';
+  const legendaSerie = ({
+    bruto: 'Faturamento bruto',
+    taxa: 'Taxa do Mercado Livre',
+    liquido: 'Faturamento líquido',
+    cancelamentos: 'Valor cancelado',
+  } satisfies Record<ModoGrafico, string>)[modoGrafico];
 
-  const destinoIndicador = (
-    label: string
-  ): SidebarKey | 'canceladas' | null => {
+  const destinoIndicador = (label: string): string | null => {
     if (/cancel|taxa ml evitada/i.test(label)) return 'canceladas';
-    if (label === 'Taxa Mercado Livre') return 'marketplaces';
-    if (label === 'Clientes') return 'atendimento';
-    if (label === 'Itens vendidos') return 'lotes';
-    if (/venda|faturamento|recebido|a receber|ticket médio/i.test(label)) {
-      return 'pedidos';
-    }
+    if (/a receber/i.test(label)) return 'a-receber';
+    if (/recebido/i.test(label)) return 'recebido';
+    if (/taxa mercado livre/i.test(label)) return 'taxas';
+    if (/clientes/i.test(label)) return 'clientes';
+    if (/itens vendidos/i.test(label)) return 'itens';
+    if (/ticket médio/i.test(label)) return 'ticket';
+    if (/venda|faturamento/i.test(label)) return 'vendas';
     return null;
   };
 
   const abrirIndicador = (label: string) => {
-    const destino = destinoIndicador(label);
-
-    if (!destino) return;
-
-    if (destino === 'canceladas') {
-      setStatus('canceladas');
-      return;
-    }
-
-    onNavigate?.(destino);
+    if (destinoIndicador(label)) setIndicadorAberto(label);
   };
+
+  const chaveIndicador = indicadorAberto
+    ? destinoIndicador(indicadorAberto)
+    : null;
+  const linhasIndicador = useMemo(() => {
+    const vendas = relatorio.vendas;
+    switch (chaveIndicador) {
+      case 'canceladas':
+        return vendas.filter((venda) => venda.cancelada);
+      case 'recebido':
+        return vendas.filter((venda) => venda.recebido);
+      case 'a-receber':
+        return vendas.filter(
+          (venda) =>
+            !venda.cancelada && venda.status_grupo === 'andamento'
+        );
+      case 'taxas':
+        return vendas.filter((venda) => venda.is_ml && !venda.cancelada);
+      case 'clientes':
+      case 'itens':
+      case 'ticket':
+        return vendas.filter((venda) => !venda.cancelada);
+      case 'vendas':
+        return vendas.filter((venda) => !venda.cancelada);
+      default:
+        return [];
+    }
+  }, [chaveIndicador, relatorio.vendas]);
+
+  if (indicadorAberto) {
+    const todosIndicadores = [
+      ...indicadoresPrincipais,
+      ...indicadoresFinanceiros,
+    ];
+    const valorIndicador =
+      todosIndicadores.find((item) => item.label === indicadorAberto)?.valor ||
+      '—';
+
+    return (
+      <div className="space-y-5">
+        <button
+          type="button"
+          onClick={() => setIndicadorAberto(null)}
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-muted hover:text-ink"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Voltar ao relatório
+        </button>
+
+        <section className="glass-panel rounded-3xl p-6 sm:p-8">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+            {relatorio.periodo.label}
+          </p>
+          <h2 className="mt-2 text-3xl font-bold text-ink">
+            {indicadorAberto}
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            {linhasIndicador.length} venda(s) •{' '}
+            {valorIndicador}
+          </p>
+        </section>
+
+        {chaveIndicador === 'a-receber' ? (
+          <p className="rounded-xl border border-warning/25 bg-warningSoft px-4 py-3 text-sm text-warning">
+            A previsão é exibida somente quando o Mercado Livre informa a data
+            de liberação no pedido. Quando não houver uma data, ela será
+            indicada como não informada; a data de aprovação não é tratada como
+            data de recebimento.
+          </p>
+        ) : null}
+
+        {linhasIndicador.length === 0 ? (
+          <p className="rounded-2xl border border-line bg-card p-10 text-center text-sm text-muted">
+            Não há vendas neste indicador para o período selecionado.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-line bg-card">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="border-b border-line bg-white/[0.03] text-[10px] uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="px-4 py-3">Pedido / produto</th>
+                  <th className="px-4 py-3">Comprador</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">
+                    {chaveIndicador === 'a-receber'
+                      ? 'Previsão Mercado Livre'
+                      : 'Data da venda'}
+                  </th>
+                  <th className="px-4 py-3 text-right">Valor líquido</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/70">
+                {linhasIndicador.map((venda) => (
+                  <tr key={venda.id} className="hover:bg-white/[0.025]">
+                    <td className="px-4 py-3">
+                      <p className="font-mono text-xs text-accent">
+                        {venda.order_id || `#${venda.id}`}
+                      </p>
+                      <p className="mt-1 font-medium text-ink">
+                        {venda.peca_nome || venda.itens[0]?.descricao || 'Venda'}
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        {venda.peca_sku || venda.itens[0]?.sku || 'Sem SKU'}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-ink">
+                      {venda.cliente || 'Não informado'}
+                    </td>
+                    <td className="px-4 py-3 text-muted">{venda.status}</td>
+                    <td className="px-4 py-3 text-muted">
+                      {chaveIndicador === 'a-receber'
+                        ? venda.data_prevista_recebimento
+                          ? formatarData(venda.data_prevista_recebimento)
+                          : 'Não informada pelo Mercado Livre'
+                        : formatarData(
+                            chaveIndicador === 'recebido'
+                              ? venda.data_recebimento || venda.data_venda
+                              : venda.data_venda
+                          )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-success">
+                      {formatarMoeda(venda.valor_liquido)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="print-report space-y-6">
@@ -1189,11 +1326,7 @@ export default function RelatoriosPage({
                     destino ? () => abrirIndicador(indicador.label) : undefined
                   }
                   tituloAcao={
-                    destino === 'canceladas'
-                      ? 'Filtrar os cancelamentos deste relatório'
-                      : destino
-                        ? 'Abrir a página relacionada a este indicador'
-                        : undefined
+                    destino ? 'Abrir os detalhes deste indicador' : undefined
                   }
                 />
               );
@@ -1215,11 +1348,7 @@ export default function RelatoriosPage({
                         : undefined
                     }
                     tituloAcao={
-                      destino === 'canceladas'
-                        ? 'Filtrar os cancelamentos deste relatório'
-                        : destino
-                          ? 'Abrir a página relacionada a este indicador'
-                          : undefined
+                      destino ? 'Abrir os detalhes deste indicador' : undefined
                     }
                   />
                 );
@@ -1299,20 +1428,50 @@ export default function RelatoriosPage({
                     no filtro
                   </p>
                 </div>
-                <span
-                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                    status === 'canceladas'
-                      ? 'border-danger/20 bg-dangerSoft text-danger'
-                      : modoValor === 'liquido'
-                        ? 'border-success/20 bg-successSoft text-success'
-                        : 'border-accent/20 bg-accentSoft text-accent'
-                  }`}
-                >
-                  {formatarMoeda(totalSerie)}
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span
+                    className="rounded-full border px-3 py-1.5 text-xs font-semibold"
+                    style={{
+                      color: graficoSerie.cor,
+                      borderColor: `${graficoSerie.cor}55`,
+                      backgroundColor: `${graficoSerie.cor}18`,
+                    }}
+                  >
+                    {formatarMoeda(totalSerie)}
+                  </span>
+                  <div
+                    className="flex max-w-full flex-wrap justify-end gap-1"
+                    role="group"
+                    aria-label="Métrica do gráfico"
+                  >
+                    {[
+                      { chave: 'bruto' as ModoGrafico, label: 'Bruto' },
+                      { chave: 'taxa' as ModoGrafico, label: 'Taxa ML' },
+                      { chave: 'liquido' as ModoGrafico, label: 'Líquido' },
+                      {
+                        chave: 'cancelamentos' as ModoGrafico,
+                        label: 'Cancelamentos',
+                      },
+                    ].map((item) => (
+                      <button
+                        key={item.chave}
+                        type="button"
+                        onClick={() => setModoGrafico(item.chave)}
+                        aria-pressed={modoGrafico === item.chave}
+                        className={`rounded-lg border px-2 py-1 text-[10px] font-semibold transition-colors ${
+                          modoGrafico === item.chave
+                            ? 'border-accent/40 bg-accentSoft text-accent'
+                            : 'border-white/10 bg-white/[0.03] text-muted hover:text-ink'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {relatorio.serie.length === 0 ? (
+              {relatorio.vendas.length === 0 ? (
                 <p className="py-12 text-center text-sm text-muted">
                   Nenhum dado no período.
                 </p>
@@ -1450,7 +1609,9 @@ export default function RelatoriosPage({
                                 coord.ponto.taxaMl
                               )} • Líquido ${formatarMoeda(
                                 coord.ponto.faturamentoLiquido
-                              )}`}
+                              )} • ${coord.ponto.cancelamentos} cancelamento(s) (${formatarMoeda(
+                                coord.ponto.valorCancelado
+                              )})`}
                             </title>
                           </rect>
                         </g>
