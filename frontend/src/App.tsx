@@ -30,7 +30,8 @@ import ConnectionMonitor from './components/ConnectionMonitor';
 import NotificacoesBell, {
   type NotificacaoItem,
 } from './components/NotificacoesBell';
-import Onboarding from './components/Onboarding';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from './hooks/useAuth';
 import DashboardCard from './components/DashboardCard';
 import DashboardGreeting from './components/DashboardGreeting';
 import RevenueChart, {
@@ -52,8 +53,6 @@ import InsightsPanel, {
 import Sidebar, { NAV_ITEMS, type SidebarKey } from './components/Sidebar';
 import {
   DEFAULT_COMPANY_NAME,
-  OWNER_HEADER,
-  SESSION_KEYS,
   STORAGE_KEYS,
 } from './config/app';
 import axios from 'axios';
@@ -255,13 +254,15 @@ function saveStored(key: string, valor: string) {
 }
 
 function App() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>(initialStats);
   const [analytics, setAnalytics] = useState<AnalyticsData>(initialAnalytics);
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('7');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [userName, setUserName] = useState(() =>
-    readStored(STORAGE_KEYS.userName)
+    user?.username || readStored(STORAGE_KEYS.userName)
   );
   const [companyName, setCompanyName] = useState(() => {
     return readStored(STORAGE_KEYS.companyName) || DEFAULT_COMPANY_NAME;
@@ -269,13 +270,6 @@ function App() {
   const [financeWhatsApp, setFinanceWhatsApp] = useState(() =>
     readStored(STORAGE_KEYS.financeWhatsApp)
   );
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    const nomeSalvo = readStored(STORAGE_KEYS.userName);
-    const onboardingConcluido =
-      readStored(STORAGE_KEYS.onboardingCompleted) === '1';
-
-    return !nomeSalvo && !onboardingConcluido;
-  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarKey>('dashboard');
@@ -348,16 +342,12 @@ function App() {
   }, [periodo]);
 
   useEffect(() => {
-    if (!showOnboarding) {
-      void fetchDashboard();
-    }
-  }, [fetchDashboard, showOnboarding]);
+    void fetchDashboard();
+  }, [fetchDashboard]);
 
   // Atualiza o painel sozinho enquanto ele está aberto, para refletir venda,
   // pergunta ou reclamação nova sem precisar clicar em Atualizar.
   useEffect(() => {
-    if (showOnboarding) return;
-
     let ativo = true;
 
     const atualizar = () => {
@@ -374,11 +364,9 @@ function App() {
       window.clearInterval(intervalo);
       document.removeEventListener('visibilitychange', atualizar);
     };
-  }, [activeView, fetchDashboard, showOnboarding]);
+  }, [activeView, fetchDashboard]);
 
   useEffect(() => {
-    if (showOnboarding) return;
-
     let ativo = true;
     let verificando = false;
     let inicializado =
@@ -532,7 +520,7 @@ function App() {
       window.clearInterval(intervalo);
       document.removeEventListener('visibilitychange', aoVisivel);
     };
-  }, [showOnboarding]);
+  }, []);
 
   // O callback OAuth do Mercado Livre volta para a raiz com ?ml=...
   // A página de Marketplaces lê a mensagem e limpa a URL.
@@ -619,53 +607,10 @@ function App() {
     saveStored(STORAGE_KEYS.financeWhatsApp, whatsapp);
   };
 
-  const handleCompleteOnboarding = (nomeInformado: string) => {
-    const nome = nomeInformado.replace(/\s+/g, ' ').trim().slice(0, 40);
-    if (!nome) return;
-
-    const empresa = companyName.trim() || DEFAULT_COMPANY_NAME;
-
-    setUserName(nome);
-    setCompanyName(empresa);
-    saveStored(STORAGE_KEYS.userName, nome);
-    saveStored(STORAGE_KEYS.companyName, empresa);
-    saveStored(STORAGE_KEYS.onboardingCompleted, '1');
-    setShowOnboarding(false);
-    window.scrollTo(0, 0);
-  };
-
   const handleLogout = () => {
     setShowLogoutConfirm(false);
-
-    let ownerToken = '';
-
-    try {
-      ownerToken = window.sessionStorage.getItem(SESSION_KEYS.ownerToken) || '';
-      window.sessionStorage.removeItem(SESSION_KEYS.ownerToken);
-    } catch {
-      // Sem sessionStorage, a próxima tela ainda pode ser exibida.
-    }
-
-    if (ownerToken) {
-      void axios
-        .post(
-          '/api/proprietario/sair',
-          {},
-          {
-            headers: { [OWNER_HEADER]: ownerToken },
-            timeout: 5000,
-          }
-        )
-        .catch(() => {
-          // O token local já foi removido; o servidor expira a sessão sozinho.
-        });
-    }
-
-    setUserName('');
-    saveStored(STORAGE_KEYS.userName, '');
-    saveStored(STORAGE_KEYS.onboardingCompleted, '');
-    setActiveView('dashboard');
-    setShowOnboarding(true);
+    logout();
+    navigate('/login', { replace: true });
     window.scrollTo(0, 0);
   };
 
@@ -679,15 +624,6 @@ function App() {
   const handlePecasChanged = () => {
     void fetchDashboard();
   };
-
-  if (showOnboarding) {
-    return (
-      <Onboarding
-        defaultCompany={companyName || DEFAULT_COMPANY_NAME}
-        onComplete={handleCompleteOnboarding}
-      />
-    );
-  }
 
   return (
     <div className="app-shell relative isolate flex min-h-screen">
@@ -777,6 +713,14 @@ function App() {
                   }}
                 />
                 <ConnectionMonitor onStatusChange={setApiOnline} />
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-muted transition-colors hover:bg-secondary hover:text-ink"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
+                  Logout
+                </button>
                 {lastUpdated && (
                   <span className="hidden text-xs text-muted lg:inline">
                     Atualizado às{' '}
@@ -1114,7 +1058,7 @@ function App() {
               Sair do painel?
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Você voltará para a tela de boas-vindas e o acesso do proprietário
+              Você voltará para a tela de login e o acesso do proprietário
               será bloqueado. O nome da empresa e o WhatsApp financeiro serão
               mantidos.
             </p>

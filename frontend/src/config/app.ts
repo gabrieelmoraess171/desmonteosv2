@@ -1,6 +1,7 @@
 export const DEFAULT_COMPANY_NAME = 'Mercadão de Peças';
 
 export const STORAGE_KEYS = {
+  authUser: 'desmonte.authUser',
   userName: 'desmonte.userName',
   companyName: 'desmonte.companyName',
   financeWhatsApp: 'desmonte.financeWhatsApp',
