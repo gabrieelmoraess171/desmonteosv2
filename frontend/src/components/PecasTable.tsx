@@ -181,9 +181,11 @@ export default function PecasTable({
       await fetchPecas();
       onChange?.();
     } catch (error: unknown) {
-      if (axios.isAxiosError<{ error?: string }>(error)) {
-        alert(error.response?.data?.error || 'Erro ao alterar status ML');
-      }
+      alert(
+        axios.isAxiosError<{ error?: string }>(error)
+          ? error.response?.data?.error || 'Erro ao alterar status ML'
+          : 'Erro ao alterar status ML'
+      );
     }
   };
 
@@ -647,7 +649,7 @@ export default function PecasTable({
                           ) : (
                             <XCircle className="h-3.5 w-3.5" />
                           )}
-                          {peca.ml_ativo ? 'Ativo' : 'Pausado'}
+                          {peca.ml_ativo ? 'Pausar anúncio' : 'Ativar anúncio'}
                         </button>
                         <NotaMlBadge peca={peca} compacto />
                       </div>
@@ -820,7 +822,7 @@ export default function PecasTable({
                         ) : (
                           <XCircle className="h-3.5 w-3.5" />
                         )}
-                        ML {peca.ml_ativo ? 'ativo' : 'pausado'}
+                        {peca.ml_ativo ? 'Pausar anúncio' : 'Ativar anúncio'}
                       </button>
                       <NotaMlBadge peca={peca} />
                     </div>
@@ -944,6 +946,7 @@ export default function PecasTable({
           setPecaDetalheId(null);
           setPecaEmEdicao(peca);
         }}
+        onChange={handleSuccess}
       />
     </section>
   );

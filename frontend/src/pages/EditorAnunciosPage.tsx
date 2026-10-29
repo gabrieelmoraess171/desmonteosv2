@@ -1337,8 +1337,8 @@ export default function EditorAnunciosPage({
                     )}
 
                     <p className="text-[11px] leading-relaxed text-muted">
-                      Nada é publicado direto no ML. A fila de aprovação aplica
-                      as alterações depois da sua revisão.
+                      Salvar aqui não publica diretamente. A aprovação aplica
+                      as alterações ou publica o anúncio novo no Mercado Livre.
                     </p>
                   </div>
                 </form>

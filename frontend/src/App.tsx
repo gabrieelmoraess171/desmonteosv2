@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   DollarSign,
@@ -25,6 +25,7 @@ import AnaliseIaPage from './pages/AnaliseIaPage';
 import EditorAnunciosPage from './pages/EditorAnunciosPage';
 import FilaAprovacaoPage from './pages/FilaAprovacaoPage';
 import VendasPage from './pages/VendasPage';
+import type { VendaAba } from './types/vendas';
 import ConnectionMonitor from './components/ConnectionMonitor';
 import NotificacoesBell, {
   type NotificacaoItem,
@@ -196,7 +197,7 @@ const TITULOS: Partial<Record<SidebarKey, { titulo: string; subtitulo: string }>
   },
   vendas: {
     titulo: 'Vendas',
-    subtitulo: 'Pedidos do Mercado Livre, comprador e chat da venda',
+    subtitulo: 'Envios, prazos e próximos despachos do Mercado Livre',
   },
   ia: {
     titulo: 'Análise com IA',
@@ -286,14 +287,31 @@ function App() {
     'todas' | 'concluidas' | 'andamento' | 'canceladas' | null
   >(null);
   const [vendaFocoId, setVendaFocoId] = useState<number | null>(null);
+  const [vendaAba, setVendaAba] = useState<VendaAba>('hoje');
   const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
   const [naoLidas, setNaoLidas] = useState(0);
   const [toasts, setToasts] = useState<NotificacaoItem[]>([]);
+  const toastTimersRef = useRef(new Map<string, number>());
   const [contadoresAlerta, setContadoresAlerta] = useState({
     vendasHoje: 0,
     reclamacoesAbertas: 0,
     perguntasPendentes: 0,
   });
+
+  useEffect(
+    () => () => {
+      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      toastTimersRef.current.clear();
+    },
+    []
+  );
+
+  const removerToast = (id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    toastTimersRef.current.delete(id);
+    setToasts((atual) => atual.filter((item) => item.id !== id));
+  };
 
   // Garante que toda troca de aba comece no topo, mesmo quando a aba anterior
   // estava rolada para baixo. O efeito roda depois da renderização da nova tela.
@@ -348,7 +366,7 @@ function App() {
       void fetchDashboard();
     };
 
-    const intervalo = window.setInterval(atualizar, 30000);
+    const intervalo = window.setInterval(atualizar, 15000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -472,6 +490,19 @@ function App() {
           setNotificacoes((atual) => [...itens, ...atual].slice(0, 20));
           setNaoLidas((atual) => atual + itens.length);
           setToasts((atual) => [...itens, ...atual].slice(0, 4));
+          itens.slice(0, 4).forEach((item) => {
+            const timerAnterior = toastTimersRef.current.get(item.id);
+            if (timerAnterior !== undefined) {
+              window.clearTimeout(timerAnterior);
+            }
+            const timer = window.setTimeout(() => {
+              toastTimersRef.current.delete(item.id);
+              setToasts((atual) =>
+                atual.filter((toast) => toast.id !== item.id)
+              );
+            }, 3000);
+            toastTimersRef.current.set(item.id, timer);
+          });
           itens.slice(0, 3).forEach((item) => {
             avisarNavegador(item.titulo, item.detalhe);
           });
@@ -492,7 +523,7 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 20000);
+    const intervalo = window.setInterval(() => void checar(), 15000);
     const aoVisivel = () => void checar();
     document.addEventListener('visibilitychange', aoVisivel);
 
@@ -517,6 +548,16 @@ function App() {
     setStatusInicialRelatorios(null);
     if (key !== 'vendas') setVendaFocoId(null);
     setActiveView(key);
+    setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const handleNavigateVendaAba = (aba: VendaAba) => {
+    setFocoAtendimento(null);
+    setStatusInicialRelatorios(null);
+    setVendaFocoId(null);
+    setVendaAba(aba);
+    setActiveView('vendas');
     setMobileMenuOpen(false);
     window.scrollTo(0, 0);
   };
@@ -684,6 +725,8 @@ function App() {
             contadoresAlerta.reclamacoesAbertas +
             contadoresAlerta.perguntasPendentes,
         }}
+        vendaAba={vendaAba}
+        onNavigateVendaAba={handleNavigateVendaAba}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -921,10 +964,9 @@ function App() {
             {activeView === 'vendas' && (
               <VendasPage
                 vendaInicialId={vendaFocoId}
-                onOpenAtendimento={() => {
-                  setFocoAtendimento('reclamacoes');
-                  setActiveView('atendimento');
-                }}
+                aba={vendaAba}
+                onAbaChange={setVendaAba}
+                onOpenMarketplaces={() => handleNavigate('marketplaces')}
               />
             )}
 
@@ -1026,7 +1068,7 @@ function App() {
               key={toast.id}
               type="button"
               onClick={() => {
-                setToasts((atual) => atual.filter((item) => item.id !== toast.id));
+                removerToast(toast.id);
                 setNaoLidas(0);
                 if (toast.destino === 'vendas') {
                   setVendaFocoId(toast.vendaId || null);
@@ -1037,6 +1079,10 @@ function App() {
                 }
               }}
               className="pointer-events-auto rounded-2xl border border-line bg-sidebar p-4 text-left shadow-2xl"
+              style={{
+                backgroundColor: 'rgba(7, 15, 28, 0.98)',
+                backgroundImage: 'none',
+              }}
             >
               <p className="text-sm font-bold text-ink">{toast.titulo}</p>
               <p className="mt-1 text-xs text-muted">{toast.detalhe}</p>

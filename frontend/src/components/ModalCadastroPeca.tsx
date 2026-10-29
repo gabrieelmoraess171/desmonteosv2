@@ -1,5 +1,7 @@
 import {
   useCallback,
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -28,6 +30,7 @@ import ProductPhotoPicker, {
   type FotoSelecionada,
 } from './ProductPhotoPicker';
 import PecaFotosEditor from './PecaFotosEditor';
+import FichaMercadoLivre, { CompatibilidadeMl, type ConfigAnuncioMl } from './FichaMercadoLivre';
 import {
   CATEGORIAS_PECA,
   camposDaCategoria,
@@ -46,6 +49,8 @@ export interface PecaCompleta {
   descricao?: string | null;
   categoria?: string | null;
   categoria_ml?: string | null;
+  ml_category_id?: string | null;
+  ml_config?: string | ConfigAnuncioMl | null;
   marca?: string | null;
   modelo?: string | null;
   ano?: string | null;
@@ -114,6 +119,8 @@ interface PecaFormData {
   descricao: string;
   categoria: string;
   categoria_ml: string;
+  ml_category_id: string;
+  ml_config: ConfigAnuncioMl;
   marca: string;
   modelo: string;
   ano: string;
@@ -143,6 +150,8 @@ const createInitialFormData = (): PecaFormData => ({
   descricao: '',
   categoria: '',
   categoria_ml: '',
+  ml_category_id: '',
+  ml_config: {},
   marca: '',
   modelo: '',
   ano: '',
@@ -187,6 +196,8 @@ function dadosDaPeca(peca: PecaCompleta): PecaFormData {
     descricao: peca.descricao || '',
     categoria: peca.categoria || '',
     categoria_ml: peca.categoria_ml || '',
+    ml_category_id: peca.ml_category_id || '',
+    ml_config: (() => { try { return typeof peca.ml_config === 'string' ? JSON.parse(peca.ml_config) : peca.ml_config || {}; } catch { return {}; } })(),
     marca: peca.marca || '',
     modelo: peca.modelo || '',
     ano: peca.ano || '',
@@ -243,6 +254,9 @@ function criarIdFoto(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const EtapaContext = createContext('01');
+const ETAPAS = ['Identificação e fotos', 'Aplicação da peça', 'Ficha Mercado Livre', 'Preço e estoque', 'Descrição'];
+
 function Secao({
   numero,
   titulo,
@@ -257,7 +271,7 @@ function Secao({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
+    <section data-etapa={numero} hidden={useContext(EtapaContext) !== numero} className="rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:p-4">
       <div className="mb-5 flex items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accentSoft text-accent">
           {icone}
@@ -282,6 +296,7 @@ export default function ModalCadastroPeca({
   peca = null,
 }: ModalCadastroPecaProps) {
   const editando = Boolean(peca);
+  const [etapa, setEtapa] = useState('01');
   const [formData, setFormData] = useState<PecaFormData>(createInitialFormData);
   const [fotos, setFotos] = useState<FotoSelecionada[]>([]);
   const [loading, setLoading] = useState(false);
@@ -478,6 +493,7 @@ export default function ModalCadastroPeca({
     if (!isOpen) return;
 
     const dados = peca ? dadosDaPeca(peca) : createInitialFormData();
+    setEtapa('01');
     setFormData(dados);
     limparFotos();
     setError('');
@@ -554,6 +570,7 @@ export default function ModalCadastroPeca({
         ...atual,
         categoria: value,
         categoria_ml: categoriaMlDe(value),
+        ml_category_id: '',
         atributos: {},
       }));
       return;
@@ -650,6 +667,9 @@ export default function ModalCadastroPeca({
     const mensagem = validar();
     if (mensagem) {
       setError(mensagem);
+      if (!formData.ml_titulo.trim() || !formData.sku.trim() || !formData.categoria) setEtapa('01');
+      else if (!Number.isFinite(parsePreco(formData.preco)) || Number(formData.quantidade) < 0) setEtapa('04');
+      else if (!formData.descricao.trim()) setEtapa('05');
       return;
     }
 
@@ -668,6 +688,8 @@ export default function ModalCadastroPeca({
       payload.append('descricao', formData.descricao.trim());
       payload.append('categoria', formData.categoria);
       payload.append('categoria_ml', formData.categoria_ml.trim());
+      payload.append('ml_category_id', formData.ml_category_id);
+      payload.append('ml_config', JSON.stringify(formData.ml_config));
       payload.append('marca', formData.marca.trim());
       payload.append('modelo', formData.modelo.trim());
       payload.append('ano', formData.ano.trim());
@@ -736,9 +758,9 @@ export default function ModalCadastroPeca({
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-cadastro-peca-title"
-        className="modal-panel glass-panel flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border-white/20 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl"
+        className="peca-cadastro-compacto modal-panel glass-panel flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl border-white/20 sm:h-[calc(100dvh-2rem)] sm:max-h-[820px]"
       >
-        <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-4 border-b border-white/10 bg-[#0b1628]/95 px-5 py-5 backdrop-blur-xl sm:px-7">
+        <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-white/10 bg-[#0b1628]/95 px-4 py-3 backdrop-blur-xl">
           <div className="min-w-0">
             <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
               <Sparkles className="h-3 w-3" />
@@ -746,11 +768,11 @@ export default function ModalCadastroPeca({
             </span>
             <h2
               id="modal-cadastro-peca-title"
-              className="mt-3 text-2xl font-bold tracking-[-0.03em] text-ink"
+              className="mt-1 text-lg font-bold tracking-[-0.03em] text-ink"
             >
               {editando ? 'Editar peça e anúncio' : 'Cadastrar nova peça'}
             </h2>
-            <p className="mt-1 text-sm text-muted">
+            <p className="mt-1 text-xs text-muted">
               Cada peça tem o seu próprio anúncio. Complete a ficha para
               publicar com mais força no Mercado Livre.
             </p>
@@ -766,10 +788,17 @@ export default function ModalCadastroPeca({
           </button>
         </div>
 
+        <nav aria-label="Etapas do cadastro" className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/10 px-3 py-2">
+          {ETAPAS.map((nome, indice) => {
+            const chave = String(indice + 1).padStart(2, '0');
+            return <button key={chave} type="button" onClick={() => setEtapa(chave)} aria-current={etapa === chave ? 'step' : undefined} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${etapa === chave ? 'bg-accentSoft text-accent' : 'text-muted hover:bg-white/5'}`}>{indice + 1}. {nome}</button>;
+          })}
+        </nav>
+        <EtapaContext.Provider value={etapa}>
         <form
           id="peca-cadastro-form"
           onSubmit={handleSubmit}
-          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
           noValidate
         >
           {error && (
@@ -788,7 +817,7 @@ export default function ModalCadastroPeca({
             descricao="Comece pelo título do anúncio e envie as fotos. A IA lê a etiqueta, a peça e as medidas para preencher a ficha automaticamente."
             icone={<Camera className="h-4 w-4" />}
           >
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="cadastro-titulo grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
                 <div className="mb-1.5 flex items-center justify-between gap-3">
                   <label htmlFor="peca-titulo-ml" className="text-sm font-medium">
@@ -825,7 +854,7 @@ export default function ModalCadastroPeca({
 
             </div>
 
-            <div className="mt-5 rounded-2xl border border-accent/25 bg-accentSoft/40 p-4">
+            <div className="cadastro-ia mt-5 rounded-2xl border border-accent/25 bg-accentSoft/40 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accentSoft text-accent">
@@ -836,10 +865,7 @@ export default function ModalCadastroPeca({
                       Fotos do anúncio e leitura com IA
                     </p>
                     <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted">
-                      A primeira foto deve ser a etiqueta com o SKU. Depois vêm
-                      produto, medidas e peso. A IA lê as fotos e preenche
-                      título, categoria, aplicação, ficha técnica, descrição e
-                      logística. Confira tudo antes de salvar.
+                      Envie etiqueta com SKU, produto, medidas e peso. A IA sugere os dados; confira antes de salvar.
                     </p>
                   </div>
                 </div>
@@ -882,6 +908,7 @@ export default function ModalCadastroPeca({
               )}
             </div>
 
+            <div className="cadastro-fotos">
             {editando && peca ? (
               <PecaFotosEditor
                 pecaId={peca.id}
@@ -899,7 +926,8 @@ export default function ModalCadastroPeca({
               />
             )}
 
-            <div className="mt-4">
+            </div>
+            <div className="cadastro-video mt-4">
               <label htmlFor="peca-video" className="mb-1.5 block text-sm font-medium">
                 Vídeo do anúncio (opcional)
               </label>
@@ -917,7 +945,7 @@ export default function ModalCadastroPeca({
               </p>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="cadastro-dados mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <div className="mb-1.5 flex items-center justify-between gap-2">
                   <label htmlFor="peca-categoria" className="text-sm font-medium">
@@ -991,6 +1019,7 @@ export default function ModalCadastroPeca({
                   className="w-full rounded-xl border p-3 text-xs"
                   placeholder="Preenchida ao escolher a categoria"
                 />
+                <button type="button" onClick={() => setEtapa('03')} className="mt-1 text-[11px] text-accent hover:underline">Selecionar categoria oficial e características →</button>
               </div>
 
               <div>
@@ -1151,6 +1180,13 @@ export default function ModalCadastroPeca({
             }
             icone={<FileText className="h-4 w-4" />}
           >
+            <FichaMercadoLivre categoryId={formData.ml_category_id} titulo={formData.ml_titulo}
+              atributos={formData.atributos} config={formData.ml_config}
+              onCategoria={(id, nome) => setFormData((atual) => ({ ...atual, ml_category_id: id, categoria_ml: nome, atributos: {}, ml_config: { ...atual.ml_config, sale_terms: {} } }))}
+              onAtributos={(atributos) => setFormData((atual) => ({ ...atual, atributos }))}
+              onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))} />
+            <CompatibilidadeMl categoryId={formData.ml_category_id} config={formData.ml_config} onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))} />
+            {!formData.ml_category_id && <details className="mt-4 text-xs"><summary className="cursor-pointer text-muted">Ficha local por tipo de peça</summary>
             {!formData.categoria ? (
               <div className="rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-5 text-sm text-muted">
                 Selecione a categoria na etapa 01 para ver os campos técnicos.
@@ -1197,6 +1233,7 @@ export default function ModalCadastroPeca({
                 ))}
               </div>
             )}
+            </details>}
           </Secao>
 
           <Secao
@@ -1346,7 +1383,7 @@ export default function ModalCadastroPeca({
               <span>
                 <span className="block text-sm font-medium">Publicar no Mercado Livre</span>
                 <span className="block text-xs text-muted">
-                  O anúncio entra no estoque ativo e no painel de revisão.
+                  Anúncios novos são publicados no Mercado Livre após aprovação.
                 </span>
               </span>
             </label>
@@ -1376,13 +1413,16 @@ export default function ModalCadastroPeca({
           </Secao>
 
         </form>
+        </EtapaContext.Provider>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-[#07111f]/55 px-5 py-4 backdrop-blur-xl sm:px-7">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#07111f]/55 px-4 py-2.5 backdrop-blur-xl">
           <p className="hidden text-xs text-muted sm:block">
             <Check className="mr-1 inline h-3.5 w-3.5 text-success" />
             Salvo no estoque local, pronto para revisão e publicação
           </p>
           <div className="flex w-full gap-3 sm:w-auto">
+            {etapa !== '01' && <button type="button" onClick={() => setEtapa(String(Number(etapa) - 1).padStart(2, '0'))} className="rounded-lg border border-line px-3 py-2 text-xs">Anterior</button>}
+            {etapa !== '05' && <button type="button" onClick={() => setEtapa(String(Number(etapa) + 1).padStart(2, '0'))} className="rounded-lg border border-accent/30 px-3 py-2 text-xs text-accent">Próxima etapa</button>}
             <button
               type="button"
               onClick={handleClose}

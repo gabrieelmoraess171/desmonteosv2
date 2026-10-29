@@ -115,6 +115,7 @@ const RECURSOS = [
 const LABEL_RECURSO: Record<string, string> = {
   pecas: 'Anúncios',
   vendas: 'Pedidos',
+  envios: 'Envios',
   perguntas: 'Perguntas',
   reclamacoes: 'Reclamações',
   reputacao: 'Reputação',
@@ -477,7 +478,7 @@ export default function MarketplacesPage({
   }
 
   const webhookUrl =
-    status.webhookUrl || 'http://localhost:3001/api/mercadolivre/webhook';
+    status.webhookUrl || 'https://desmonteos-backend.onrender.com/api/mercadolivre/webhook';
   const conectado = status.conectado;
   const configurado = status.configurado;
   const credenciaisEnv = status.origemConfiguracao === 'env';
@@ -927,9 +928,9 @@ export default function MarketplacesPage({
             <p className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               O Mercado Livre exige HTTPS e recusa Redirect URI em localhost. Para
-              testar localmente, rode `cloudflared tunnel --url
-              http://localhost:3001` (ou `ngrok http 3001`), cadastre a URL
-              pública gerada no aplicativo e use a mesma em Configurações →
+              conectar em produção, cadastre a URL do backend público
+              https://desmonteos-backend.onrender.com com o caminho do callback
+              no aplicativo e use a mesma em Configurações →
               Redirect URI.
             </p>
           </div>

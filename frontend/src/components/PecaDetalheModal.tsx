@@ -55,6 +55,7 @@ interface PecaDetalheModalProps {
   pecaId: number | null;
   onClose: () => void;
   onEdit?: (peca: PecaDetalhe) => void;
+  onChange?: () => void;
 }
 
 function formatarMoeda(valor: number): string {
@@ -87,6 +88,7 @@ export default function PecaDetalheModal({
   pecaId,
   onClose,
   onEdit,
+  onChange,
 }: PecaDetalheModalProps) {
   const [peca, setPeca] = useState<PecaDetalhe | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,6 +96,8 @@ export default function PecaDetalheModal({
   const [imagemAtiva, setImagemAtiva] = useState(0);
   const [imagensAnuncio, setImagensAnuncio] = useState<string[]>([]);
   const [avisoImagens, setAvisoImagens] = useState('');
+  const [alterandoStatus, setAlterandoStatus] = useState(false);
+  const [erroStatus, setErroStatus] = useState('');
 
   useEffect(() => {
     if (!pecaId) {
@@ -108,6 +112,7 @@ export default function PecaDetalheModal({
     setImagemAtiva(0);
     setImagensAnuncio([]);
     setAvisoImagens('');
+    setErroStatus('');
 
     axios
       .get<PecaDetalhe>(`/api/pecas/${pecaId}`, { timeout: 12000 })
@@ -220,6 +225,36 @@ export default function PecaDetalheModal({
     );
   };
 
+  const alternarStatusAnuncio = async () => {
+    if (!peca?.ml_item_id || alterandoStatus) return;
+
+    const novoStatus = peca.ml_ativo ? 0 : 1;
+    setAlterandoStatus(true);
+    setErroStatus('');
+
+    try {
+      await axios.put(`/api/pecas/${peca.id}`, { ml_ativo: novoStatus });
+      setPeca((atual) =>
+        atual
+          ? {
+              ...atual,
+              ml_ativo: novoStatus,
+              ml_status: novoStatus ? 'active' : 'paused',
+            }
+          : atual
+      );
+      onChange?.();
+    } catch (error: unknown) {
+      setErroStatus(
+        axios.isAxiosError<{ error?: string }>(error)
+          ? error.response?.data?.error || 'Não foi possível alterar o anúncio.'
+          : 'Não foi possível alterar o anúncio.'
+      );
+    } finally {
+      setAlterandoStatus(false);
+    }
+  };
+
   const atributos = useMemo(() => {
     if (!peca) return [];
     const valores = lerAtributos(peca.atributos);
@@ -255,9 +290,9 @@ export default function PecaDetalheModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="peca-detalhe-titulo"
-        className="modal-panel glass-panel flex max-h-[96vh] w-full max-w-7xl flex-col overflow-hidden rounded-t-3xl border-white/20 sm:max-h-[94vh] sm:rounded-3xl"
+        className="modal-panel glass-panel flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border-white/20 sm:max-h-[92vh] sm:rounded-3xl"
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-7">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 px-4 py-3.5 sm:px-6">
           <div className="min-w-0">
             <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
               <Package className="h-3 w-3" />
@@ -265,7 +300,7 @@ export default function PecaDetalheModal({
             </span>
             <h2
               id="peca-detalhe-titulo"
-              className="mt-3 truncate text-2xl font-bold tracking-[-0.03em] text-ink"
+              className="mt-2 truncate text-xl font-bold tracking-[-0.03em] text-ink"
             >
               {peca?.nome || 'Carregando peça...'}
             </h2>
@@ -304,7 +339,7 @@ export default function PecaDetalheModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-7">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           {loading ? (
             <div className="flex min-h-[320px] items-center justify-center gap-3 text-sm text-muted">
               <Loader2 className="h-5 w-5 animate-spin text-accent" />
@@ -315,17 +350,17 @@ export default function PecaDetalheModal({
               {erro}
             </div>
           ) : peca ? (
-            <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-              <div className="space-y-4">
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-secondary">
+            <div className="grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
+              <div className="space-y-3">
+                <div className="relative flex h-[min(38vh,28rem)] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-secondary">
                   {imagens.length > 0 ? (
                     <img
                       src={imagens[imagemAtiva]?.caminho}
                       alt={peca.nome}
-                      className="aspect-square w-full object-contain"
+                      className="h-full w-full object-contain"
                     />
                   ) : (
-                    <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 text-muted">
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted">
                       <ImageIcon className="h-12 w-12" />
                       <p className="text-xs">Nenhuma foto cadastrada</p>
                     </div>
@@ -421,17 +456,32 @@ export default function PecaDetalheModal({
                   </div>
                 </div>
 
-                <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold ${statusMl.cor}`}>
-                  {peca.ml_ativo ? (
-                    <CheckCircle2 className="h-4 w-4" />
-                  ) : (
-                    <XCircle className="h-4 w-4" />
-                  )}
-                  {statusMl.label}
-                  <span className="ml-auto font-normal text-muted">
+                <div className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold ${statusMl.cor}`}>
+                  {peca.ml_ativo ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                  <span>{statusMl.label}</span>
+                  {peca.ml_item_id ? (
+                    <button
+                      type="button"
+                      onClick={() => void alternarStatusAnuncio()}
+                      disabled={alterandoStatus}
+                      className="ml-auto rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-black/35 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {alterandoStatus
+                        ? 'Atualizando...'
+                        : peca.ml_ativo
+                          ? 'Pausar anúncio'
+                          : 'Ativar anúncio'}
+                    </button>
+                  ) : null}
+                  <span className="w-full font-normal text-muted">
                     {imagens.length}/20 foto(s)
                   </span>
                 </div>
+                {erroStatus ? (
+                  <p className="rounded-xl border border-danger/20 bg-dangerSoft px-3 py-2 text-xs text-danger">
+                    {erroStatus}
+                  </p>
+                ) : null}
 
                 {qualidade && (
                   <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
@@ -492,8 +542,8 @@ export default function PecaDetalheModal({
                 </div>
               </div>
 
-              <div className="space-y-5">
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="space-y-3">
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <Tag className="h-4 w-4 text-accent" />
                     Anúncio
@@ -574,7 +624,7 @@ export default function PecaDetalheModal({
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <Car className="h-4 w-4 text-cyan" />
                     Aplicação e identificação
@@ -601,7 +651,7 @@ export default function PecaDetalheModal({
                 </section>
 
                 {atributos.length > 0 && (
-                  <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                       <Barcode className="h-4 w-4 text-warning" />
                       Ficha técnica
@@ -619,7 +669,7 @@ export default function PecaDetalheModal({
                   </section>
                 )}
 
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <Ruler className="h-4 w-4 text-success" />
                     Peso e dimensões
@@ -641,7 +691,7 @@ export default function PecaDetalheModal({
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <ShieldCheck className="h-4 w-4 text-success" />
                     Descrição do anúncio

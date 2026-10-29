@@ -70,7 +70,13 @@ export default function NotificacoesBell({
       </button>
 
       {aberto ? (
-        <div className="absolute right-0 z-40 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-line bg-sidebar shadow-2xl">
+        <div
+          className="absolute right-0 z-[100] mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-line bg-sidebar shadow-2xl"
+          style={{
+            backgroundColor: 'rgba(7, 15, 28, 0.98)',
+            backgroundImage: 'none',
+          }}
+        >
           <div className="border-b border-line px-4 py-3">
             <p className="text-sm font-bold text-ink">Notificações</p>
             <p className="text-[11px] text-muted">
