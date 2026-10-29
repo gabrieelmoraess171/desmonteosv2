@@ -1,6 +1,10 @@
 import express from 'express';
 import { getDb } from '../database.js';
-import { atualizarAnuncioPeca } from '../services/mercadoLivreService.js';
+import {
+  atualizarAnuncioPeca,
+  atualizarCompatibilidadesPeca,
+  publicarAnuncioPeca
+} from '../services/mercadoLivreService.js';
 
 const router = express.Router();
 
@@ -28,6 +32,8 @@ function normalizarDadosExtras(valor) {
     'carro',
     'categoria',
     'categoria_ml',
+    'ml_category_id',
+    'ml_config',
     'marca',
     'modelo',
     'ano',
@@ -50,11 +56,11 @@ function normalizarDadosExtras(valor) {
   for (const chave of permitidos) {
     if (valor[chave] === undefined) continue;
 
-    if (chave === 'atributos') {
+    if (chave === 'atributos' || chave === 'ml_config') {
       dados[chave] =
         valor[chave] && typeof valor[chave] === 'object'
           ? valor[chave]
-          : {};
+          : (() => { try { return JSON.parse(valor[chave] || '{}'); } catch { return {}; } })();
     } else if (
       ['peso_kg', 'comprimento_cm', 'largura_cm', 'altura_cm'].includes(chave)
     ) {
@@ -235,6 +241,50 @@ router.post('/:id/aprovar', async (req, res) => {
         .json({ error: 'Aprovação pendente não encontrada.' });
     }
 
+    let dadosExtras = null;
+
+    try {
+      dadosExtras =
+        aprovacao.dados_json && aprovacao.dados_json !== '{}'
+          ? JSON.parse(aprovacao.dados_json)
+          : null;
+    } catch {
+      const error = new Error(
+        'Os dados da aprovação estão inválidos. Reenvie o anúncio para aprovação.'
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let anuncioPublicado = null;
+
+    if (
+      !aprovacao.ml_item_id &&
+      Number(aprovacao.ml_ativo ?? aprovacao.ml_ativo_atual) === 1
+    ) {
+      const protocolo = String(
+        req.headers['x-forwarded-proto'] || req.protocol
+      )
+        .split(',')[0]
+        .trim();
+      const publicBaseUrl =
+        process.env.BACKEND_PUBLIC_URL ||
+        process.env.API_PUBLIC_URL ||
+        `${protocolo}://${req.get('host')}`;
+
+      anuncioPublicado = await publicarAnuncioPeca(aprovacao.peca_id, {
+        publicBaseUrl,
+        titulo: aprovacao.titulo || dadosExtras?.ml_titulo,
+        descricao: aprovacao.descricao,
+        preco: aprovacao.preco,
+        quantidade: aprovacao.quantidade,
+        ...dadosExtras
+      });
+    }
+
+    if (aprovacao.ml_item_id && dadosExtras?.ml_config) {
+      await atualizarCompatibilidadesPeca(aprovacao.peca_id, dadosExtras.ml_config);
+    }
     const dadosMl = {};
 
     if (
@@ -306,17 +356,6 @@ router.post('/:id/aprovar', async (req, res) => {
       }
     }
 
-    let dadosExtras = null;
-
-    try {
-      dadosExtras =
-        aprovacao.dados_json && aprovacao.dados_json !== '{}'
-          ? JSON.parse(aprovacao.dados_json)
-          : null;
-    } catch {
-      dadosExtras = null;
-    }
-
     if (dadosExtras && typeof dadosExtras === 'object') {
       const colunasExtras = {
         nome: 'nome',
@@ -324,6 +363,8 @@ router.post('/:id/aprovar', async (req, res) => {
         carro: 'carro',
         categoria: 'categoria',
         categoria_ml: 'categoria_ml',
+        ml_category_id: 'ml_category_id',
+        ml_config: 'ml_config',
         marca: 'marca',
         modelo: 'modelo',
         ano: 'ano',
@@ -347,8 +388,8 @@ router.post('/:id/aprovar', async (req, res) => {
 
         campos.push(`${coluna} = ?`);
         valores.push(
-          chave === 'atributos'
-            ? JSON.stringify(dadosExtras[chave] || {}).slice(0, 8000)
+          chave === 'atributos' || chave === 'ml_config'
+            ? JSON.stringify(dadosExtras[chave] || {})
             : dadosExtras[chave]
         );
       }
@@ -370,8 +411,11 @@ router.post('/:id/aprovar', async (req, res) => {
 
     res.json({
       ok: true,
-      mensagem: 'Alterações aprovadas e aplicadas ao anúncio.',
-      pecaId: aprovacao.peca_id
+      mensagem: anuncioPublicado
+        ? 'Anúncio criado no Mercado Livre após a aprovação.'
+        : 'Alterações aprovadas e aplicadas ao anúncio.',
+      pecaId: aprovacao.peca_id,
+      anuncio: anuncioPublicado
     });
   } catch (error) {
     res

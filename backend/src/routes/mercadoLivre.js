@@ -1,8 +1,10 @@
 import express from 'express';
 import { getDb } from '../database.js';
 import { exigirProprietario } from './proprietario.js';
+import { obterFichaCategoria } from '../services/mlCadastroService.js';
 import {
   MercadoLivreError,
+  mlFetch,
   atualizarAnuncioPeca,
   desconectarMl,
   gerarUrlAutorizacao,
@@ -21,6 +23,27 @@ import {
 } from '../services/mercadoLivreService.js';
 
 const router = express.Router();
+
+router.get('/cadastro/veiculos', async (req, res) => {
+  try {
+    const dados = await mlFetch('/catalog_domains/MLB-CARS_AND_VANS_FOR_COMPATIBILITIES');
+    res.json({ id: dados.id, atributos: dados.attributes });
+  } catch (error) { res.status(statusErro(error)).json({ error: mensagemErro(error) }); }
+});
+
+router.get('/cadastro/categorias', async (req, res) => {
+  try {
+    const busca = String(req.query.busca || '').trim().slice(0, 150);
+    res.json(await mlFetch(busca
+      ? `/sites/MLB/domain_discovery/search?q=${encodeURIComponent(busca)}&limit=8`
+      : '/sites/MLB/categories'));
+  } catch (error) { res.status(statusErro(error)).json({ error: mensagemErro(error) }); }
+});
+
+router.get('/cadastro/categorias/:id', async (req, res) => {
+  try { res.json(await obterFichaCategoria(req.params.id, mlFetch)); }
+  catch (error) { res.status(statusErro(error)).json({ error: mensagemErro(error) }); }
+});
 
 function statusErro(error) {
   return error instanceof MercadoLivreError
@@ -197,30 +220,30 @@ router.post('/sincronizar', async (req, res) => {
   }
 });
 
+router.get('/pecas/:id/imagens', async (req, res) => {
+  try {
+    const pecaId = Number(req.params.id);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) {
+      return res.status(400).json({ error: 'ID da peça inválido' });
+    }
+
+    const peca = await getDb().get(
+      'SELECT ml_item_id FROM pecas WHERE id = ?',
+      [pecaId]
+    );
+    if (!peca) return res.status(404).json({ error: 'Peça não encontrada' });
+    if (!peca.ml_item_id) return res.json({ imagens: [] });
+
+    res.json(await obterImagensAnuncioMl(peca.ml_item_id));
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: mensagemErro(error) });
+  }
+});
+
 router.get('/reputacao', async (req, res) => {
   try {
     const reputacao = await obterReputacaoMl({
       atualizar: req.query.atualizar === '1'
-    });
-
-    router.get('/pecas/:id/imagens', async (req, res) => {
-      try {
-        const pecaId = Number(req.params.id);
-        if (!Number.isInteger(pecaId) || pecaId <= 0) {
-          return res.status(400).json({ error: 'ID da peça inválido' });
-        }
-
-        const peca = await getDb().get(
-          'SELECT ml_item_id FROM pecas WHERE id = ?',
-          [pecaId]
-        );
-        if (!peca) return res.status(404).json({ error: 'Peça não encontrada' });
-        if (!peca.ml_item_id) return res.json({ imagens: [] });
-
-        res.json(await obterImagensAnuncioMl(peca.ml_item_id));
-      } catch (error) {
-        res.status(statusErro(error)).json({ error: mensagemErro(error) });
-      }
     });
 
     res.json({ reputacao });

@@ -28,6 +28,7 @@ coverage/
 
 # Uploads locais
 backend/uploads/
+backend/storage/
 
 # Sistema / editores
 .DS_Store

@@ -93,22 +93,15 @@ function texto(valor, limite = 500) {
 }
 
 function parseAtributos(valor) {
-  if (valor && typeof valor === 'object' && !Array.isArray(valor)) {
-    return JSON.stringify(valor).slice(0, 8000);
-  }
-
-  const textoAtributos = texto(valor, 8000);
-  if (!textoAtributos) return '{}';
-
+  if (!valor) return '{}';
   try {
-    const objeto = JSON.parse(textoAtributos);
-    return JSON.stringify(
-      objeto && typeof objeto === 'object' && !Array.isArray(objeto)
-        ? objeto
-        : {}
-    ).slice(0, 8000);
+    const objeto = typeof valor === 'string' ? JSON.parse(valor) : valor;
+    if (!objeto || typeof objeto !== 'object' || Array.isArray(objeto)) throw new Error();
+    const json = JSON.stringify(objeto);
+    if (json.length > 30000) throw new Error();
+    return json;
   } catch {
-    return '{}';
+    throw new Error('A ficha técnica deve conter atributos válidos e ter até 30 mil caracteres.');
   }
 }
 
@@ -134,6 +127,15 @@ function montarPayloadPeca(body = {}, atual = {}) {
     descricao,
     categoria,
     categoria_ml: categoriaMl,
+    ml_category_id: texto(body.ml_category_id ?? atual.ml_category_id, 80),
+    ml_config: (() => {
+      const bruto = body.ml_config ?? atual.ml_config ?? '{}';
+      const config = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Configuração do anúncio inválida.');
+      const json = JSON.stringify(config);
+      if (json.length > 30000) throw new Error('Configuração do anúncio excede o limite de tamanho.');
+      return json;
+    })(),
     marca: texto(body.marca ?? atual.marca, 120),
     modelo: texto(body.modelo ?? atual.modelo, 120),
     ano: texto(body.ano ?? atual.ano, 40),
@@ -365,8 +367,8 @@ app.post('/api/pecas', receberFotosNovaPeca, async (req, res) => {
           ano, condicao, numero_oem, garantia, peso_kg, comprimento_cm,
           largura_cm, altura_cm, atributos, ml_titulo, tipo_anuncio,
           gtin, localizacao, video_url, modo_compra,
-          quantidade, preco, ml_ativo
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          quantidade, preco, ml_ativo, ml_category_id, ml_config
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           payload.nome,
           payload.sku || null,
@@ -393,7 +395,9 @@ app.post('/api/pecas', receberFotosNovaPeca, async (req, res) => {
           payload.modo_compra,
           payload.quantidade,
           payload.preco,
-          payload.ml_ativo
+          payload.ml_ativo,
+          payload.ml_category_id || null,
+          payload.ml_config
         ]
       );
 
@@ -584,7 +588,7 @@ app.put('/api/pecas/:id', async (req, res) => {
            numero_oem = ?, garantia = ?, peso_kg = ?, comprimento_cm = ?,
            largura_cm = ?, altura_cm = ?, atributos = ?, ml_titulo = ?,
            tipo_anuncio = ?, gtin = ?, localizacao = ?, video_url = ?,
-           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?
+           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?, ml_category_id = ?, ml_config = ?
        WHERE id = ?`,
       [
         payload.nome,
@@ -613,6 +617,8 @@ app.put('/api/pecas/:id', async (req, res) => {
         payload.quantidade,
         payload.preco,
         payload.ml_ativo,
+        payload.ml_category_id || null,
+        payload.ml_config,
         atual.id
       ]
     );
@@ -649,12 +655,16 @@ app.delete('/api/pecas/:id', async (req, res) => {
       });
     }
 
-    const peca = await db.get('SELECT id FROM pecas WHERE id = ?', [
+    const peca = await db.get('SELECT id, ml_item_id FROM pecas WHERE id = ?', [
       req.params.id
     ]);
 
     if (!peca) {
       return res.status(404).json({ error: 'Peça não encontrada' });
+    }
+
+    if (peca.ml_item_id) {
+      await encerrarAnuncioPeca(peca.id);
     }
 
     await db.exec('BEGIN IMMEDIATE');
@@ -672,7 +682,7 @@ app.delete('/api/pecas/:id', async (req, res) => {
 
     res.json({ message: 'Peça excluída com sucesso!' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error?.statusCode || 500).json({ error: error.message });
   }
 });
 

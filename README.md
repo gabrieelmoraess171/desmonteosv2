@@ -2,6 +2,8 @@
 
 Painel interno para desmonte de veículos, gestão de estoque de peças usadas e operação no Mercado Livre.
 
+O projeto está em desenvolvimento, com frontend em React + TypeScript + Vite e backend em Node.js + Express + SQLite. As funcionalidades descritas abaixo estão implementadas no código; a operação com o Mercado Livre depende das credenciais, permissões do aplicativo e validação dos fluxos com uma conta conectada.
+
 ## Estrutura
 
 ```
@@ -11,9 +13,10 @@ DESMONTEOS2/
 │   │   ├── middleware/    # Autenticação opcional por API_TOKEN
 │   │   ├── processors/    # Processamento de lotes, ZIPs e agrupamentos
 │   │   ├── routes/        # API: lotes, vendas, atendimento, relatórios, ML e proprietário
-│   │   ├── services/      # Dashboard, vendas, relatórios, IA, ML e imagens de peças
+│   │   ├── services/      # Dashboard, vendas, envios, XML de NF-e, relatórios, IA, ML e imagens
 │   │   ├── utils/         # Categorias de peças e regras de classificação
 │   │   └── database.js    # Conexão, schema e migrações SQLite
+│   ├── storage/          # XMLs de NF-e e arquivos temporários de importação
 │   ├── .env.example
 │   ├── package.json
 │   └── server.js          # API Express + SQLite
@@ -28,6 +31,7 @@ DESMONTEOS2/
 │   │   ├── config/        # Categorias, atributos, chaves locais e helpers do ML
 │   │   ├── pages/         # NF-e, atendimento, relatórios, marketplaces, nova peça e configurações
 │   │   ├── services/      # Cliente da API de lotes (loteService)
+│   │   ├── types/         # Tipos da operação de vendas e envios
 │   │   ├── utils/         # Saudação, frases motivacionais e iniciais
 │   │   ├── App.tsx        # Dashboard, onboarding, navegação e logout
 │   │   └── main.tsx
@@ -55,6 +59,8 @@ npm run dev
 
 A API sobe em `http://localhost:3001`.
 
+Para configurar as integrações, copie [backend/.env.example](./backend/.env.example) para `backend/.env` e preencha as variáveis necessárias. O painel pode usar dados locais sem uma conta do Mercado Livre conectada.
+
 ### Frontend
 
 ```bash
@@ -64,6 +70,22 @@ npm run dev
 ```
 
 O painel sobe em `http://localhost:3000`. O Vite encaminha chamadas para `/api` e `/uploads` ao backend na porta `3001`.
+
+Para verificar os tipos e gerar o build do frontend:
+
+```bash
+cd frontend
+npm run build
+```
+
+O build verifica TypeScript e empacotamento. Os testes de regressão do backend cobrem classificação de despachos, pedidos a combinar e atualização dos envios, com banco temporário e API simulada:
+
+```bash
+cd backend
+npm test
+```
+
+Os fluxos com a API real precisam de validação funcional separada.
 
 ## Dados de demonstração
 
@@ -95,7 +117,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 - **Dashboard**: saudação personalizada, vendas do dia, perguntas, reclamações e anúncios a revisar. O bloco de desempenho alterna entre **Hoje**, **7**, **15** e **30 dias**. Também mostra estoque do Mercado Livre, ranking por categoria e sugestões de melhoria.
 - **Nova peça**: página de orientação com abertura manual do cadastro. O formulário não abre sozinho ao navegar.
 - **Estoque**: lista todos os anúncios cadastrados, com busca, filtros por status e categoria, edição da ficha completa e exclusão. Clicar em uma peça abre a **ficha completa** com anúncio, aplicação, ficha técnica, peso, medidas, descrição, fotos, preço e estoque. Cada peça é um anúncio individual.
-- **Vendas**: aba acima do Estoque com pedidos do Mercado Livre, título, SKU, ID, comprador (incluindo o apelido da conta quando o nome não está disponível), status, valores, detalhes e chat para consultar e responder ao comprador. Cada venda pode ficar fora da fila, disponível para hoje, agendada para uma data ou marcada como enviada ao financeiro.
+- **Vendas**: pedidos e envios do Mercado Livre, com abas separadas para envios de hoje, próximos dias, entregas a combinar, trânsito, finalizadas e canceladas. A conversa do pedido permite enviar mensagens ao comprador; vendas e envios sincronizam automaticamente a cada 5 segundos enquanto a tela está visível, sem sobrepor sincronizações em andamento. Pedidos sem modalidade de envio rastreável ficam em “A combinar com o comprador”. Pedidos com prazo futuro permanecem em “Próximos dias”, mesmo quando a nota ou etiqueta já está liberada; a tela indica quando é possível antecipar o envio. Envie ZIPs de NF-e em lote: o sistema cruza nome completo, CPF e endereço do comprador no XML com os dados fiscais das vendas. Etiquetas só podem ser emitidas quando disponíveis no Mercado Livre; após gerar o PDF, o sistema registra “Etiqueta emitida” e permite reimprimir.
 - **Atendimento**: perguntas sem resposta e reclamações abertas do Mercado Livre. Cada pergunta mostra a foto do anúncio, permite gerar uma **sugestão de resposta com IA** e responder. A ficha do anúncio abre as fotos do Mercado Livre em carrossel. Clicar em uma reclamação abre o **detalhe completo** no padrão visual do Mercado Livre, com comprador, CPF, endereço, telefone, produtos, valores e histórico do caso.
 - **NF-e**: mostra apenas vendas disponíveis ou agendadas para o dia, com uma mensagem por venda contendo peça, comprador, CPF, endereço e preço total. Permite enviar individualmente, enviar em lote (uma conversa a cada 3 segundos) e copiar as mensagens. Ao abrir o WhatsApp, a venda é marcada como enviada.
 - **Relatórios**: período **Hoje**, **7**, **15** ou **30 dias** com faturamento, vendas, ticket médio, itens, clientes, evolução diária, estoque, formas de pagamento e ranking de produtos. Os indicadores abrem detalhes próprios; previsões de liberação aparecem quando informadas pela API do Mercado Livre, sem estimar datas ausentes. Exporta CSV e gera impressão/PDF.
@@ -103,7 +125,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 - **Configurações**: nome de exibição e, com o acesso do proprietário desbloqueado por PIN, nome da empresa (`Mercadão de Peças` por padrão, exibido abaixo de `DESMONTE OS`) e WhatsApp do financeiro. Também permite criar, alterar e sair do acesso do proprietário.
 - **Sair**: disponível no rodapé do menu. Volta para a tela de boas-vindas, limpa o nome e a conclusão do onboarding, mantém empresa e WhatsApp e bloqueia o acesso do proprietário.
 - **Importar lote**: envia fotos/ZIPs, agrupa por SKU do nome do arquivo e abre o editor de grupos.
-- **Análise com IA**, **Editor de anúncios** e **Fila de aprovação** continuam como placeholders.
+- **Editor de anúncios** e **Fila de aprovação**: anúncios novos só são publicados depois de aprovados; anúncios existentes recebem as alterações aprovadas. A exclusão de uma peça encerra primeiro o anúncio vinculado no Mercado Livre.
 
 ## Cadastro de peças
 
@@ -117,6 +139,18 @@ O cadastro segue o padrão de ficha do Mercado Livre, em etapas:
 6. Fotos: até 20 por peça, com capa para o anúncio.
 
 O SKU é sugerido com a inicial do nome configurado em Configurações. Exemplo: para `Gabriel`, a sugestão é `SKU G001`. A categoria pode ser detectada automaticamente por palavras-chave do nome, descrição e aplicação.
+
+O formulário tem navegação por cinco etapas, campos compactos e identificação/fotos em duas colunas no desktop. A etapa **Ficha Mercado Livre** busca categorias oficiais e carrega as características, opções, atributos obrigatórios/condicionais, termos de venda e limites de fotos da API. Os campos avançados ficam disponíveis por uma opção de exibição.
+
+Também permite configurar nome da família do produto, garantia, disponibilidade de estoque, modalidade de envio, frete grátis, retirada, produto de catálogo e loja oficial. O ID oficial da categoria fica em `pecas.ml_category_id`; as configurações adicionais são persistidas em `pecas.ml_config` e os atributos em `pecas.atributos`.
+
+Na mesma etapa, é possível informar grupos de veículos compatíveis com marca, modelo, ano, versão, motor, observações e posições de instalação disponíveis para a categoria. Após aprovação, os grupos são adicionados como compatibilidades do vendedor. Compatibilidades gerenciadas pelo catálogo e sugestões de veículos continuam sujeitas às restrições do Mercado Livre e devem ser revisadas no gerenciador da plataforma.
+
+Na publicação, o backend consulta os requisitos, aplica `family_name` nas contas com a tag `user_product_seller`, envia condição, características, garantia e configurações de frete e valida o corpo em `/items/validate` antes de criar o anúncio. A descrição, o vídeo do YouTube e as compatibilidades também fazem parte do fluxo. A validação pode exigir dados adicionais conforme categoria, conta e produto; salvar uma ficha local não significa que o anúncio já foi publicado.
+
+Referências oficiais: [atributos](https://developers.mercadolivre.com.br/pt_br/api-docs-pt-br/atributos), [preço por variação e nome de família](https://developers.mercadolivre.com.br/pt_br/guia-para-produtos/preco-variacao) e [compatibilidades de autopeças](https://developers.mercadolivre.com.br/pt_br/compatibilidades-itens-e-produtos-de-autopecas).
+
+Para publicar anúncios com fotos locais em produção, configure `BACKEND_PUBLIC_URL` no backend com o endereço HTTPS público da API. O Mercado Livre precisa acessar as imagens nesse endereço.
 
 ## Configurações locais
 
@@ -170,7 +204,7 @@ As credenciais podem ser salvas de duas formas:
 ```env
 ML_CLIENT_ID=seu-client-id
 ML_CLIENT_SECRET=seu-client-secret
-ML_REDIRECT_URI=http://localhost:3001/api/mercadolivre/oauth/callback
+ML_REDIRECT_URI=https://seu-backend-publico/api/mercadolivre/oauth/callback
 ML_SITE_ID=MLB
 FRONTEND_URL=http://localhost:3000
 ```
@@ -185,6 +219,7 @@ Variáveis opcionais:
 | `ML_WEBHOOK_URL` | URL pública exibida em Marketplaces; padrão derivado da requisição |
 | `ML_API_BASE` | Troca a base da API; útil para mock local. Padrão `https://api.mercadolibre.com` |
 | `ML_AUTH_BASE` | Troca a URL de autorização. Padrão `https://auth.mercadolivre.com.br/authorization` |
+| `BACKEND_PUBLIC_URL` | Endereço HTTPS público da API para o Mercado Livre acessar as fotos na publicação de anúncios |
 
 ### 3. Conectar e sincronizar
 
@@ -201,7 +236,7 @@ Ao editar uma peça vinculada, o backend envia primeiro para o Mercado Livre as 
 
 ### 4. Webhook (opcional)
 
-O webhook habilita a atualização automática das vendas e reclamações e, com o sistema aberto, os alertas correspondentes no sino e na tela. Sem webhook, sincronize pedidos pela aba **Vendas** e vendas/reclamações pela tela **Marketplaces**.
+O webhook dispara sincronizações ao receber eventos e, com o sistema aberto, os alertas correspondentes no sino e na tela. Também existe sincronização periódica no backend com a conta conectada: vendas a cada 60 segundos, perguntas a cada 2 minutos e reclamações a cada 3 minutos. As perguntas têm uma consulta completa a cada 30 minutos. É possível sincronizar manualmente pelas telas **Vendas** e **Marketplaces**.
 
 Cadastre no aplicativo do Mercado Livre a URL:
 
@@ -213,16 +248,16 @@ Se `ML_WEBHOOK_SECRET` estiver definido, use `?secret=...` ou o header `x-ml-web
 
 ### Limitações da integração
 
-- Publicar novos anúncios pelo sistema ainda não está implementado; a sincronização cria/atualiza peças a partir de anúncios existentes.
+- Novos anúncios habilitados para o Mercado Livre são publicados pela **Fila de aprovação**, com fotos, categoria, atributos e descrição. A publicação depende de uma conta conectada, dados válidos e fotos acessíveis publicamente.
 - A listagem de anúncios usa paginação por `scroll` (`search_type=scan`) porque a API do Mercado Livre limita o `offset` a 1000; contas com mais de mil anúncios são sincronizadas por completo.
-- A edição de anúncio cobre preço, quantidade, título e status. Descrição, fotos, categoria e atributos ainda são editados apenas localmente.
+- A atualização de anúncios vinculados cobre preço, quantidade, título, status e descrição, inclusive pelo fluxo de aprovação. A atualização remota de fotos, categoria e atributos de anúncios existentes ainda não está implementada.
 - O endpoint de reclamações pode variar conforme o aplicativo e o país; a sincronização é tolerante a falhas e não bloqueia os demais recursos.
 - OAuth e webhook exigem URL pública HTTPS. Redirect URI com `localhost`/`127.0.0.1` é recusada pelo ML (403 do CloudFront); use um túnel (cloudflared/ngrok) e cadastre a URL pública no aplicativo.
 - A integração não tem login multiusuário: qualquer pessoa com acesso ao painel pode conectar/desconectar a conta. Proteja o painel e o backend na rede.
 
 ## Proprietário e PIN
 
-O nome da empresa e o WhatsApp financeiro são restritos ao proprietário:
+O nome da empresa, o WhatsApp financeiro e o salvamento das credenciais do Mercado Livre são restritos ao proprietário:
 
 1. Na primeira vez, o proprietário cria um PIN numérico de 4 a 8 dígitos em **Configurações**.
 2. O PIN é armazenado como hash `scrypt` com salt na tabela `configuracoes` (`owner_pin_hash`); nunca é salvo em texto puro nem enviado ao frontend.
@@ -256,6 +291,22 @@ R$ ...
 - O WhatsApp não confirma o envio automaticamente: é preciso tocar em **Enviar** em cada conversa. O navegador também precisa permitir pop-ups para o painel.
 
 O CPF e o endereço são extraídos do payload do Mercado Livre (formatos `identification.number`, `buyer.address` e variações) e persistidos em `vendas.cliente_cpf` e `vendas.cliente_endereco`.
+
+### XML de NF-e e etiquetas na tela Vendas
+
+- A importação recebe até 20 arquivos por requisição, nos formatos XML ou ZIP, com até 20 MB por arquivo. Cada ZIP deve conter apenas um XML de NF-e válido; o XML descompactado tem limite de 10 MB.
+- O sistema cruza nome completo, CPF e endereço do destinatário com os dados dos pedidos. Correspondências ambíguas ou arquivos sem correspondência são informados como falhas, sem associação automática ao pedido errado.
+- O XML associado é enviado ao Mercado Livre e armazenado em `backend/storage/nfe-xml/`, com download posterior pelo pedido. O sistema importa notas já emitidas; não emite a NF-e fiscal.
+- A geração de etiquetas aceita de 1 a 50 envios sincronizados por requisição e depende da disponibilidade informada pelo Mercado Livre. Após obter o PDF, registra a emissão e permite reimpressão.
+- **Avisar entrega** aparece apenas em vendas a combinar com o comprador. Após confirmar que o comprador recebeu a peça, envia a conclusão ao endpoint de feedback do Mercado Livre e move a venda para Finalizadas. A API também verifica a modalidade e bloqueia pedidos cancelados.
+- Ao terminar os envios de hoje, a tela passa para os próximos envios disponíveis, organizados pelo prazo da API. Isso não altera as datas nem adia pedidos ainda pendentes. `in_packing_list` indica lista de coleta e aguarda confirmação de despacho pelo ML; não é convertido automaticamente em enviado.
+- Envios com substatus `dropped_off`, `picked_up` ou `in_hub` aparecem em trânsito, mesmo quando o status principal ainda é `ready_to_ship`. Coleta confirmada não é sinalizada como atraso de despacho.
+
+### Chat do pedido e fotos recebidas
+
+O chat consulta novas mensagens a cada 5 segundos enquanto está visível. Mensagens somente com anexos são mantidas; fotos aparecem na conversa e podem ser abertas ou baixadas. O backend verifica se o anexo pertence ao pedido e acessa o arquivo com o token da integração, sem expor a credencial ao navegador.
+
+As respostas usam `tag=post_sale`, o limite de caracteres informado pela conversa e o destinatário correspondente ao fluxo (comprador ou agente, quando a conversa está no modelo intermediado). Conversas bloqueadas pelo ML continuam mostrando o histórico e informam o motivo do bloqueio; em reclamação/mediação, a resposta deve seguir pelo Atendimento. Referência: [mensageria pós-venda](https://developers.mercadolivre.com.br/mensagens-post-venda).
 
 ## Relatórios
 
@@ -298,6 +349,18 @@ Vendas canceladas e reembolsadas são excluídas. Datas `YYYY-MM-DD` são interp
 | POST | `/api/vendas` | Registra uma venda simples e baixa 1 unidade do estoque |
 | POST | `/api/vendas/nova` | Registra venda com cliente/pagamento e valida estoque |
 | GET | `/api/vendas/hoje-ml` | Vendas do Mercado Livre do dia para a aba NF-e |
+| GET | `/api/vendas/notificacoes` | Consulta notificações de vendas |
+| GET | `/api/vendas/envios` | Lista envios persistidos; `periodo` aceita de 1 a 365 dias, padrão 60 |
+| POST | `/api/vendas/envios/sincronizar` | Sincroniza envios do Mercado Livre |
+| POST | `/api/vendas/envios/etiquetas` | Gera um PDF de etiquetas para 1 a 50 envios sincronizados |
+| POST | `/api/vendas/envios/nfe-xml/lote` | Importa XMLs/ZIPs via multipart no campo `files`, associa aos pedidos e envia ao ML; falhas parciais retornam HTTP 207 |
+| GET | `/api/vendas/envios/:orderId/nfe-xml` | Baixa o XML armazenado para o pedido |
+| POST | `/api/vendas/envios/:orderId/avisar-entrega` | Informa a conclusão de uma entrega a combinar; exige `confirmada: true` |
+| GET | `/api/vendas/:id` | Detalhes da venda |
+| GET | `/api/vendas/:id/mensagens` | Consulta a conversa do pedido |
+| GET | `/api/vendas/:id/mensagens/:mensagemId/anexos/:anexoId` | Exibe anexo pertencente à conversa; `?download=1` solicita download |
+| POST | `/api/vendas/:id/mensagens` | Envia `mensagem` ao comprador |
+| POST | `/api/vendas/sincronizar` | Sincroniza pedidos do Mercado Livre |
 | POST | `/api/vendas/manual` | Cria ou atualiza um pedido com múltiplos itens |
 | POST | `/api/vendas/import` | Importa vários pedidos em lote (máx. 500 por requisição) |
 
@@ -316,13 +379,17 @@ Vendas canceladas e reembolsadas são excluídas. Datas `YYYY-MM-DD` são interp
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/mercadolivre/status` | Configuração, conta conectada, contagens, última sincronização e histórico |
-| POST | `/api/mercadolivre/config` | Salva Client ID, Client Secret, Redirect URI e Site |
+| GET | `/api/mercadolivre/cadastro/categorias?busca=roda` | Sugere categorias oficiais; sem busca, lista as categorias raiz |
+| GET | `/api/mercadolivre/cadastro/categorias/:id` | Categoria, atributos, termos de venda e posições de instalação, quando disponíveis |
+| GET | `/api/mercadolivre/cadastro/veiculos` | Atributos oficiais do domínio de veículos para compatibilidade |
+| POST | `/api/mercadolivre/config` | Salva Client ID, Client Secret, Redirect URI e Site; exige sessão do proprietário |
 | GET | `/api/mercadolivre/oauth/iniciar` | Devolve a URL de autorização; `?redirect=1` redireciona direto |
 | GET | `/api/mercadolivre/oauth/callback` | Recebe o código, valida o `state`, troca por tokens e volta ao frontend |
 | POST | `/api/mercadolivre/desconectar` | Remove a conta e o cache de reputação; mantém os dados importados |
 | POST | `/api/mercadolivre/sincronizar` | Sincroniza todos os recursos ou os informados em `recursos`/`recurso` |
 | GET | `/api/mercadolivre/reputacao` | Reputação real (cache); `?atualizar=1` força nova consulta |
-| POST | `/api/mercadolivre/pecas/:id/atualizar-anuncio` | Envia preço, quantidade, título e status de uma peça vinculada |
+| GET | `/api/mercadolivre/pecas/:id/imagens` | Consulta as imagens do anúncio vinculado |
+| POST | `/api/mercadolivre/pecas/:id/atualizar-anuncio` | Envia preço, quantidade, título e status de uma peça vinculada; a descrição é atualizada pelo fluxo de aprovação |
 | POST | `/api/mercadolivre/webhook` | Recebe tópicos do ML e agenda sincronizações em segundo plano |
 
 ### Relatórios e proprietário
@@ -335,6 +402,15 @@ Vendas canceladas e reembolsadas são excluídas. Datas `YYYY-MM-DD` são interp
 | POST | `/api/proprietario/entrar` | Valida o PIN e devolve um token de sessão |
 | POST | `/api/proprietario/sair` | Encerra a sessão do token enviado |
 | POST | `/api/proprietario/alterar-pin` | Troca o PIN mediante PIN atual e sessão válida |
+
+### Aprovação de anúncios
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/aprovacoes` | Lista aprovações |
+| POST | `/api/aprovacoes` | Envia alterações para aprovação |
+| POST | `/api/aprovacoes/:id/aprovar` | Aprova alterações e publica o novo anúncio no ML quando habilitado, ou atualiza o anúncio vinculado |
+| POST | `/api/aprovacoes/:id/rejeitar` | Rejeita a solicitação |
 
 ### Lotes
 
@@ -356,7 +432,7 @@ Em desenvolvimento, sem `API_TOKEN`, as rotas de vendas ficam abertas. Se você 
 Authorization: Bearer <token>
 ```
 
-As demais rotas continuam sem autenticação de funcionário. O PIN do proprietário protege apenas a edição do nome da empresa e do WhatsApp financeiro; ele não substitui o `API_TOKEN` nem cria usuários.
+As demais rotas continuam sem autenticação de funcionário. A sessão do proprietário protege a edição do nome da empresa, do WhatsApp financeiro e o salvamento das credenciais do Mercado Livre; ela não substitui o `API_TOKEN` nem cria usuários. Conectar e desconectar a conta não exigem login de funcionário.
 
 ## Estado atual
 
@@ -368,6 +444,8 @@ As demais rotas continuam sem autenticação de funcionário. O PIN do propriet�
 - Anúncios reais vinculados ao estoque por `ml_item_id` ou SKU; pedidos guardam taxa real (`taxa_ml`) e a tela **Marketplaces** mostra status, contagens, histórico e webhook.
 - Reputação real do vendedor em cache (`ml_reputacao_cache`), com selo de origem “API Mercado Livre” e fallback para a estimativa local.
 - Edição de estoque de peças vinculadas envia preço, quantidade, título e status ao ML antes de atualizar o banco local.
+- Publicação de novos anúncios e atualização de descrição pelo fluxo de aprovação; exclusão de peça vinculada encerra primeiro o anúncio no Mercado Livre.
+- Gestão de envios com importação de XML/ZIP de NF-e, associação por dados fiscais, envio do XML ao ML e geração/reimpressão de etiquetas.
 - Relatórios com período, comparação, série diária, ranking, exportação CSV e impressão/PDF, usando a taxa real do ML quando disponível.
 - Vendas separa envios de hoje dos agendados para datas futuras; agendamentos vencidos não entram nos próximos envios e são identificados para reagendamento. O gráfico permite alternar entre bruto, taxa do ML, líquido e cancelamentos.
 - O Estoque identifica anúncios vinculados e abre o anúncio no Mercado Livre; os modais de cadastro e reclamação mantêm cabeçalho visível e rolagem própria.
@@ -380,7 +458,7 @@ As demais rotas continuam sem autenticação de funcionário. O PIN do propriet�
 - Navegação lateral recolhível com Dashboard, Nova peça, Importar lote, Estoque, Marketplaces, Atendimento, NF-e, Relatórios e Configurações ligados às telas existentes.
 - Interface “liquid glass” escura com animações de entrada, transições entre telas e respeito a `prefers-reduced-motion`.
 - API com persistência em SQLite (`backend/database.sqlite`), criado e migrado automaticamente na inicialização.
-- Sem autenticação de funcionários; o PIN do proprietário protege apenas nome da empresa e WhatsApp financeiro, e o token opcional (`API_TOKEN`) protege as rotas de criação/importação de pedidos.
+- Sem autenticação de funcionários; a sessão do proprietário protege nome da empresa, WhatsApp financeiro e salvamento das credenciais do ML. O token opcional (`API_TOKEN`) protege as rotas de criação/importação de pedidos manual e em lote.
 
 ## Limitações conhecidas
 
@@ -388,14 +466,16 @@ As demais rotas continuam sem autenticação de funcionário. O PIN do propriet�
 - O acesso do proprietário é local e single-owner, sem login multiusuário ou perfis de membros.
 - A integração real com o Gemini depende de uma `GEMINI_KEY` válida; sem FreeLLMAPI e sem Gemini, o sistema usa o fallback local.
 - A integração com o Mercado Livre exige um aplicativo próprio (Client ID/Secret) e conexão OAuth; sem isso, o painel continua funcionando com os dados locais e a reputação estimada.
-- Publicar novos anúncios, editar fotos/descrição no ML e gerenciar envios ainda não estão implementados.
+- A edição remota de fotos, categoria e atributos de anúncios existentes ainda não está implementada.
+- A operação de NF-e importa XMLs já emitidos; não há emissão fiscal própria. Etiquetas e envio de XML dependem da disponibilidade e das permissões da API do Mercado Livre.
+- Os testes automatizados atuais cobrem regras de envios; ainda é necessário ampliar a cobertura e validar os fluxos completos com uma conta conectada.
 - OAuth e webhook exigem HTTPS público; `localhost`/`127.0.0.1` na Redirect URI retorna 403 do CloudFront — use ngrok/cloudflared para o fluxo completo.
 - O painel não tem autenticação multiusuário; quem tiver acesso pode conectar/desconectar a conta do Mercado Livre.
 
 ## Próximos passos
 
-1. Publicar novos anúncios e editar fotos, descrição, categoria e atributos diretamente no Mercado Livre.
-2. Criar a tela de detalhe da venda com timeline de pagamento, envio e mediação.
+1. Validar os fluxos completos de publicação, aprovação, vendas, XML de NF-e e etiquetas com uma conta conectada e adicionar testes automatizados para as regras críticas.
+2. Expandir a edição de anúncios existentes no ML para fotos, categoria e atributos, e ampliar os detalhes da venda com timeline de pagamento, envio e mediação.
 3. Adicionar autenticação de funcionários, veículos e movimentações de estoque.
 4. Trocar a detecção de SKU por nome de arquivo por OCR/IA e vincular os produtos dos lotes ao estoque.
 5. Expandir a análise com IA e os relatórios com dados reais e exportações adicionais.

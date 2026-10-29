@@ -437,6 +437,41 @@ export async function initDatabase() {
       atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS ml_envios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shipment_id TEXT NOT NULL,
+      order_id TEXT,
+      pack_id TEXT,
+      venda_id INTEGER,
+      status TEXT DEFAULT '',
+      substatus TEXT DEFAULT '',
+      logistic_type TEXT DEFAULT '',
+      tracking_method TEXT DEFAULT '',
+      tracking_number TEXT,
+      pay_before TEXT,
+      estimated_delivery TEXT,
+      date_created TEXT,
+      date_ready_to_ship TEXT,
+      date_shipped TEXT,
+      date_delivered TEXT,
+      date_cancelled TEXT,
+      receiver_name TEXT DEFAULT '',
+      receiver_address TEXT DEFAULT '',
+      receiver_city TEXT DEFAULT '',
+      receiver_state TEXT DEFAULT '',
+      receiver_zip TEXT DEFAULT '',
+      titulo TEXT DEFAULT '',
+      sku TEXT DEFAULT '',
+      cliente TEXT DEFAULT '',
+      valor REAL DEFAULT 0,
+      metodo_pagamento TEXT DEFAULT '',
+      ml_item_id TEXT,
+      itens TEXT DEFAULT '[]',
+      sincronizado_em TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS aprovacoes_anuncio (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       peca_id INTEGER NOT NULL,
@@ -457,6 +492,17 @@ export async function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_aprovacoes_anuncio_status
       ON aprovacoes_anuncio(status);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ml_envios_shipment
+      ON ml_envios(shipment_id);
+    CREATE INDEX IF NOT EXISTS idx_ml_envios_order
+      ON ml_envios(order_id);
+    CREATE INDEX IF NOT EXISTS idx_ml_envios_status
+      ON ml_envios(status);
+    CREATE INDEX IF NOT EXISTS idx_ml_envios_pay_before
+      ON ml_envios(pay_before);
+    CREATE INDEX IF NOT EXISTS idx_ml_envios_created
+      ON ml_envios(date_created);
   `);
 
   const colunasAprovacoes = await db.all(
@@ -481,6 +527,26 @@ export async function initDatabase() {
     );
   }
 
+  const colunasEnvios = await db.all('PRAGMA table_info(ml_envios)');
+  const colunasEnviosAdicionais = [
+    ['nfe_xml_arquivo', 'TEXT'],
+    ['nfe_xml_nome', 'TEXT'],
+    ['nfe_xml_enviado_em', 'TEXT'],
+    ['etiqueta_emitida_em', 'TEXT'],
+    ['combinar_comprador', 'INTEGER DEFAULT 0'],
+    ['despacho_informado_em', 'TEXT']
+  ];
+
+  for (const [coluna, tipo] of colunasEnviosAdicionais) {
+    if (!colunasEnvios.some((item) => item.name === coluna)) {
+      await db.exec(`ALTER TABLE ml_envios ADD COLUMN ${coluna} ${tipo}`);
+    }
+  }
+
+  const colunasFicha = await db.all('PRAGMA table_info(pecas)');
+  if (!colunasFicha.some((coluna) => coluna.name === 'ml_config')) {
+    await db.exec("ALTER TABLE pecas ADD COLUMN ml_config TEXT DEFAULT '{}'");
+  }
   dbInstance = db;
 
   console.log('✅ Banco de dados inicializado');

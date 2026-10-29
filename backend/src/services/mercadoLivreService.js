@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { getDb } from '../database.js';
 import { upsertVenda } from './vendasService.js';
+import { upsertEnvio } from './enviosService.js';
+import { completarPublicacao, obterFichaCategoria, lerConfigMl, montarCompatibilidades } from './mlCadastroService.js';
 import { mapearReputacaoMl } from './mlReputacao.js';
 import {
   classificarCategoria,
@@ -15,6 +17,7 @@ const LIMITE_RECLAMACOES = 200;
 const TAMANHO_PAGINA_ANUNCIOS = 100;
 const CONCORRENCIA_DESCRICOES = 6;
 const sincronizacoesEmAndamento = new Set();
+const cacheBillingCliente = new Map();
 
 export class MercadoLivreError extends Error {
   constructor(mensagem, statusCode = 502, detalhes = null) {
@@ -269,7 +272,10 @@ async function requisitarToken(parametros) {
   const dados = await lerResposta(resposta);
 
   if (!resposta.ok) {
-    const detalhe =
+    const causas = Array.isArray(dados?.cause)
+      ? dados.cause.filter((causa) => causa.type === 'error').map((causa) => causa.message).filter(Boolean).join('; ')
+      : '';
+    const detalhe = causas ||
       dados?.message ||
       dados?.error_description ||
       dados?.error ||
@@ -449,7 +455,7 @@ async function requisicaoComToken(token, caminho, opcoes = {}) {
   return { resposta, dados };
 }
 
-async function mlFetch(caminho, opcoes = {}, estado = {}) {
+export async function mlFetch(caminho, opcoes = {}, estado = {}) {
   const token = await obterAccessToken();
   const { resposta, dados } = await requisicaoComToken(token, caminho, opcoes);
 
@@ -490,6 +496,63 @@ async function mlFetch(caminho, opcoes = {}, estado = {}) {
   }
 
   return dados;
+}
+
+async function mlFetchPdf(caminho, estado = {}) {
+  const token = await obterAccessToken();
+  const resposta = await fetch(`${apiBase()}${caminho}`, {
+    headers: {
+      Accept: 'application/pdf',
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (resposta.status === 401 && !estado.renovouToken) {
+    await renovarToken(await obterIntegracao());
+    return mlFetchPdf(caminho, { ...estado, renovouToken: true });
+  }
+
+  if (resposta.status === 429 && numero(estado.tentativas429) < 3) {
+    const tentativas = numero(estado.tentativas429);
+    const retryAfter = numero(resposta.headers.get('retry-after')) * 1000;
+    await new Promise((resolve) =>
+      setTimeout(resolve, retryAfter || 1000 * (tentativas + 1))
+    );
+    return mlFetchPdf(caminho, {
+      ...estado,
+      tentativas429: tentativas + 1
+    });
+  }
+
+  if (!resposta.ok) {
+    const dados = await lerResposta(resposta);
+    const detalhe =
+      dados?.message ||
+      dados?.error_description ||
+      dados?.error ||
+      `HTTP ${resposta.status}`;
+
+    throw new MercadoLivreError(
+      `Mercado Livre recusou a requisição: ${detalhe}`,
+      resposta.status === 401
+        ? 401
+        : resposta.status === 404
+          ? 404
+          : 502,
+      dados
+    );
+  }
+
+  const pdf = Buffer.from(await resposta.arrayBuffer());
+
+  if (pdf.length < 5 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    throw new MercadoLivreError(
+      'O Mercado Livre não retornou um PDF válido para as etiquetas.',
+      502
+    );
+  }
+
+  return pdf;
 }
 
 async function iniciarSincronizacao(recurso) {
@@ -1288,6 +1351,10 @@ function montarPayloadVenda(order) {
 
 async function obterBillingClienteMl(orderId) {
   if (!orderId) return null;
+  const cache = cacheBillingCliente.get(String(orderId));
+  if (cache && Date.now() - cache.criadoEm < MARGEM_EXPIRACAO_MS) {
+    return cache.dados;
+  }
 
   try {
     const dados = await mlFetch(
@@ -1318,13 +1385,58 @@ async function obterBillingClienteMl(orderId) {
     }
     if (cep) partes.push(`CEP: ${cep}`);
 
-    return {
+    const resultado = {
       cpf: texto(dados?.billing_info?.doc_number, 30),
       endereco: texto(partes.join(' - '), 300)
     };
+    cacheBillingCliente.set(String(orderId), {
+      dados: resultado,
+      criadoEm: Date.now()
+    });
+    return resultado;
   } catch {
     return null;
   }
+}
+
+function pedidoACombinarComComprador(order) {
+  const modo = texto(order?.shipping?.mode, 40).toLowerCase();
+  const status = texto(order?.shipping?.status, 40).toLowerCase();
+  const tags = Array.isArray(order?.tags) ? order.tags : [];
+  return (
+    ['custom', 'not_specified'].includes(modo) ||
+    status === 'to_be_agreed' ||
+    tags.includes('no_shipping') ||
+    (!texto(order?.shipping?.id, 100) &&
+      ['paid', 'partially_paid'].includes(texto(order?.status, 40).toLowerCase()))
+  );
+}
+
+function envioACombinarDoPedido(order) {
+  const shipping = order?.shipping || {};
+  const statusPedido = texto(order?.status, 60).toLowerCase();
+  const cancelado = ['cancelled', 'canceled'].includes(statusPedido);
+  return {
+    id: texto(shipping.id, 100) || `COMBINAR-${texto(order?.id, 80)}`,
+    order_id: texto(order?.id, 120),
+    pack_id: texto(order?.pack_id, 120),
+    status: cancelado
+      ? statusPedido
+      : order?.fulfilled === true
+        ? 'delivered'
+        : texto(shipping.status || order?.status, 60),
+    substatus: texto(shipping.substatus, 80),
+    logistic_type: texto(
+      shipping.logistic_type || shipping.mode || 'custom',
+      80
+    ),
+    tracking_method: texto(shipping.tracking_method, 120),
+    tracking_number: texto(shipping.tracking_number, 120),
+    receiver_address: shipping.receiver_address || {},
+    shipping_option: shipping.shipping_option || {},
+    status_history: shipping.status_history || {},
+    date_created: order?.date_created
+  };
 }
 
 async function vincularPecaVenda(order) {
@@ -1429,6 +1541,13 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
           }
 
           await vincularPecaVenda(order);
+          if (pedidoACombinarComComprador(order)) {
+            await upsertEnvio({
+              shipment: envioACombinarDoPedido(order),
+              order,
+              combinarComprador: true
+            });
+          }
         } catch (error) {
           ignorados += 1;
           console.error(
@@ -1457,6 +1576,182 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
       criados,
       atualizados,
       ignorados
+    };
+  });
+}
+
+export async function sincronizarEnvios({
+  dias = 60,
+  limite = 200,
+  forcar = false
+} = {}) {
+  return comSincronizacao('envios', async () => {
+    const integracao = await obterIntegracaoObrigatoria();
+    const db = getDb();
+    const janelaDias = Math.min(
+      365,
+      Math.max(1, Math.trunc(numero(dias) || 60))
+    );
+    const desde = Date.now() - janelaDias * 86400000;
+    const limitePedidos = Math.min(
+      500,
+      Math.max(1, Math.trunc(numero(limite) || 200))
+    );
+    const existentes = new Map();
+
+    for (const linha of await db.all(
+      'SELECT shipment_id, status, sincronizado_em FROM ml_envios'
+    )) {
+      existentes.set(String(linha.shipment_id), linha);
+    }
+
+    const pendentes = [];
+    let offset = 0;
+    let analisados = 0;
+    let semEnvio = 0;
+    let antigos = 0;
+    let ignorados = 0;
+
+    while (offset < limitePedidos) {
+      const dados = await mlFetch(
+        `/orders/search?seller=${encodeURIComponent(
+          integracao.user_id
+        )}&sort=date_desc&limit=50&offset=${offset}`
+      );
+      const resultados = Array.isArray(dados?.results)
+        ? dados.results
+        : [];
+
+      for (const order of resultados) {
+        const dataPedido = new Date(
+          order?.date_created || order?.date_closed || 0
+        ).getTime();
+
+        if (Number.isFinite(dataPedido) && dataPedido < desde) {
+          antigos += 1;
+          continue;
+        }
+
+        const combinarComprador = pedidoACombinarComComprador(order);
+        const shipmentId =
+          texto(order?.shipping?.id, 100) ||
+          (combinarComprador
+            ? `COMBINAR-${texto(order?.id, 80)}`
+            : '');
+
+        if (!shipmentId) {
+          semEnvio += 1;
+          continue;
+        }
+
+        analisados += 1;
+
+        const existente = existentes.get(shipmentId);
+        const statusAtual = String(existente?.status || '').toLowerCase();
+        const finalizado = [
+          'delivered',
+          'cancelled',
+          'canceled',
+          'not_delivered',
+          'returned'
+        ].includes(statusAtual);
+        const idade = existente?.sincronizado_em
+          ? Date.now() - new Date(existente.sincronizado_em).getTime()
+          : Number.POSITIVE_INFINITY;
+        const vencido =
+          !existente ||
+          (finalizado
+            ? idade > 24 * 60 * 60 * 1000
+            : idade >= 5000);
+
+        if (!forcar && !vencido) {
+          ignorados += 1;
+          continue;
+        }
+
+        pendentes.push({ order, shipmentId, combinarComprador });
+      }
+
+      offset += resultados.length;
+
+      const totalApi = numero(dados?.paging?.total);
+
+      if (
+        resultados.length === 0 ||
+        resultados.length < 50 ||
+        (totalApi > 0 && offset >= totalApi) ||
+        offset >= limitePedidos
+      ) {
+        break;
+      }
+    }
+
+    let criados = 0;
+    let atualizados = 0;
+    let erros = 0;
+    const falhas = [];
+
+    await mapComLimite(pendentes, 4, async (pendente) => {
+      const { order, shipmentId, combinarComprador } = pendente;
+
+      try {
+        let shipment;
+        if (combinarComprador) {
+          const venda = await db.get(
+            'SELECT id FROM vendas WHERE order_id = ?',
+            [String(order.id)]
+          );
+          if (!venda) {
+            await upsertVenda(montarPayloadVenda(order), {
+              plataforma: 'Mercado Livre'
+            });
+            await vincularPecaVenda(order);
+          }
+          shipment = envioACombinarDoPedido(order);
+        } else {
+          shipment = await mlFetch(
+            `/shipments/${encodeURIComponent(shipmentId)}`
+          );
+        }
+        const resultado = await upsertEnvio({
+          shipment,
+          order,
+          combinarComprador
+        });
+
+        if (resultado.criado) {
+          criados += 1;
+        } else if (resultado.atualizado) {
+          atualizados += 1;
+        }
+      } catch (error) {
+        erros += 1;
+
+        if (falhas.length < 10) {
+          falhas.push({
+            order_id: order?.id || null,
+            shipment_id: shipmentId,
+            erro: error.message
+          });
+        }
+
+        console.error(
+          `Erro ao sincronizar envio ${shipmentId} do pedido ${order?.id}:`,
+          error.message
+        );
+      }
+    });
+
+    return {
+      itens: pendentes.length,
+      pedidos: analisados,
+      criados,
+      atualizados,
+      ignorados,
+      erros,
+      sem_envio: semEnvio,
+      antigos,
+      falhas
     };
   });
 }
@@ -2128,6 +2423,30 @@ export async function obterPedidoMl(orderId) {
   return mlFetch(`/orders/${encodeURIComponent(id)}`);
 }
 
+export async function enviarXmlNfeMl(packId, conteudo, nomeArquivo) {
+  const id = texto(packId, 100);
+
+  if (!id) {
+    throw new MercadoLivreError('Pacote do Mercado Livre inválido.', 400);
+  }
+
+  if (!conteudo) {
+    throw new MercadoLivreError('O XML da NF-e está vazio.', 400);
+  }
+
+  const formulario = new FormData();
+  formulario.append(
+    'fiscal_document',
+    new Blob([conteudo], { type: 'application/xml' }),
+    texto(nomeArquivo, 255) || 'nota-fiscal.xml'
+  );
+
+  return mlFetch(`/packs/${encodeURIComponent(id)}/fiscal_documents`, {
+    method: 'POST',
+    body: formulario
+  });
+}
+
 export async function obterImagensAnuncioMl(itemId) {
   const id = texto(itemId, 100);
   if (!id) throw new MercadoLivreError('Anúncio do Mercado Livre inválido.', 400);
@@ -2135,7 +2454,29 @@ export async function obterImagensAnuncioMl(itemId) {
   const anuncio = await mlFetch(`/items/${encodeURIComponent(id)}`);
   const urls = Array.isArray(anuncio?.pictures)
     ? anuncio.pictures
-        .map((imagem) => normalizarImagemMl(imagem?.secure_url || imagem?.url))
+        .map((imagem) => {
+          const variacoes = Array.isArray(imagem?.variations)
+            ? imagem.variations
+            : [];
+          const candidatos = [...variacoes, imagem]
+            .map((variacao) => {
+              const tamanho = String(variacao?.size || '').match(
+                /(\d+)\s*x\s*(\d+)/i
+              );
+              return {
+                url: normalizarImagemMl(
+                  variacao?.secure_url || variacao?.url
+                ),
+                pixels: tamanho
+                  ? Number(tamanho[1]) * Number(tamanho[2])
+                  : 0
+              };
+            })
+            .filter((variacao) => variacao.url)
+            .sort((a, b) => b.pixels - a.pixels);
+
+          return candidatos[0]?.url || '';
+        })
         .filter(Boolean)
     : [];
 
@@ -2148,6 +2489,58 @@ export async function obterEnvioMl(shipmentId) {
   if (!id) return null;
 
   return mlFetch(`/shipments/${encodeURIComponent(id)}`);
+}
+
+export async function avisarEntregaCombinada(orderId) {
+  const id = texto(orderId, 100);
+  if (!/^\d+$/.test(id)) throw new MercadoLivreError('Pedido inválido.', 400);
+  const order = await mlFetch(`/orders/${id}`);
+  if (!pedidoACombinarComComprador(order)) {
+    throw new MercadoLivreError('Avisar entrega está disponível apenas para vendas a combinar com o comprador.', 400);
+  }
+  if (['cancelled', 'canceled'].includes(order.status)) {
+    throw new MercadoLivreError('O pedido foi cancelado.', 409);
+  }
+  if (order.fulfilled !== true) {
+    await mlFetch(`/orders/${id}/feedback`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fulfilled: true, rating: 'positive' })
+    });
+  }
+  await upsertEnvio({
+    shipment: envioACombinarDoPedido({ ...order, fulfilled: true }),
+    order, combinarComprador: true
+  });
+  return { ok: true, mensagem: 'Entrega informada ao Mercado Livre.' };
+}
+
+export async function obterEtiquetasEnviosMl(shipmentIds) {
+  if (
+    !Array.isArray(shipmentIds) ||
+    shipmentIds.length === 0 ||
+    shipmentIds.length > 50
+  ) {
+    throw new MercadoLivreError(
+      'Selecione entre 1 e 50 envios para imprimir as etiquetas.',
+      400
+    );
+  }
+
+  const ids = shipmentIds.map((id) => texto(id, 100));
+
+  if (ids.some((id) => !/^\d+$/.test(id)) || new Set(ids).size !== ids.length) {
+    throw new MercadoLivreError(
+      'A lista de envios para impressão é inválida.',
+      400
+    );
+  }
+
+  const parametros = new URLSearchParams({
+    shipment_ids: ids.join(','),
+    response_type: 'pdf'
+  });
+
+  return mlFetchPdf(`/shipment_labels?${parametros.toString()}`);
 }
 
 export async function enviarMensagemReclamacao(mlClaimId, mensagem) {
@@ -2186,7 +2579,22 @@ function textoMensagemPack(item) {
   return texto(htmlParaTexto(bruto), 6000);
 }
 
-function mapearMensagemPack(item, sellerId, indice = 0) {
+function anexosMensagemPack(item) {
+  const lista = Array.isArray(item?.message_attachments)
+    ? item.message_attachments
+    : Array.isArray(item?.attachments) ? item.attachments : [];
+  return lista.map((anexo) => {
+    const id = texto(typeof anexo === 'string' ? anexo : anexo?.filename || anexo?.id, 250);
+    const mime = texto(anexo?.type || anexo?.mime_type, 100).toLowerCase();
+    return {
+      id, nome: texto(anexo?.original_filename || id, 250),
+      tipo: mime || (/\.(jpe?g)$/i.test(id) ? 'image/jpeg' : /\.png$/i.test(id) ? 'image/png' : /\.gif$/i.test(id) ? 'image/gif' : /\.webp$/i.test(id) ? 'image/webp' : /\.pdf$/i.test(id) ? 'application/pdf' : 'application/octet-stream'),
+      bloqueado: anexo?.potential_security_threat === true
+    };
+  }).filter((anexo) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,249}$/.test(anexo.id));
+}
+
+export function mapearMensagemPack(item, sellerId, indice = 0, vendaId = null) {
   const fromId = String(item?.from?.user_id ?? item?.from?.id ?? '');
   const papelApi = String(item?.from?.role || '').toLowerCase();
   const papel =
@@ -2195,7 +2603,7 @@ function mapearMensagemPack(item, sellerId, indice = 0) {
       : 'comprador';
 
   return {
-    id: item?.id || `msg-${indice}`,
+    id: item?.id || item?.message_id || `msg-${indice}`,
     papel,
     texto: textoMensagemPack(item),
     data: dataSql(
@@ -2205,7 +2613,43 @@ function mapearMensagemPack(item, sellerId, indice = 0) {
         item?.date_received ||
         null
     ),
-    status: texto(item?.status, 40)
+    status: texto(item?.status, 40),
+    anexos: anexosMensagemPack(item).map((anexo) => ({
+      ...anexo,
+      url: anexo.bloqueado ? null : `/api/vendas/${vendaId}/mensagens/${encodeURIComponent(item?.id || item?.message_id)}/anexos/${encodeURIComponent(anexo.id)}`
+    }))
+  };
+}
+
+const AGENTES_MENSAGERIA = { MLB: '3037675074', MLC: '3020819166', MCO: '3037204123', MLM: '3037204279', MLA: '3037674934', MLU: '3037204685' };
+
+function avisoConversa(dados) {
+  const estado = dados?.conversation_status;
+  if (estado?.status !== 'blocked') return '';
+  const motivos = {
+    blocked_by_claim: 'Esta conversa está bloqueada por uma reclamação. Responda pelo Atendimento da reclamação.',
+    blocked_by_mediation: 'Esta venda está em mediação. Responda pelo Atendimento da reclamação.',
+    blocked_by_cancelled_order: 'O Mercado Livre bloqueou o chat porque a venda foi cancelada.',
+    blocked_by_time: 'O Mercado Livre encerrou o prazo de resposta. O comprador precisa iniciar uma nova mensagem.',
+    blocked_by_buyer: 'O comprador bloqueou o recebimento de mensagens.',
+    blocked_by_message_pending_review: 'O Mercado Livre está revisando a conversa. Aguarde a liberação.'
+  };
+  return motivos[estado.substatus] || 'O Mercado Livre bloqueou o envio de mensagens nesta conversa.';
+}
+
+export function prepararMensagemVenda({ dados, packId, sellerId, buyerId, siteId, mensagem }) {
+  const aviso = avisoConversa(dados);
+  if (aviso) throw new MercadoLivreError(aviso, 409);
+  const conteudo = String(mensagem ?? '').replace(/\r\n?/g, '\n').trim();
+  const limite = Math.min(4000, Math.max(1, Number(dados?.seller_max_message_length) || 350));
+  if (!conteudo) throw new MercadoLivreError('Escreva uma mensagem antes de enviar.', 400);
+  if (conteudo.length > limite) throw new MercadoLivreError(`Esta conversa aceita até ${limite} caracteres por mensagem.`, 400);
+  const usaAgente = /\/conversations\//.test(dados?.conversation_status?.path || '');
+  const destino = usaAgente ? AGENTES_MENSAGERIA[siteId] : buyerId;
+  if (!destino) throw new MercadoLivreError('Não foi possível identificar o destinatário da conversa.', 400);
+  return {
+    caminho: `/messages/packs/${encodeURIComponent(packId)}/sellers/${encodeURIComponent(sellerId)}?tag=post_sale`,
+    corpo: { from: { user_id: String(sellerId) }, to: { user_id: String(destino) }, text: conteudo }
   };
 }
 
@@ -2299,11 +2743,13 @@ export async function obterMensagensVenda(vendaId) {
     return {
       mensagens: lista
         .map((item, indice) =>
-          mapearMensagemPack(item, integracao.user_id, indice)
+          mapearMensagemPack(item, integracao.user_id, indice, venda.id)
         )
-        .filter((item) => item.texto)
+        .filter((item) => item.texto || item.anexos.length)
         .sort((a, b) => String(a.data || '').localeCompare(String(b.data || ''))),
-      conversaDisponivel: true,
+      conversaDisponivel: dados?.conversation_status?.status !== 'blocked',
+      aviso: avisoConversa(dados),
+      limiteMensagem: Math.min(4000, Math.max(1, Number(dados?.seller_max_message_length) || 350)),
       packId,
       buyerId
     };
@@ -2331,7 +2777,7 @@ export async function obterMensagensVenda(vendaId) {
 }
 
 export async function enviarMensagemVenda(vendaId, mensagem) {
-  const conteudo = texto(mensagem, 4000);
+  const conteudo = String(mensagem ?? '').trim();
 
   if (!conteudo) {
     throw new MercadoLivreError('Escreva uma mensagem antes de enviar.', 400);
@@ -2366,22 +2812,60 @@ export async function enviarMensagemVenda(vendaId, mensagem) {
     );
   }
 
+  const dados = await buscarMensagensPack(packId, integracao.user_id).catch((error) => {
+    if (error.statusCode === 404) return {};
+    throw error;
+  });
+  const envio = prepararMensagemVenda({ dados, packId, sellerId: integracao.user_id, buyerId, siteId: integracao.site_id || 'MLB', mensagem: conteudo });
   await mlFetch(
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${encodeURIComponent(
-      integracao.user_id
-    )}`,
+    envio.caminho,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: { user_id: Number(integracao.user_id) || integracao.user_id },
-        to: { user_id: Number(buyerId) || buyerId },
-        text: conteudo
-      })
+      body: JSON.stringify(envio.corpo)
     }
   );
 
   return obterMensagensVenda(venda.id);
+}
+
+export async function obterAnexoMensagemVenda(vendaId, mensagemId, anexoId, renovou = false) {
+  if (!/^[a-zA-Z0-9_-]{1,150}$/.test(mensagemId) || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,249}$/.test(anexoId)) {
+    throw new MercadoLivreError('Anexo inválido.', 400);
+  }
+  const venda = await getDb().get('SELECT order_id, ml_pack_id FROM vendas WHERE id = ?', [vendaId]);
+  if (!venda) throw new MercadoLivreError('Venda não encontrada.', 404);
+  const integracao = await obterIntegracaoObrigatoria();
+  const dados = await mlFetch(`/messages/${encodeURIComponent(mensagemId)}?tag=post_sale`);
+  const mensagem = Array.isArray(dados?.messages) ? dados.messages.find((item) => String(item.id || item.message_id) === mensagemId) : dados;
+  const recursos = mensagem?.message_resources || [];
+  const packId = String(venda.ml_pack_id || venda.order_id);
+  const pertence = recursos.some((recurso) => recurso.name === 'packs' && String(recurso.id) === packId) &&
+    recursos.some((recurso) => recurso.name === 'sellers' && String(recurso.id) === String(integracao.user_id));
+  const legado = mensagem?.resource === 'orders' && String(mensagem.resource_id) === String(venda.order_id) &&
+    [mensagem?.from?.user_id, mensagem?.to?.user_id].some((id) => String(id) === String(integracao.user_id));
+  if (!pertence && !legado) throw new MercadoLivreError('O anexo não pertence à conversa desta venda.', 404);
+  const anexo = anexosMensagemPack(mensagem).find((item) => item.id === anexoId);
+  if (!anexo || anexo.bloqueado) throw new MercadoLivreError('Anexo indisponível para visualização.', 404);
+  const parametros = new URLSearchParams({ tag: 'post_sale', site_id: integracao.site_id || 'MLB' });
+  const resposta = await fetch(`${apiBase()}/messages/attachments/${encodeURIComponent(anexoId)}?${parametros}`, {
+    headers: { Authorization: `Bearer ${await obterAccessToken()}` }
+  });
+  if (resposta.status === 401 && !renovou) {
+    await renovarToken(await obterIntegracao());
+    return obterAnexoMensagemVenda(vendaId, mensagemId, anexoId, true);
+  }
+  if (!resposta.ok) throw new MercadoLivreError('Não foi possível baixar o anexo no Mercado Livre.', resposta.status === 404 ? 404 : 502);
+  const limite = 25 * 1024 * 1024;
+  if (Number(resposta.headers.get('content-length')) > limite) {
+    await resposta.body?.cancel();
+    throw new MercadoLivreError('O anexo excede o limite de 25 MB.', 502);
+  }
+  const buffer = Buffer.from(await resposta.arrayBuffer());
+  if (buffer.length > limite) throw new MercadoLivreError('O anexo excede o limite de 25 MB.', 502);
+  const mime = String(resposta.headers.get('content-type') || anexo.tipo).split(';')[0].trim().toLowerCase();
+  const tipo = /^(image\/(jpeg|png|gif|webp|heif|heic)|application\/pdf)$/.test(mime) ? mime : 'application/octet-stream';
+  return { buffer, tipo, nome: anexo.nome };
 }
 
 export async function obterMensagensReclamacao(mlClaimId) {
@@ -2508,6 +2992,364 @@ export async function sincronizarReputacao() {
       atualizados: reputacao ? 1 : 0,
       ignorados: reputacao ? 0 : 1
     };
+  });
+}
+
+function atributosParaPublicacao(peca) {
+  let atributosInformados = {};
+
+  try {
+    const parseado =
+      typeof peca.atributos === 'string'
+        ? JSON.parse(peca.atributos || '{}')
+        : peca.atributos;
+    if (parseado && typeof parseado === 'object' && !Array.isArray(parseado)) {
+      atributosInformados = parseado;
+    }
+  } catch {
+    throw new MercadoLivreError(
+      'Os atributos do anúncio estão inválidos. Corrija a ficha antes de aprovar.',
+      400
+    );
+  }
+
+  const atributos = new Map();
+
+  for (const [id, valor] of Object.entries(atributosInformados)) {
+    const chave = texto(id, 80).toUpperCase();
+    const nome = texto(
+      typeof valor === 'object' && valor !== null
+        ? valor.value_name || valor.value_id
+        : valor,
+      200
+    );
+
+    if (chave && nome) atributos.set(chave, { id: chave, value_name: nome });
+  }
+
+  const conhecidos = {
+    BRAND: peca.marca,
+    MODEL: peca.modelo,
+    VEHICLE_YEAR: peca.ano,
+    PART_NUMBER: peca.numero_oem,
+    GTIN: peca.gtin,
+    SELLER_SKU: peca.sku
+  };
+
+  for (const [id, valor] of Object.entries(conhecidos)) {
+    const nome = texto(valor, 200);
+    if (nome && !atributos.has(id)) atributos.set(id, { id, value_name: nome });
+  }
+
+  return [...atributos.values()];
+}
+
+function urlImagemPublica(caminho, origem) {
+  let url;
+
+  try {
+    url = new URL(caminho, origem);
+  } catch {
+    throw new MercadoLivreError(
+      'A URL pública das fotos do anúncio é inválida.',
+      400
+    );
+  }
+
+  if (url.protocol !== 'https:') {
+    throw new MercadoLivreError(
+      'Configure BACKEND_PUBLIC_URL com HTTPS para publicar fotos no Mercado Livre.',
+      400
+    );
+  }
+
+  return url.toString();
+}
+
+export async function publicarAnuncioPeca(
+  pecaId,
+  { publicBaseUrl, titulo, descricao, preco, quantidade, ...dadosExtras } = {}
+) {
+  const db = getDb();
+  const id = Number(pecaId);
+  const pecaAtual = Number.isInteger(id)
+    ? await db.get('SELECT * FROM pecas WHERE id = ?', [id])
+    : null;
+
+  if (!pecaAtual) {
+    throw new MercadoLivreError('Peça não encontrada.', 404);
+  }
+
+  if (pecaAtual.ml_item_id) {
+    throw new MercadoLivreError(
+      'A peça já está vinculada a um anúncio do Mercado Livre.',
+      409
+    );
+  }
+
+  const peca = {
+    ...pecaAtual,
+    ...dadosExtras,
+    ml_titulo: titulo ?? pecaAtual.ml_titulo,
+    descricao: descricao ?? pecaAtual.descricao,
+    preco: preco ?? pecaAtual.preco,
+    quantidade: quantidade ?? pecaAtual.quantidade
+  };
+  const nomeAnuncio = texto(peca.ml_titulo || peca.nome, 60);
+  const precoAnuncio = numero(peca.preco);
+  const quantidadeAnuncio = Math.trunc(numero(peca.quantidade));
+  const descricaoAnuncio = texto(peca.descricao, 5000);
+  const integracao = await obterIntegracaoObrigatoria();
+  const configuracao = await obterConfiguracaoMl();
+  const siteId = texto(
+    integracao.site_id || configuracao.siteId,
+    20
+  ).toUpperCase();
+
+  if (!nomeAnuncio || !descricaoAnuncio || precoAnuncio <= 0) {
+    throw new MercadoLivreError(
+      'O anúncio precisa de título, descrição e preço maior que zero.',
+      400
+    );
+  }
+
+  if (quantidadeAnuncio <= 0) {
+    throw new MercadoLivreError(
+      'O anúncio precisa ter ao menos uma unidade em estoque.',
+      400
+    );
+  }
+
+  const imagens = await db.all(
+    `SELECT caminho FROM peca_imagens
+     WHERE peca_id = ?
+     ORDER BY is_principal DESC, ordem ASC, id ASC
+     LIMIT 20`,
+    [id]
+  );
+  const origem = texto(
+    publicBaseUrl || process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL,
+    1000
+  ).replace(/\/+$/, '');
+
+  if (!origem && imagens.length > 0) {
+    throw new MercadoLivreError(
+      'Configure BACKEND_PUBLIC_URL com o endereço HTTPS público da API para publicar as fotos.',
+      400
+    );
+  }
+
+  const pictures = imagens.map((imagem) => ({
+    source: urlImagemPublica(imagem.caminho, origem)
+  }));
+  const thumbnail = normalizarImagemMl(peca.ml_thumbnail);
+
+  if (pictures.length === 0 && thumbnail) {
+    pictures.push({ source: thumbnail });
+  }
+
+  if (pictures.length === 0) {
+    throw new MercadoLivreError(
+      'Adicione ao menos uma foto pública à peça antes de aprovar a publicação.',
+      400
+    );
+  }
+
+  let categoryId = texto(peca.ml_category_id, 80);
+
+  if (!categoryId) {
+    const consulta = texto(
+      [peca.categoria, peca.nome, peca.carro].filter(Boolean).join(' '),
+      300
+    );
+    const sugestoes = await mlFetch(
+      `/sites/${encodeURIComponent(siteId)}/domain_discovery/search?q=${encodeURIComponent(
+        consulta
+      )}`
+    );
+    const sugestao = Array.isArray(sugestoes)
+      ? sugestoes.find((item) => item?.category_id)
+      : null;
+    categoryId = texto(sugestao?.category_id, 80);
+  }
+
+  if (!categoryId) {
+    throw new MercadoLivreError(
+      'Não foi possível determinar a categoria do anúncio no Mercado Livre.',
+      400
+    );
+  }
+
+  const tipoAnuncio = texto(peca.tipo_anuncio, 40)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const listingTypeId = ['gold_pro', 'gold_special', 'free'].includes(
+    tipoAnuncio
+  )
+    ? tipoAnuncio
+    : tipoAnuncio === 'premium'
+      ? 'gold_pro'
+      : tipoAnuncio === 'gratis'
+        ? 'free'
+        : 'gold_special';
+  const condition =
+    ['novo', 'new'].includes(
+      texto(peca.condicao, 40).toLowerCase()
+    )
+      ? 'new'
+      : ['recondicionado', 'refurbished'].includes(texto(peca.condicao, 40).toLowerCase())
+        ? 'refurbished' : 'used';
+  const currencyId = siteId === 'MLB' ? 'BRL' : '';
+
+  if (!currencyId) {
+    throw new MercadoLivreError(
+      `A publicação automática ainda não está configurada para o site ${siteId}.`,
+      400
+    );
+  }
+
+  const [ficha, usuario] = await Promise.all([
+    obterFichaCategoria(categoryId, mlFetch),
+    mlFetch(`/users/${integracao.user_id}`)
+  ]);
+  const corpoPublicacao = completarPublicacao({
+    site_id: siteId, title: nomeAnuncio, category_id: categoryId,
+    price: precoAnuncio, currency_id: currencyId, available_quantity: quantidadeAnuncio,
+    buying_mode: texto(peca.modo_compra, 40) || 'buy_it_now', listing_type_id: listingTypeId,
+    condition, pictures, attributes: atributosParaPublicacao(peca)
+  }, peca, ficha, usuario);
+  montarCompatibilidades(lerConfigMl(peca.ml_config));
+  await mlFetch('/items/validate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpoPublicacao)
+  });
+  const item = await mlFetch('/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpoPublicacao)
+  });
+  const itemId = texto(item?.id, 100);
+
+  if (!itemId) {
+    throw new MercadoLivreError(
+      'O Mercado Livre não retornou o identificador do novo anúncio.',
+      502
+    );
+  }
+
+  const statusInicial = texto(item?.status, 40) || 'active';
+
+  await db.run(
+    `UPDATE pecas SET
+       ml_item_id = ?,
+       ml_permalink = ?,
+       ml_status = ?,
+       ml_ativo = ?,
+       ml_category_id = ?,
+       ml_thumbnail = ?,
+       ml_titulo = ?,
+       ml_sincronizado_em = ?
+     WHERE id = ?`,
+    [
+      itemId,
+      texto(item?.permalink, 500) || null,
+      statusInicial,
+      statusInicial === 'active' ? 1 : 0,
+      categoryId,
+      normalizarImagemMl(item?.thumbnail) || pictures[0]?.source || null,
+      nomeAnuncio,
+      new Date().toISOString(),
+      id
+    ]
+  );
+
+  const pausado = await mlFetch(`/items/${encodeURIComponent(itemId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'paused' })
+  });
+  const statusPausado = texto(pausado?.status, 40);
+
+  if (!statusPausado) {
+    throw new MercadoLivreError(
+      'O Mercado Livre não confirmou a pausa temporária do anúncio.',
+      502
+    );
+  }
+
+  await db.run(
+    `UPDATE pecas SET ml_status = ?, ml_ativo = ?, ml_sincronizado_em = ?
+     WHERE id = ?`,
+    [
+      statusPausado,
+      statusPausado === 'active' ? 1 : 0,
+      new Date().toISOString(),
+      id
+    ]
+  );
+
+  if (statusPausado !== 'paused') {
+    throw new MercadoLivreError(
+      `O anúncio foi criado, mas o Mercado Livre não confirmou a pausa (status: ${statusPausado}).`,
+      502
+    );
+  }
+
+  await atualizarCompatibilidadesPeca(id, peca.ml_config);
+  await mlFetch(`/items/${encodeURIComponent(itemId)}/description`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plain_text: descricaoAnuncio })
+  });
+  const ativado = await mlFetch(`/items/${encodeURIComponent(itemId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'active' })
+  });
+  const statusAnuncio = texto(ativado?.status, 40);
+
+  if (!statusAnuncio) {
+    throw new MercadoLivreError(
+      'O Mercado Livre não confirmou o status do anúncio recém-criado.',
+      502
+    );
+  }
+
+  await db.run(
+    `UPDATE pecas SET
+       ml_status = ?,
+       ml_ativo = ?,
+       ml_permalink = COALESCE(?, ml_permalink),
+       ml_thumbnail = COALESCE(?, ml_thumbnail),
+       ml_sincronizado_em = ?
+     WHERE id = ?`,
+    [
+      statusAnuncio,
+      statusAnuncio === 'active' ? 1 : 0,
+      texto(ativado?.permalink, 500) || null,
+      normalizarImagemMl(ativado?.thumbnail) || null,
+      new Date().toISOString(),
+      id
+    ]
+  );
+
+  return {
+    ok: true,
+    item_id: itemId,
+    permalink: texto(ativado?.permalink || item?.permalink, 500) || null,
+    status: statusAnuncio
+  };
+}
+
+export async function atualizarCompatibilidadesPeca(pecaId, configInformada) {
+  const peca = await getDb().get('SELECT ml_item_id, ml_config FROM pecas WHERE id = ?', [pecaId]);
+  const familias = montarCompatibilidades(lerConfigMl(configInformada ?? peca?.ml_config));
+  if (!familias.length) return;
+  if (!peca?.ml_item_id) throw new MercadoLivreError('Publique o anúncio antes de enviar compatibilidades.', 400);
+  await mlFetch(`/items/${encodeURIComponent(peca.ml_item_id)}/compatibilities`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ products_families: familias })
   });
 }
 
