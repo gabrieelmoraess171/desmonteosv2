@@ -498,6 +498,7 @@ export default function RelatoriosPage({
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [indicadorAberto, setIndicadorAberto] = useState<string | null>(null);
+  const [indiceGraficoAtivo, setIndiceGraficoAtivo] = useState<number | null>(null);
 
   useEffect(() => {
     if (statusInicial) setStatus(statusInicial);
@@ -888,12 +889,15 @@ export default function RelatoriosPage({
       y: escalaY(valorDoPonto(ponto)),
       ponto,
     }));
-    const linha = coords
-      .map(
-        (coord, indice) =>
-          `${indice === 0 ? 'M' : 'L'} ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`
-      )
-      .join(' ');
+    const linha = coords.length
+      ? coords.slice(1).reduce((caminho, coord, indice) => {
+          const anterior = coords[indice];
+          const meioX = (anterior.x + coord.x) / 2;
+          const meioY = (anterior.y + coord.y) / 2;
+          return `${caminho} Q ${anterior.x.toFixed(1)} ${anterior.y.toFixed(1)} ${meioX.toFixed(1)} ${meioY.toFixed(1)}`;
+        }, `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`) +
+        ` T ${coords[coords.length - 1].x.toFixed(1)} ${coords[coords.length - 1].y.toFixed(1)}`
+      : '';
     const area =
       coords.length > 0
         ? `${linha} L ${coords[coords.length - 1].x.toFixed(1)} ${baseY} L ${coords[0].x.toFixed(1)} ${baseY} Z`
@@ -925,6 +929,10 @@ export default function RelatoriosPage({
 
     return { largura, altura, margem, baseY, max, coords, linha, area, ticks, labels, melhor, cor };
   }, [relatorio.serie, valorDoPonto, modoGrafico]);
+
+  const pontoGraficoAtivo = indiceGraficoAtivo === null
+    ? null
+    : graficoSerie.coords[indiceGraficoAtivo] || null;
 
   const totaisTabela = useMemo(() => {
     const resumo = relatorio.resumo;
@@ -1510,12 +1518,13 @@ export default function RelatoriosPage({
                     </div>
                   </div>
 
-                  <div className="mt-3 overflow-hidden rounded-xl border border-line/50 bg-white/[0.015] p-2 sm:p-3 print:bg-white">
+                  <div className="liquid-chart-shell mt-3 overflow-hidden rounded-xl border border-line/50 p-2 sm:p-3 print:bg-white">
                     <svg
                       viewBox={`0 0 ${graficoSerie.largura} ${graficoSerie.altura}`}
                       className="h-60 w-full sm:h-72"
                       role="img"
                       aria-label={`Gráfico de ${legendaSerie}`}
+                      onMouseLeave={() => setIndiceGraficoAtivo(null)}
                     >
                       <defs>
                         <linearGradient
@@ -1565,6 +1574,8 @@ export default function RelatoriosPage({
 
                       {graficoSerie.area ? (
                         <path
+                          key={`area-${modoGrafico}-${relatorio.periodo.chave}`}
+                          className="report-chart-area"
                           d={graficoSerie.area}
                           fill="url(#relatorio-area-gradiente)"
                         />
@@ -1572,6 +1583,8 @@ export default function RelatoriosPage({
 
                       {graficoSerie.linha ? (
                         <path
+                          key={`linha-${modoGrafico}-${relatorio.periodo.chave}`}
+                          className="report-chart-line"
                           d={graficoSerie.linha}
                           fill="none"
                           stroke={graficoSerie.cor}
@@ -1581,41 +1594,74 @@ export default function RelatoriosPage({
                         />
                       ) : null}
 
-                      {graficoSerie.coords.map((coord) => (
-                        <g key={`ponto-${coord.ponto.data}`}>
-                          <circle
-                            cx={coord.x}
-                            cy={coord.y}
-                            r={graficoSerie.coords.length > 40 ? 1.8 : 3}
-                            fill={graficoSerie.cor}
-                            stroke="#0b1220"
-                            strokeWidth="1"
-                          />
-                          <rect
-                            x={coord.x - 7}
-                            y={graficoSerie.margem.topo}
-                            width="14"
-                            height={
-                              graficoSerie.baseY - graficoSerie.margem.topo
-                            }
-                            fill="transparent"
-                          >
-                            <title>
-                              {`${coord.ponto.label}: ${formatarMoeda(
-                                valorDoPonto(coord.ponto)
-                              )} • ${coord.ponto.vendas} venda(s) • Bruto ${formatarMoeda(
-                                coord.ponto.faturamentoBruto
-                              )} • Taxa ${formatarMoeda(
-                                coord.ponto.taxaMl
-                              )} • Líquido ${formatarMoeda(
-                                coord.ponto.faturamentoLiquido
-                              )} • ${coord.ponto.cancelamentos} cancelamento(s) (${formatarMoeda(
-                                coord.ponto.valorCancelado
-                              )})`}
-                            </title>
-                          </rect>
-                        </g>
-                      ))}
+                      {graficoSerie.coords.map((coord, indice) => {
+                        const ativo = indiceGraficoAtivo === indice;
+                        const larguraInteracao = Math.max(
+                          18,
+                          (graficoSerie.largura - graficoSerie.margem.esquerda - graficoSerie.margem.direita) /
+                            Math.max(1, graficoSerie.coords.length)
+                        );
+                        return (
+                          <g key={`ponto-${coord.ponto.data}`}>
+                            <circle
+                              className="report-chart-point"
+                              style={{ animationDelay: `${Math.min(indice * 25, 400)}ms` }}
+                              cx={coord.x}
+                              cy={coord.y}
+                              r={ativo ? 6 : graficoSerie.coords.length > 40 ? 2 : 3.5}
+                              fill={ativo ? '#ffffff' : graficoSerie.cor}
+                              stroke={graficoSerie.cor}
+                              strokeWidth={ativo ? 3 : 1.5}
+                            />
+                            <rect
+                              x={coord.x - larguraInteracao / 2}
+                              y={graficoSerie.margem.topo}
+                              width={larguraInteracao}
+                              height={graficoSerie.baseY - graficoSerie.margem.topo}
+                              fill="transparent"
+                              className="cursor-crosshair"
+                              onPointerEnter={() => setIndiceGraficoAtivo(indice)}
+                              onPointerMove={() => setIndiceGraficoAtivo(indice)}
+                              onPointerDown={() => setIndiceGraficoAtivo(indice)}
+                              onFocus={() => setIndiceGraficoAtivo(indice)}
+                              tabIndex={0}
+                              aria-label={`${coord.ponto.label}: ${formatarMoeda(valorDoPonto(coord.ponto))}`}
+                            />
+                          </g>
+                        );
+                      })}
+
+                      {pontoGraficoAtivo && (() => {
+                        const larguraTooltip = 210;
+                        const alturaTooltip = 94;
+                        const tooltipX = Math.min(
+                          graficoSerie.largura - graficoSerie.margem.direita - larguraTooltip,
+                          Math.max(graficoSerie.margem.esquerda, pontoGraficoAtivo.x - larguraTooltip / 2)
+                        );
+                        const tooltipY = pontoGraficoAtivo.y < 125
+                          ? pontoGraficoAtivo.y + 18
+                          : pontoGraficoAtivo.y - alturaTooltip - 16;
+                        const ponto = pontoGraficoAtivo.ponto;
+                        return (
+                          <g className="report-chart-tooltip" pointerEvents="none">
+                            <line
+                              x1={pontoGraficoAtivo.x}
+                              x2={pontoGraficoAtivo.x}
+                              y1={graficoSerie.margem.topo}
+                              y2={graficoSerie.baseY}
+                              stroke={graficoSerie.cor}
+                              strokeWidth="1"
+                              strokeDasharray="4 5"
+                              opacity="0.65"
+                            />
+                            <rect x={tooltipX} y={tooltipY} width={larguraTooltip} height={alturaTooltip} rx="12" fill="#091321" stroke={`${graficoSerie.cor}99`} />
+                            <text x={tooltipX + 14} y={tooltipY + 20} fontSize="11" fill="#94a3b8">{ponto.label} • {ponto.vendas} venda(s)</text>
+                            <text x={tooltipX + 14} y={tooltipY + 43} fontSize="15" fontWeight="700" fill={graficoSerie.cor}>{formatarMoeda(valorDoPonto(ponto))}</text>
+                            <text x={tooltipX + 14} y={tooltipY + 63} fontSize="10" fill="#cbd5e1">Bruto {formatarMoeda(ponto.faturamentoBruto)} • Taxa {formatarMoeda(ponto.taxaMl)}</text>
+                            <text x={tooltipX + 14} y={tooltipY + 80} fontSize="10" fill="#cbd5e1">Líquido {formatarMoeda(ponto.faturamentoLiquido)} • {ponto.cancelamentos} cancelamento(s)</text>
+                          </g>
+                        );
+                      })()}
 
                       {graficoSerie.labels.map((coord) => (
                         <text

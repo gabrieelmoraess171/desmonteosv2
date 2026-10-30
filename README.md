@@ -25,15 +25,17 @@ DESMONTEOS2/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── dashboard/ # Gráfico, estoque, ranking e sugestões
-│   │   │   ├── Onboarding.tsx
+│   │   │   ├── Login.tsx       # Formulário de login local de demonstração
+│   │   │   ├── ProtectedRoute.tsx
 │   │   │   ├── PecaDetalheModal.tsx
 │   │   │   └── ReclamacaoDetalheModal.tsx
 │   │   ├── config/        # Categorias, atributos, chaves locais e helpers do ML
+│   │   ├── hooks/         # useAuth e provedor da sessão local
 │   │   ├── pages/         # NF-e, atendimento, relatórios, marketplaces, nova peça e configurações
 │   │   ├── services/      # Cliente da API de lotes (loteService)
 │   │   ├── types/         # Tipos da operação de vendas e envios
 │   │   ├── utils/         # Saudação, frases motivacionais e iniciais
-│   │   ├── App.tsx        # Dashboard, onboarding, navegação e logout
+│   │   ├── App.tsx        # Dashboard, navegação e logout
 │   │   └── main.tsx
 │   ├── package.json
 │   └── vite.config.ts
@@ -113,7 +115,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 
 ## Telas
 
-- **Primeiro acesso**: tela de boas-vindas exibida uma única vez, em tela cheia, para perguntar como o usuário gostaria de ser chamado. O nome fica salvo no navegador e a empresa assume automaticamente `Mercadão de Peças`, que pode ser alterada depois. Usuários que já têm nome salvo não passam pelo onboarding novamente.
+- **Login local**: a rota `/login` aceita qualquer nome de usuário e senha preenchidos no modo demonstração. Campos vazios ou somente com espaços exibem erro. Apenas o nome é salvo em `localStorage` (`desmonte.authUser`), nunca a senha. Após entrar, o usuário vai para `/`; a sessão permanece ao recarregar e as demais páginas redirecionam para `/login` quando não há sessão. O login não consulta o backend e não protege a API.
 - **Dashboard**: saudação personalizada, vendas do dia, perguntas, reclamações e anúncios a revisar. O bloco de desempenho alterna entre **Hoje**, **7**, **15** e **30 dias**. Também mostra estoque do Mercado Livre, ranking por categoria e sugestões de melhoria.
 - **Nova peça**: página de orientação com abertura manual do cadastro. O formulário não abre sozinho ao navegar.
 - **Estoque**: lista todos os anúncios cadastrados, com busca, filtros por status e categoria, edição da ficha completa e exclusão. Clicar em uma peça abre a **ficha completa** com anúncio, aplicação, ficha técnica, peso, medidas, descrição, fotos, preço e estoque. Cada peça é um anúncio individual.
@@ -123,7 +125,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 - **Relatórios**: período **Hoje**, **7**, **15** ou **30 dias** com faturamento, vendas, ticket médio, itens, clientes, evolução diária, estoque, formas de pagamento e ranking de produtos. Os indicadores abrem detalhes próprios; previsões de liberação aparecem quando informadas pela API do Mercado Livre, sem estimar datas ausentes. Exporta CSV e gera impressão/PDF.
 - **Marketplaces**: conexão OAuth com o Mercado Livre, credenciais do aplicativo, sincronização por recurso (anúncios, pedidos, perguntas, reclamações e reputação), histórico de execuções e painel de reputação real. Também exibe a Redirect URI e a URL do webhook para copiar.
 - **Configurações**: nome de exibição e, com o acesso do proprietário desbloqueado por PIN, nome da empresa (`Mercadão de Peças` por padrão, exibido abaixo de `DESMONTE OS`) e WhatsApp do financeiro. Também permite criar, alterar e sair do acesso do proprietário.
-- **Sair**: disponível no rodapé do menu. Volta para a tela de boas-vindas, limpa o nome e a conclusão do onboarding, mantém empresa e WhatsApp e bloqueia o acesso do proprietário.
+- **Logout / Sair**: disponível no header e no rodapé do menu. Após confirmação, remove a sessão local e o token local do proprietário, volta para `/login` e sincroniza a saída entre abas. Mantém as configurações da empresa e do WhatsApp. O encerramento é local, sem requisição ao backend.
 - **Importar lote**: envia fotos/ZIPs, agrupa por SKU do nome do arquivo e abre o editor de grupos.
 - **Editor de anúncios** e **Fila de aprovação**: anúncios novos só são publicados depois de aprovados; anúncios existentes recebem as alterações aprovadas. A exclusão de uma peça encerra primeiro o anúncio vinculado no Mercado Livre.
 
@@ -222,6 +224,10 @@ Variáveis opcionais:
 | `BACKEND_PUBLIC_URL` | Endereço HTTPS público da API para o Mercado Livre acessar as fotos na publicação de anúncios |
 
 ### 3. Conectar e sincronizar
+
+**Deploy no Render:** no serviço do backend, configure `ML_REDIRECT_URI=https://desmonteos-backend.onrender.com/api/mercadolivre/oauth/callback`, `FRONTEND_URL=https://desmonteos.onrender.com` e `BACKEND_PUBLIC_URL=https://desmonteos-backend.onrender.com`. Cadastre exatamente o mesmo callback no aplicativo do Mercado Livre e faça o redeploy. A porta interna `10000` não faz parte da URL pública.
+
+Quando `ML_REDIRECT_URI` não está definida, o backend deriva o callback de `BACKEND_PUBLIC_URL`, `API_PUBLIC_URL` ou `RENDER_EXTERNAL_URL`. Configurações locais antigas são substituídas por essa origem pública quando disponível; callbacks públicos explícitos continuam tendo prioridade. No Render, o retorno do OAuth também usa o frontend publicado quando a configuração anterior aponta para localhost.
 
 1. Clique em **Conectar conta** e autorize o aplicativo no Mercado Livre.
 2. O callback valida o `state`, troca o código por tokens e salva a conta em `ml_integracao`. O token é renovado automaticamente antes de expirar.
@@ -451,7 +457,7 @@ As demais rotas continuam sem autenticação de funcionário. A sessão do propr
 - O Estoque identifica anúncios vinculados e abre o anúncio no Mercado Livre; os modais de cadastro e reclamação mantêm cabeçalho visível e rolagem própria.
 - NF-e com uma mensagem por venda, CPF, endereço, envio individual e envio em lote com intervalo de 3 segundos.
 - Nome da empresa e WhatsApp financeiro protegidos por PIN de proprietário com hash `scrypt` e sessão de 12 horas.
-- Onboarding de primeiro acesso e botão **Sair** que retorna à tela de boas-vindas e limpa os dados de sessão.
+- Login local de demonstração com React Router, hook `useAuth`, persistência no navegador, proteção de páginas e logout.
 - Datas de vendas, perguntas e reclamações são convertidas para o fuso local do computador; o “hoje” do dashboard, da NF-e e dos relatórios acompanha a data local, não UTC.
 - Cadastro completo no padrão Mercado Livre, com campos por categoria, até 20 fotos, peso, medidas, OEM e compatibilidade.
 - Fotos das peças ficam em `backend/uploads/pecas/<peca_id>/` (ignorado pelo Git) e são removidas junto com a peça.

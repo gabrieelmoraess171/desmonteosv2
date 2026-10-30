@@ -857,17 +857,32 @@ interface MensagemVenda {
   anexos?: Array<{ id: string; nome: string; tipo: string; url: string | null; bloqueado: boolean }>;
 }
 
+const MODELO_MENSAGEM_PERSONALIZADA =
+  'Olá {nome}! Agradecemos pela compra! Antes do envio, pedimos que confira se a peça {pedido} é compatível com seu veículo, incluindo modelo, ano, código original, encaixes, fotos e descrição do anúncio. Se notar alguma diferença ou tiver dúvidas, nos avise antes do despacho. Assim evitamos transtornos com a instalação, trocas ou devoluções.';
+
+function preencherModeloMensagem(modelo: string, nome?: string | null, pedido?: string | null) {
+  return modelo
+    .replace(/\{nome\}/g, String(nome || 'cliente').trim())
+    .replace(/\{pedido\}/g, String(pedido || 'comprada').trim());
+}
+
 function MensagemVendaModal({
   vendaId,
   orderId,
+  cliente,
+  peca,
   onClose,
 }: {
   vendaId: number;
   orderId?: string | null;
+  cliente?: string | null;
+  peca?: string | null;
   onClose: () => void;
 }) {
   const [mensagens, setMensagens] = useState<MensagemVenda[]>([]);
-  const [textoMensagem, setTextoMensagem] = useState('');
+  const [textoMensagem, setTextoMensagem] = useState(() =>
+    preencherModeloMensagem(MODELO_MENSAGEM_PERSONALIZADA, cliente, peca)
+  );
   const [carregandoMensagens, setCarregandoMensagens] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [conversaDisponivel, setConversaDisponivel] = useState(true);
@@ -1094,10 +1109,13 @@ function MensagemVendaModal({
             aria-label="Mensagem para o comprador"
             className="min-h-12 flex-1 resize-y rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
           />
+          <p className={`absolute mt-14 mr-1 text-[11px] ${textoMensagem.length > limiteMensagem ? 'text-danger' : 'text-muted'}`}>
+            {textoMensagem.length}/{limiteMensagem} caracteres
+          </p>
           <button
             type="submit"
             disabled={
-              !conversaDisponivel || enviando || !textoMensagem.trim()
+              !conversaDisponivel || enviando || !textoMensagem.trim() || textoMensagem.length > limiteMensagem
             }
             className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-ml px-3 py-2.5 text-sm font-bold text-black hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1717,7 +1735,7 @@ export default function VendasPage({
       void carregar(true);
     };
 
-    const intervalo = window.setInterval(atualizar, 5000);
+    const intervalo = window.setInterval(atualizar, 30000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -1760,12 +1778,13 @@ export default function VendasPage({
       }
     };
 
-    void atualizarVendas();
-    const intervalo = window.setInterval(() => void atualizarVendas(), 5000);
+    const inicio = window.setTimeout(() => void atualizarVendas(), 15000);
+    const intervalo = window.setInterval(() => void atualizarVendas(), 300000);
     document.addEventListener('visibilitychange', atualizarVendas);
 
     return () => {
       ativo = false;
+      window.clearTimeout(inicio);
       window.clearInterval(intervalo);
       document.removeEventListener('visibilitychange', atualizarVendas);
     };
@@ -2951,6 +2970,8 @@ export default function VendasPage({
         <MensagemVendaModal
           vendaId={mensagemVenda.id}
           orderId={mensagemVenda.orderId}
+          cliente={detalhe?.cliente}
+          peca={detalhe?.titulo}
           onClose={() => setMensagemVenda(null)}
         />
       ) : null}

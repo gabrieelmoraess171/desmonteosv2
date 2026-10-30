@@ -10,6 +10,8 @@ import { API_URL } from './config/api'
 import './index.css'
 
 axios.defaults.baseURL = API_URL
+// Em produção, configure VITE_API_URL com a URL pública do backend.
+// O fallback mantém o frontend compatível com a publicação atual no Render.
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

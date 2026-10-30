@@ -313,7 +313,7 @@ export default function RevenueChart({
         </div>
       </div>
 
-      <div className="relative min-w-0">
+      <div className="liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3">
         <svg
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
           className="h-auto w-full overflow-visible"
@@ -366,8 +366,9 @@ export default function RevenueChart({
 
           {serie.length > 0 && (
             <>
-              <path d={area} fill={`url(#${gradientId})`} />
+              <path className="chart-area-enter" d={area} fill={`url(#${gradientId})`} />
               <path
+                className="chart-line-enter"
                 d={linha}
                 fill="none"
                 stroke={modoValor === 'liquido' ? '#30D158' : '#4C9DFF'}
@@ -393,6 +394,8 @@ export default function RevenueChart({
               )}
               {ponto.valor > 0 && (
                 <circle
+                  className="chart-point-enter"
+                  style={{ animationDelay: `${indice * 35}ms` }}
                   cx={ponto.x}
                   cy={ponto.y}
                   r={indiceAtivo === indice ? 6 : 4}
@@ -407,9 +410,11 @@ export default function RevenueChart({
                 width={Math.max(passoX, 1)}
                 height={ALTURA_INTERNA}
                 fill="transparent"
-                onMouseEnter={() => setIndiceAtivo(indice)}
+                onPointerEnter={() => setIndiceAtivo(indice)}
+                onPointerMove={() => setIndiceAtivo(indice)}
+                onPointerDown={() => setIndiceAtivo(indice)}
                 onFocus={() => setIndiceAtivo(indice)}
-                tabIndex={-1}
+                tabIndex={0}
               >
                 <title>
                   {ponto.label}: {formatarMoeda(ponto.valor)} •{' '}

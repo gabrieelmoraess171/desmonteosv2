@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { redirectUriLocal, resolverRedirectUriMl } from './urlsPublicas.js';
+export { redirectUriLocal } from './urlsPublicas.js';
 import { getDb } from '../database.js';
 import { upsertVenda } from './vendasService.js';
 import { upsertEnvio } from './enviosService.js';
@@ -43,27 +45,6 @@ function authBase() {
 
 function texto(valor, limite = 500) {
   return String(valor ?? '').trim().slice(0, limite);
-}
-
-// O Mercado Livre bloqueia no CloudFront qualquer Redirect URI cujo host seja
-// local (localhost, 127.0.0.1, ::1). A página de autorização responde
-// "403 ERROR / Request blocked" antes mesmo de chegar ao aplicativo.
-export function redirectUriLocal(uri) {
-  try {
-    const host = new URL(String(uri || ''))
-      .hostname.toLowerCase()
-      .replace(/^\[|\]$/g, '');
-
-    return (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '0.0.0.0' ||
-      host === '::1' ||
-      host.endsWith('.localhost')
-    );
-  } catch {
-    return false;
-  }
 }
 
 function numero(valor) {
@@ -145,14 +126,10 @@ export async function obterConfiguracaoMl() {
 
   const clientIdEnv = texto(process.env.ML_CLIENT_ID, 200);
   const clientSecretEnv = texto(process.env.ML_CLIENT_SECRET, 500);
-  const redirectEnv = texto(process.env.ML_REDIRECT_URI, 500);
   const siteEnv = texto(process.env.ML_SITE_ID, 20);
   const clientId = clientIdEnv || clientIdBanco;
   const clientSecret = clientSecretEnv || clientSecretBanco;
-  const redirectUri =
-    redirectEnv ||
-    redirectBanco ||
-    `http://localhost:${process.env.PORT || 3001}/api/mercadolivre/oauth/callback`;
+  const redirectUri = resolverRedirectUriMl(redirectBanco);
   const siteId = (siteEnv || siteBanco || 'MLB').toUpperCase();
   const origem =
     clientIdEnv && clientSecretEnv
@@ -2669,6 +2646,74 @@ async function buscarMensagensPack(packId, sellerId) {
   }
 }
 
+function encontrarCampoRecursivo(valor, campo, visitados = new Set()) {
+  if (!valor || typeof valor !== 'object' || visitados.has(valor)) return undefined;
+  visitados.add(valor);
+
+  if (Object.prototype.hasOwnProperty.call(valor, campo)) return valor[campo];
+  for (const item of Array.isArray(valor) ? valor : Object.values(valor)) {
+    const encontrado = encontrarCampoRecursivo(item, campo, visitados);
+    if (encontrado !== undefined) return encontrado;
+  }
+  return undefined;
+}
+
+function encontrarOpcaoGuia(valor, optionId, visitados = new Set()) {
+  if (!valor || typeof valor !== 'object' || visitados.has(valor)) return null;
+  visitados.add(valor);
+
+  if (String(valor.option_id || '').toUpperCase() === optionId) return valor;
+  for (const item of Array.isArray(valor) ? valor : Object.values(valor)) {
+    const encontrado = encontrarOpcaoGuia(item, optionId, visitados);
+    if (encontrado) return encontrado;
+  }
+  return null;
+}
+
+async function tentarEnviarMensagemPersonalizadaInicial({ packId, mensagem }) {
+  let guia;
+  try {
+    guia = await mlFetch(
+      `/messages/action_guide/packs/${encodeURIComponent(packId)}?tag=post_sale`
+    );
+  } catch (error) {
+    // Packs antigos ou casos de exceção continuam usando o endpoint legado.
+    if ([400, 404, 405].includes(Number(error?.statusCode))) return false;
+    throw error;
+  }
+
+  const opcao = encontrarOpcaoGuia(guia, 'OTHER');
+  if (!opcao || opcao.available === false || opcao.enabled === false) return false;
+
+  try {
+    const caps = await mlFetch(
+      `/messages/action_guide/packs/${encodeURIComponent(packId)}/caps_available?tag=post_sale`
+    );
+    const capDisponivel = encontrarCampoRecursivo(caps, 'cap_available');
+    if (capDisponivel !== undefined && Number(capDisponivel) <= 0) {
+      throw new MercadoLivreError(
+        'O Mercado Livre não disponibilizou uma mensagem personalizada para esta venda no momento.',
+        409
+      );
+    }
+  } catch (error) {
+    if (error instanceof MercadoLivreError) throw error;
+    // Se o endpoint de cap não existir em uma integração legada, o POST abaixo
+    // continua sendo a fonte final de verdade do Mercado Livre.
+    if (![400, 404, 405].includes(Number(error?.statusCode))) throw error;
+  }
+
+  await mlFetch(
+    `/messages/action_guide/packs/${encodeURIComponent(packId)}/option?tag=post_sale`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_id: 'OTHER', text: mensagem })
+    }
+  );
+  return true;
+}
+
 async function persistirContatoVenda(vendaId, dados = {}) {
   const db = getDb();
   const packId = texto(dados.packId, 120);
@@ -2816,6 +2861,21 @@ export async function enviarMensagemVenda(vendaId, mensagem) {
     if (error.statusCode === 404) return {};
     throw error;
   });
+
+  const mensagensExistentes = Array.isArray(dados?.messages)
+    ? dados.messages
+    : Array.isArray(dados)
+      ? dados
+      : [];
+
+  if (mensagensExistentes.length === 0) {
+    const enviouPeloGuia = await tentarEnviarMensagemPersonalizadaInicial({
+      packId,
+      mensagem: conteudo
+    });
+    if (enviouPeloGuia) return obterMensagensVenda(venda.id);
+  }
+
   const envio = prepararMensagemVenda({ dados, packId, sellerId: integracao.user_id, buyerId, siteId: integracao.site_id || 'MLB', mensagem: conteudo });
   await mlFetch(
     envio.caminho,

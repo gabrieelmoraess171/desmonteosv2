@@ -2,6 +2,7 @@ import express from 'express';
 import { getDb } from '../database.js';
 import { exigirProprietario } from './proprietario.js';
 import { obterFichaCategoria } from '../services/mlCadastroService.js';
+import { resolverUrlFrontend, urlPublicaBackend } from '../services/urlsPublicas.js';
 import {
   MercadoLivreError,
   mlFetch,
@@ -58,9 +59,7 @@ function mensagemErro(error) {
 }
 
 function urlFrontend() {
-  return String(
-    process.env.FRONTEND_URL || 'http://localhost:3000'
-  ).replace(/\/+$/, '');
+  return resolverUrlFrontend();
 }
 
 function redirecionarParaFrontend(res, parametros = {}) {
@@ -88,7 +87,7 @@ router.get('/status', async (req, res) => {
     const status = await obterStatusMl();
     const webhookUrl =
       String(process.env.ML_WEBHOOK_URL || '').trim() ||
-      `${req.protocol}://${req.get('host')}/api/mercadolivre/webhook`;
+      `${urlPublicaBackend() || `${req.protocol}://${req.get('host')}`}/api/mercadolivre/webhook`;
 
     res.json({ ...status, webhookUrl });
   } catch (error) {

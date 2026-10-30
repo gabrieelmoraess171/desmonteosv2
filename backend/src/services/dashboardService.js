@@ -18,40 +18,6 @@ const STATUS_CANCELADOS = [
   'reembolsada'
 ];
 
-const ROTULOS_TIPO_PECA = {
-  Retrovisores: 'Retrovisores',
-  'Faróis e Lanternas': 'Faróis e lanternas',
-  Parachoques: 'Parachoques',
-  'Portas e Capôs': 'Portas e capôs',
-  'Motor e Componentes': 'Motores e componentes',
-  'Suspensão e Direção': 'Suspensão e direção',
-  Freios: 'Freios',
-  'Rodas e Pneus': 'Rodas e pneus',
-  'Radiadores e Arrefecimento': 'Radiadores',
-  Elétrica: 'Elétrica',
-  Interior: 'Interior',
-  Vidros: 'Vidros',
-  Escapamento: 'Escapamento',
-  Transmissão: 'Transmissão',
-  Baterias: 'Baterias',
-  Outros: 'Outros'
-};
-
-function classificarTipoPeca(categoria, nome = '') {
-  const categoriaNormalizada = String(categoria || '').trim();
-  const descricao = String(nome || '').toLowerCase();
-
-  if (categoriaNormalizada === 'Portas e Capôs') {
-    return /cap[oô]/.test(descricao) ? 'Capôs' : 'Portas';
-  }
-
-  if (categoriaNormalizada === 'Faróis e Lanternas') {
-    return descricao.includes('lanterna') ? 'Lanternas' : 'Faróis';
-  }
-
-  return ROTULOS_TIPO_PECA[categoriaNormalizada] || 'Outros';
-}
-
 const PERIODOS = {
   hoje: { chave: 'hoje', dias: 1, label: 'Hoje', descricao: 'Hoje • por hora' },
   '7': { chave: '7', dias: 7, label: '7 dias', descricao: 'Últimos 7 dias' },
@@ -770,11 +736,10 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
        FROM pecas`
     ),
     db.all(
-      `SELECT vi.venda_id,
-              COALESCE(NULLIF(TRIM(p.categoria), ''), 'Outros') AS categoria,
-              COALESCE(NULLIF(TRIM(vi.descricao), ''), p.nome, '') AS nome,
-              vi.quantidade,
-              vi.preco_unitario
+      `SELECT vi.venda_id, v.order_id,
+              COALESCE(NULLIF(TRIM(vi.descricao), ''), p.nome, 'Produto sem nome') AS nome,
+              vi.quantidade, vi.preco_unitario, v.cliente,
+              datetime(v.data_venda, 'localtime') AS data_venda
        FROM venda_itens vi
        INNER JOIN vendas v ON v.id = vi.venda_id
        LEFT JOIN pecas p ON p.sku = vi.sku
@@ -783,11 +748,10 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
 
        UNION ALL
 
-       SELECT v.id AS venda_id,
-              COALESCE(NULLIF(TRIM(p.categoria), ''), 'Outros') AS categoria,
-              p.nome AS nome,
-              1 AS quantidade,
-              v.valor AS preco_unitario
+       SELECT v.id AS venda_id, v.order_id,
+              COALESCE(NULLIF(TRIM(p.nome), ''), 'Produto sem nome') AS nome,
+              1 AS quantidade, v.valor AS preco_unitario, v.cliente,
+              datetime(v.data_venda, 'localtime') AS data_venda
        FROM vendas v
        INNER JOIN pecas p ON p.id = v.peca_id
        WHERE v.peca_id IS NOT NULL
@@ -845,35 +809,44 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
     obterReputacaoDashboard(db)
   ]);
 
-  const tiposMap = new Map();
+  const produtosMap = new Map();
 
   for (const item of itensTipo) {
-    const tipo = classificarTipoPeca(item.categoria, item.nome);
-    const atual = tiposMap.get(tipo) || {
-      tipo,
+    const produto = String(item.nome || 'Produto sem nome').trim();
+    const chave = produto.toLocaleLowerCase('pt-BR');
+    const atual = produtosMap.get(chave) || {
+      tipo: produto,
       vendas: new Set(),
       unidades: 0,
-      faturamento: 0
+      faturamento: 0,
+      vendidos: []
     };
+    const quantidade = numero(item.quantidade);
+    const valor = quantidade * numero(item.preco_unitario);
 
     atual.vendas.add(item.venda_id);
-    atual.unidades += numero(item.quantidade);
-    atual.faturamento +=
-      numero(item.quantidade) * numero(item.preco_unitario);
-    tiposMap.set(tipo, atual);
+    atual.unidades += quantidade;
+    atual.faturamento += valor;
+    atual.vendidos.push({
+      vendaId: item.venda_id,
+      pedido: item.order_id || null,
+      cliente: item.cliente || 'Comprador',
+      data: item.data_venda,
+      quantidade,
+      valor: Number(valor.toFixed(2))
+    });
+    produtosMap.set(chave, atual);
   }
 
-  const topTiposPeca = [...tiposMap.values()]
+  const topTiposPeca = [...produtosMap.values()]
     .map((item) => ({
       tipo: item.tipo,
       vendas: item.vendas.size,
       unidades: item.unidades,
-      faturamento: Number(item.faturamento.toFixed(2))
+      faturamento: Number(item.faturamento.toFixed(2)),
+      vendidos: item.vendidos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
     }))
-    .sort(
-      (a, b) =>
-        b.faturamento - a.faturamento || b.vendas - a.vendas
-    )
+    .sort((a, b) => b.unidades - a.unidades || b.vendas - a.vendas || b.faturamento - a.faturamento)
     .slice(0, 6);
 
   const faturamentoPeriodo = numero(periodoAtual?.faturamento);
