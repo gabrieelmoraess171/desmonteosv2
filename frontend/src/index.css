@@ -18,6 +18,8 @@
   --border: rgba(178, 205, 237, 0.16);
   --glass-highlight: rgba(255, 255, 255, 0.16);
   --glass-shadow: 0 30px 80px -36px rgba(0, 0, 0, 0.9);
+  --glass-blur: 22px;
+  --glass-saturation: 165%;
 }
 
 @layer base {
@@ -46,6 +48,7 @@
       ),
       linear-gradient(155deg, #081423 0%, #050a14 46%, #03070e 100%);
     background-attachment: fixed;
+    overflow-x: hidden;
   }
 
   h1,
@@ -125,8 +128,23 @@
 .bg-card\/90,
 .bg-card\/50,
 .bg-sidebar\/90 {
-  -webkit-backdrop-filter: blur(26px) saturate(175%);
-  backdrop-filter: blur(26px) saturate(175%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  isolation: isolate;
+}
+
+/* Fallback estável para navegadores sem suporte a filtros de vidro. */
+@supports not ((backdrop-filter: blur(1px))) {
+  .bg-card,
+  .bg-sidebar,
+  .bg-surface,
+  .glass-panel,
+  .glass-chip,
+  .liquid-chart-shell {
+    background-color: rgba(10, 25, 44, 0.96) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }
 
 .bg-card {
@@ -874,10 +892,24 @@ select {
 }
 
 @media (max-width: 640px) {
+  :root {
+    --glass-blur: 14px;
+    --glass-saturation: 145%;
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+
   .bg-card,
   .glass-panel {
     -webkit-backdrop-filter: blur(20px) saturate(165%);
     backdrop-filter: blur(20px) saturate(165%);
+  }
+
+  .ambient-blob {
+    opacity: 0.45;
+    filter: blur(64px);
   }
 
   .liquid-chart-shell {
@@ -890,6 +922,12 @@ select {
 
   .report-chart-tooltip {
     filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.42));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (max-width: 640px) {
+  .ambient-blob {
+    animation-duration: 36s;
   }
 }
 
