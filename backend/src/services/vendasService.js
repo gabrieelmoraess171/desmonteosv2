@@ -712,6 +712,8 @@ export async function obterVendaPorId(id) {
 
 export async function obterNotificacoes(params = {}) {
   const db = getDb();
+  const corteVenda = new Date(Date.now() - 2 * 86400000).toISOString();
+  const corteAtendimento = new Date(Date.now() - 7 * 86400000).toISOString();
   const depoisVenda = Math.max(0, Math.trunc(numero(params.vendaId, 0)));
   const depoisReclamacao = Math.max(
     0,
@@ -757,9 +759,11 @@ export async function obterNotificacoes(params = {}) {
              FROM vendas v
              LEFT JOIN pecas p ON p.id = v.peca_id
              WHERE v.id > ?
+               AND v.data_venda >= ?
+               AND LOWER(COALESCE(v.status, '')) NOT IN ('${STATUS_CANCELADOS.join("','")}')
              ORDER BY v.id DESC
              LIMIT 12`,
-            [depoisVenda]
+            [depoisVenda, corteVenda]
           )
         : Promise.resolve([]),
       depoisReclamacao > 0
@@ -770,9 +774,11 @@ export async function obterNotificacoes(params = {}) {
              FROM reclamacoes_ml r
              LEFT JOIN pecas p ON p.id = r.peca_id
              WHERE r.id > ?
+               AND r.data_reclamacao >= ?
+               AND ${STATUS_RECLAMACAO_ABERTA}
              ORDER BY r.id DESC
              LIMIT 12`,
-            [depoisReclamacao]
+            [depoisReclamacao, corteAtendimento]
           )
         : Promise.resolve([])
       ,
@@ -784,9 +790,11 @@ export async function obterNotificacoes(params = {}) {
              FROM perguntas_ml q
              LEFT JOIN pecas p ON p.id = q.peca_id
              WHERE q.id > ?
+               AND q.data_pergunta >= ?
+               AND q.respondida = 0
              ORDER BY q.id DESC
              LIMIT 12`,
-            [depoisPergunta]
+            [depoisPergunta, corteAtendimento]
           )
         : Promise.resolve([])
     ]);

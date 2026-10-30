@@ -9,6 +9,7 @@ import {
 } from '../services/vendasService.js';
 import { obterVendasMlHoje } from '../services/dashboardService.js';
 import {
+  confirmarDespachoInformado,
   etiquetaDisponivel,
   listarEnvios
 } from '../services/enviosService.js';
@@ -323,6 +324,15 @@ router.post('/envios/:orderId/avisar-entrega', async (req, res) => {
       return res.status(400).json({ error: 'Confirme que o comprador já recebeu o produto.' });
     }
     res.json(await avisarEntregaCombinada(req.params.orderId));
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: error.message });
+  }
+});
+
+router.patch('/envios/:orderId/confirmar-despacho', async (req, res) => {
+  try {
+    await confirmarDespachoInformado(req.params.orderId);
+    res.json({ ok: true, order_id: String(req.params.orderId) });
   } catch (error) {
     res.status(statusErro(error)).json({ error: error.message });
   }

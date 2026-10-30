@@ -219,6 +219,18 @@ router.post('/sincronizar', async (req, res) => {
   }
 });
 
+router.post('/sincronizar-leve', async (req, res) => {
+  try {
+    const [vendas, perguntas] = await Promise.all([
+      sincronizarVendas({ dias: 2 }),
+      sincronizarPerguntas({ apenasPendentes: true })
+    ]);
+    res.json({ ok: true, vendas, perguntas });
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: mensagemErro(error) });
+  }
+});
+
 router.get('/pecas/:id/imagens', async (req, res) => {
   try {
     const pecaId = Number(req.params.id);

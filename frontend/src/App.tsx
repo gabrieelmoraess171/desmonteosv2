@@ -356,7 +356,7 @@ function App() {
       void fetchDashboard();
     };
 
-    const intervalo = window.setInterval(atualizar, 15000);
+    const intervalo = window.setInterval(atualizar, 20000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -369,6 +369,7 @@ function App() {
   useEffect(() => {
     let ativo = true;
     let verificando = false;
+    let sincronizandoMercadoLivre = false;
     // Cada tipo tem seu próprio marco inicial. Se apenas uma categoria já
     // tiver sido lida, as outras não podem despejar registros antigos como
     // se fossem novas.
@@ -407,6 +408,15 @@ function App() {
       verificando = true;
 
       try {
+        if (!sincronizandoMercadoLivre) {
+          sincronizandoMercadoLivre = true;
+          void axios
+            .post('/api/mercadolivre/sincronizar-leve', {}, { timeout: 15000 })
+            .finally(() => {
+              sincronizandoMercadoLivre = false;
+            });
+        }
+
         const depoisVenda = Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0);
         const depoisReclamacao = Number(
           readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0
@@ -538,7 +548,7 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 10000);
+    const intervalo = window.setInterval(() => void checar(), 20000);
     const aoVisivel = () => void checar();
     document.addEventListener('visibilitychange', aoVisivel);
 

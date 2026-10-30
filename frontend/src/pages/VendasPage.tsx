@@ -1735,7 +1735,7 @@ export default function VendasPage({
       void carregar(true);
     };
 
-    const intervalo = window.setInterval(atualizar, 30000);
+    const intervalo = window.setInterval(atualizar, 20000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -1762,7 +1762,9 @@ export default function VendasPage({
       try {
         await axios.post(
           '/api/vendas/sincronizar',
-          { dias: periodoRef.current },
+          // A rotina automática consulta só os pedidos recentes; a carga
+          // completa continua disponível no botão de sincronização manual.
+          { dias: 2 },
           { timeout: 180000 }
         );
         if (ativo) await sincronizar(true);
@@ -1779,7 +1781,7 @@ export default function VendasPage({
     };
 
     const inicio = window.setTimeout(() => void atualizarVendas(), 15000);
-    const intervalo = window.setInterval(() => void atualizarVendas(), 300000);
+    const intervalo = window.setInterval(() => void atualizarVendas(), 20000);
     document.addEventListener('visibilitychange', atualizarVendas);
 
     return () => {
