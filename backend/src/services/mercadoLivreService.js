@@ -2434,8 +2434,8 @@ export async function obterPedidoMl(orderId) {
   return mlFetch(`/orders/${encodeURIComponent(id)}`);
 }
 
-export async function enviarXmlNfeMl(packId, conteudo, nomeArquivo) {
-  const id = texto(packId, 100);
+export async function enviarXmlNfeMl(shipmentId, conteudo) {
+  const id = texto(shipmentId, 100);
 
   if (!id) {
     throw new MercadoLivreError('Pacote do Mercado Livre inválido.', 400);
@@ -2445,17 +2445,17 @@ export async function enviarXmlNfeMl(packId, conteudo, nomeArquivo) {
     throw new MercadoLivreError('O XML da NF-e está vazio.', 400);
   }
 
-  const formulario = new FormData();
-  formulario.append(
-    'fiscal_document',
-    new Blob([conteudo], { type: 'application/xml' }),
-    texto(nomeArquivo, 255) || 'nota-fiscal.xml'
-  );
+  const configuracao = await obterConfiguracaoMl();
+  const siteId = configuracao.siteId || 'MLB';
 
-  return mlFetch(`/packs/${encodeURIComponent(id)}/fiscal_documents`, {
-    method: 'POST',
-    body: formulario
-  });
+  return mlFetch(
+    `/shipments/${encodeURIComponent(id)}/invoice_data/?siteId=${encodeURIComponent(siteId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/xml' },
+      body: conteudo
+    }
+  );
 }
 
 export async function obterImagensAnuncioMl(itemId) {

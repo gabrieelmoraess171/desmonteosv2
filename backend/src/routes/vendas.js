@@ -84,6 +84,20 @@ function normalizarNomeCompleto(valor) {
     .replace(/\s+/g, ' ');
 }
 
+function termosNomeArquivo(valor) {
+  return normalizarNomeCompleto(valor)
+    .split(' ')
+    .filter((termo) => termo.length >= 3 && !['ZIP', 'XML'].includes(termo));
+}
+
+function textoBuscaEnvio(envio) {
+  return normalizarNomeCompleto(
+    [envio.titulo, envio.venda_peca_nome, envio.sku, envio.venda_peca_sku]
+      .filter(Boolean)
+      .join(' ')
+  );
+}
+
 export function pontuacaoDestinatario(envio, destinatario) {
   const nomeXml = normalizarNomeCompleto(destinatario.nome);
   const nomesPedido = [
@@ -135,6 +149,8 @@ async function encontrarEnvioDoXml(file, preparado) {
             v.cliente AS venda_cliente,
             v.cliente_cpf AS venda_cpf,
             v.cliente_endereco AS venda_endereco,
+            p.nome AS venda_peca_nome,
+            p.sku AS venda_peca_sku,
             COALESCE(
               NULLIF(e.pack_id, ''),
               NULLIF(v.ml_pack_id, ''),
@@ -142,6 +158,7 @@ async function encontrarEnvioDoXml(file, preparado) {
             ) AS fiscal_pack_id
        FROM ml_envios e
        LEFT JOIN vendas v ON v.order_id = e.order_id
+       LEFT JOIN pecas p ON p.id = v.peca_id
       WHERE e.order_id IS NOT NULL`
   );
   const candidatos = envios
@@ -152,6 +169,27 @@ async function encontrarEnvioDoXml(file, preparado) {
     .filter((item) => item.pontuacao > 0);
 
   if (candidatos.length === 0) {
+    const termosArquivo = termosNomeArquivo(file.originalname);
+    const candidatosPorNome = envios
+      .map((envio) => {
+        const texto = textoBuscaEnvio(envio);
+        const encontrados = termosArquivo.filter((termo) => texto.includes(termo));
+        return { envio, encontrados };
+      })
+      .filter(
+        (item) =>
+          termosArquivo.length >= 2 &&
+          item.encontrados.length === termosArquivo.length
+      )
+      .sort((a, b) => b.encontrados.length - a.encontrados.length);
+
+    const melhor = candidatosPorNome[0];
+    const segundo = candidatosPorNome[1];
+
+    if (melhor && (!segundo || segundo.encontrados.length < melhor.encontrados.length)) {
+      return melhor.envio;
+    }
+
     throw new Error(
       `${file.originalname}: nome completo, CPF e endereço do comprador no XML não correspondem aos dados fiscais de nenhuma venda sincronizada. Sincronize novamente as vendas e confira os dados do comprador.`
     );
@@ -170,9 +208,8 @@ async function salvarXmlDoPedido(envio, file, preparado) {
   const db = getDb();
 
   await enviarXmlNfeMl(
-    envio.fiscal_pack_id,
-    preparado.conteudo,
-    preparado.nomeXml
+    envio.shipment_id,
+    preparado.conteudo
   );
 
   const xml = await persistirXmlNfe(file, preparado);
