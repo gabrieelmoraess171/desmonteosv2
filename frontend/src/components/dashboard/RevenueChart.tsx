@@ -337,14 +337,13 @@ export default function RevenueChart({
       </div>
 
       <div
-        key={`${periodo}-${serie.map((ponto) => `${ponto.data}-${ponto.vendas}-${ponto.faturamento}`).join('|')}`}
         ref={graficoRef}
-        className={`liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3 ${graficoVisivel ? 'chart-in-view' : ''}`}
+        className={`liquid-chart-shell relative min-w-0 overflow-x-auto rounded-xl border border-white/[0.06] p-2 sm:p-3 ${graficoVisivel ? 'chart-in-view' : ''}`}
       >
         <svg
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
-          className="dashboard-chart-svg h-[22rem] w-full overflow-visible sm:h-[30rem] lg:h-[34rem]"
-          preserveAspectRatio="none"
+          className="dashboard-chart-svg block h-auto w-full min-w-[600px]"
+          preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label={`Gráfico de faturamento ${rotuloValor.toLowerCase()} • ${periodoLabel}`}
           onMouseLeave={() => setIndiceAtivo(null)}

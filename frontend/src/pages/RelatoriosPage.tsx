@@ -508,7 +508,8 @@ export default function RelatoriosPage({
 
   useEffect(() => {
     const elemento = graficoRef.current;
-    if (!elemento || typeof IntersectionObserver === 'undefined') {
+    if (!elemento) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
       setGraficoVisivel(true);
       return undefined;
     }
@@ -525,7 +526,7 @@ export default function RelatoriosPage({
 
     observador.observe(elemento);
     return () => observador.disconnect();
-  }, []);
+  }, [loading, relatorio.vendas.length > 0]);
 
   const periodoValido =
     periodo !== 'custom' || (Boolean(inicio) && Boolean(fim) && inicio <= fim);
@@ -896,9 +897,9 @@ export default function RelatoriosPage({
 
   const graficoSerie = useMemo(() => {
     const pontos = relatorio.serie;
-    const largura = 920;
-    const altura = 260;
-    const margem = { topo: 18, direita: 14, baixo: 30, esquerda: 66 };
+    const largura = 760;
+    const altura = 300;
+    const margem = { topo: 24, direita: 24, baixo: 40, esquerda: 70 };
     const max = Math.max(1, ...pontos.map(valorDoPonto));
     const baseY = altura - margem.baixo;
     const escalaX = (indice: number) =>
@@ -1543,12 +1544,12 @@ export default function RelatoriosPage({
 
                   <div
                     ref={graficoRef}
-                    className={`liquid-chart-shell report-chart-shell mt-3 overflow-hidden rounded-xl border border-line/50 p-2 sm:p-3 print:bg-white ${graficoVisivel ? 'chart-in-view' : ''}`}
+                    className={`liquid-chart-shell report-chart-shell mt-3 overflow-x-auto rounded-xl border border-line/50 p-2 sm:p-3 print:bg-white ${graficoVisivel ? 'chart-in-view' : ''}`}
                   >
                     <svg
                       viewBox={`0 0 ${graficoSerie.largura} ${graficoSerie.altura}`}
-                      className="dashboard-chart-svg h-[22rem] w-full sm:h-[30rem] lg:h-[34rem]"
-                      preserveAspectRatio="none"
+                      className="dashboard-chart-svg block h-auto w-full min-w-[600px]"
+                      preserveAspectRatio="xMidYMid meet"
                       role="img"
                       aria-label={`Gráfico de ${legendaSerie}`}
                       onMouseLeave={() => setIndiceGraficoAtivo(null)}
@@ -1694,7 +1695,7 @@ export default function RelatoriosPage({
                         <text
                           key={`label-${coord.ponto.data}`}
                           x={coord.x}
-                          y={graficoSerie.altura - 8}
+                          y={graficoSerie.altura - 12}
                           textAnchor="middle"
                           fontSize="11"
                           fill="currentColor"

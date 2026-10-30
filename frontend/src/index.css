@@ -522,6 +522,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .chart-line-enter,
+  .report-chart-line {
+    stroke-dashoffset: 0;
+  }
+
+  .chart-line-enter,
+  .chart-area-enter,
+  .chart-point-enter,
+  .report-chart-line,
+  .report-chart-area,
+  .report-chart-point {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {
