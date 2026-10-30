@@ -945,6 +945,13 @@ export async function obterVendasMlHoje(db, dataAlvo = dataLocalISO()) {
                v.financeiro_agendada_para IS NULL
                AND DATE(v.data_venda, 'localtime') = DATE(?)
              )
+             OR EXISTS (
+               SELECT 1
+                 FROM ml_envios e
+                WHERE e.order_id = v.order_id
+                  AND LOWER(COALESCE(e.status, '')) = 'ready_to_ship'
+                  AND LOWER(COALESCE(e.substatus, '')) = 'invoice_pending'
+             )
            )
          )
          OR (
