@@ -155,11 +155,11 @@ export default function ReputacaoMl({
                 className="transition-all duration-700"
               />
             </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
               <span className="text-2xl font-bold leading-none text-ink">
                 {score}
               </span>
-              <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+              <span className="mt-1 max-w-full text-[8px] font-semibold uppercase tracking-normal text-muted">
                 estimativa
               </span>
             </div>

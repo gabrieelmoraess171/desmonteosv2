@@ -457,7 +457,7 @@ app.get('/api/dashboard', async (req, res) => {
 app.get('/api/dashboard/analytics', async (req, res) => {
   try {
     res.json(
-      await obterAnalyticsDashboard(db, req.query.periodo ?? req.query.dias)
+      await obterAnalyticsDashboard(db, req.query.periodo ?? req.query.dias, { inicio: req.query.rankingInicio, fim: req.query.rankingFim })
     );
   } catch (error) {
     res.status(500).json({ error: error.message });

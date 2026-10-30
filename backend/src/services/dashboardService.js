@@ -645,9 +645,14 @@ export async function obterResumoDashboard(db) {
   };
 }
 
-export async function obterAnalyticsDashboard(db, valorPeriodo) {
+export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = null) {
   const periodo = normalizarPeriodo(valorPeriodo);
   const condicoes = condicaoPeriodo(periodo);
+  const datasRanking = rankingDatas && /^\d{4}-\d{2}-\d{2}$/.test(rankingDatas.inicio || '') && /^\d{4}-\d{2}-\d{2}$/.test(rankingDatas.fim || '') && rankingDatas.inicio <= rankingDatas.fim
+    ? [rankingDatas.inicio, rankingDatas.fim, rankingDatas.inicio, rankingDatas.fim] : null;
+  const condicaoRanking = datasRanking
+    ? "DATE(v.data_venda, 'localtime') BETWEEN DATE(?) AND DATE(?)"
+    : condicoes.atual.replaceAll('data_venda', 'v.data_venda');
 
   const [
     serieRows,
@@ -757,7 +762,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
        LEFT JOIN pecas p ON p.sku = vi.sku
        WHERE v.status NOT IN (${STATUS_INVALIDOS})
          AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
-         AND ${condicoes.atual.replaceAll('data_venda', 'v.data_venda')}
+         AND ${condicaoRanking}
 
        UNION ALL
 
@@ -773,7 +778,8 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
          )
          AND v.status NOT IN (${STATUS_INVALIDOS})
          AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
-         AND ${condicoes.atual.replaceAll('data_venda', 'v.data_venda')}`
+         AND ${condicaoRanking}`,
+      datasRanking || []
     ),
     db.all(
       `SELECT v.id, v.order_id, v.valor, v.status,

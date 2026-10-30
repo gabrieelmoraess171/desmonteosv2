@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { ArrowRight, ChevronDown, Layers, Trophy } from 'lucide-react';
 
 interface ProdutoVendido {
@@ -41,12 +42,50 @@ const CORES = [
   'from-muted to-[#5b718c]',
 ];
 
+function dataLocal(data: Date): string {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+}
+
+function intervalo(dias: number) {
+  const fim = new Date();
+  const inicio = new Date(fim);
+  inicio.setDate(inicio.getDate() - dias + 1);
+  return { inicio: dataLocal(inicio), fim: dataLocal(fim) };
+}
+
 export default function TopTiposPeca({
-  tipos,
-  periodoLabel,
+  tipos: tiposIniciais,
   onViewAll,
 }: TopTiposPecaProps) {
   const [aberto, setAberto] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<'7' | '14' | '30' | 'custom'>('7');
+  const [datas, setDatas] = useState(() => intervalo(7));
+  const [tipos, setTipos] = useState(tiposIniciais);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (!datas.inicio || !datas.fim || datas.inicio > datas.fim) return;
+    const controller = new AbortController();
+    setCarregando(true);
+    setErro('');
+    axios.get('/api/dashboard/analytics', {
+      params: { periodo: '7', rankingInicio: datas.inicio, rankingFim: datas.fim },
+      signal: controller.signal,
+      timeout: 20000,
+    }).then(({ data }) => {
+      if (!controller.signal.aborted) setTipos(data.topTiposPeca || []);
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setTipos([]);
+        setErro('Não foi possível atualizar o ranking. Tente novamente.');
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setCarregando(false);
+    });
+    return () => controller.abort();
+  }, [datas.inicio, datas.fim]);
+
   const maior = Math.max(1, ...tipos.map((item) => item.unidades));
 
   return (
@@ -61,7 +100,7 @@ export default function TopTiposPeca({
             O que mais está vendendo
           </h2>
           <p className="text-sm text-muted">
-            {periodoLabel} • peças agrupadas pelo nome, independentemente do lado
+            Peças agrupadas pelo nome, independentemente do lado
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-muted">
@@ -69,6 +108,23 @@ export default function TopTiposPeca({
           {tipos.length} produto(s)
         </span>
       </div>
+
+      <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Período do ranking">
+        {(['7', '14', '30', 'custom'] as const).map((opcao) => (
+          <button key={opcao} type="button" aria-pressed={periodo === opcao} onClick={() => {
+            setPeriodo(opcao);
+            if (opcao !== 'custom') setDatas(intervalo(Number(opcao)));
+          }} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${periodo === opcao ? 'border-accent/40 bg-accentSoft text-accent' : 'border-white/10 text-muted hover:text-ink'}`}>
+            {opcao === 'custom' ? 'Escolher datas' : `${opcao} dias`}
+          </button>
+        ))}
+      </div>
+      {periodo === 'custom' && <div className="mb-4 flex flex-wrap gap-3 text-xs text-muted">
+        <label>De <input type="date" value={datas.inicio} max={datas.fim || undefined} onChange={(event) => setDatas((atual) => ({ ...atual, inicio: event.target.value }))} className="ml-1 rounded-lg border border-line px-2 py-1.5" /></label>
+        <label>Até <input type="date" value={datas.fim} min={datas.inicio || undefined} onChange={(event) => setDatas((atual) => ({ ...atual, fim: event.target.value }))} className="ml-1 rounded-lg border border-line px-2 py-1.5" /></label>
+      </div>}
+      {erro && <p role="alert" className="mb-4 text-sm text-danger">{erro}</p>}
+      {carregando && <p role="status" className="mb-4 text-xs text-muted">Atualizando ranking…</p>}
 
       {tipos.length === 0 ? (
         <div className="flex h-56 flex-col items-center justify-center rounded-xl border border-dashed border-line px-4 text-center">
