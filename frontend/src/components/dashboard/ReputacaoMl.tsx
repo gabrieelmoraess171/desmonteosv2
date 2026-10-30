@@ -26,6 +26,7 @@ export interface ReputacaoMlData {
   periodoDias: number;
   atualizadoEm: string;
   fonte?: 'ml' | 'local' | string;
+  selo?: string | null;
   metricas: MetricaReputacao[];
 }
 
@@ -125,6 +126,7 @@ export default function ReputacaoMl({
             <span className={`h-1.5 w-1.5 rounded-full ${cor.barra}`} />
             {reputacao.nivel}
           </span>
+          {reputacao.selo && <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warningSoft px-3 py-1.5 text-xs font-semibold text-warning"><BadgeCheck className="h-4 w-4" />{reputacao.selo}</span>}
         </div>
       </div>
 
@@ -158,14 +160,14 @@ export default function ReputacaoMl({
                 {score}
               </span>
               <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-                de 100
+                estimativa
               </span>
             </div>
           </div>
 
           <div className="min-w-0">
             <p className={`text-sm font-semibold ${cor.texto}`}>
-              Termômetro {Number(reputacao.termometro || 0).toFixed(1)} de 5
+              {reputacao.fonte === 'ml' && !reputacao.termometro ? 'Termômetro oficial indisponível' : `Termômetro ${Number(reputacao.termometro || 0).toFixed(1)} de 5`}
             </p>
             <div className="mt-2 flex gap-1">
               {Array.from({ length: 5 }, (_, indice) => {

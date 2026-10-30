@@ -3,6 +3,7 @@ import { ArrowRight, ChevronDown, Layers, Trophy } from 'lucide-react';
 
 interface ProdutoVendido {
   vendaId: number;
+  nome?: string;
   pedido?: string | null;
   cliente: string;
   data: string;
@@ -60,7 +61,7 @@ export default function TopTiposPeca({
             O que mais está vendendo
           </h2>
           <p className="text-sm text-muted">
-            {periodoLabel} • produtos reais vendidos, sem agrupar por categoria
+            {periodoLabel} • peças agrupadas pelo nome, independentemente do lado
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-muted">
@@ -120,7 +121,8 @@ export default function TopTiposPeca({
                   <div className="ml-12 mr-2 space-y-2 border-l border-line pb-2 pl-3">
                     {(item.vendidos || []).map((venda) => (
                       <div key={`${venda.vendaId}-${venda.quantidade}`} className="flex justify-between gap-3 text-xs">
-                        <span className="min-w-0 truncate text-muted">
+                        <span className="min-w-0 text-muted">
+                          <span className="block font-medium text-ink">{venda.nome || item.tipo}</span>
                           Pedido {venda.pedido || venda.vendaId} • {venda.cliente} • {venda.quantidade} un.
                         </span>
                         <span className="shrink-0 font-medium">{formatarMoeda(venda.valor)}</span>

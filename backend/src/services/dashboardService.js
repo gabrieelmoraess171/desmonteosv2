@@ -1,4 +1,5 @@
 import { mapearReputacaoMl } from './mlReputacao.js';
+import { tipoPeca } from './tipoPeca.js';
 
 const STATUS_INVALIDOS =
   "'cancelada', 'cancelled', 'canceled', 'refunded', 'reembolsada'";
@@ -755,6 +756,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
        INNER JOIN vendas v ON v.id = vi.venda_id
        LEFT JOIN pecas p ON p.sku = vi.sku
        WHERE v.status NOT IN (${STATUS_INVALIDOS})
+         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
          AND ${condicoes.atual.replaceAll('data_venda', 'v.data_venda')}
 
        UNION ALL
@@ -770,6 +772,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
            SELECT 1 FROM venda_itens vi WHERE vi.venda_id = v.id
          )
          AND v.status NOT IN (${STATUS_INVALIDOS})
+         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
          AND ${condicoes.atual.replaceAll('data_venda', 'v.data_venda')}`
     ),
     db.all(
@@ -823,7 +826,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
   const produtosMap = new Map();
 
   for (const item of itensTipo) {
-    const produto = String(item.nome || 'Produto sem nome').trim();
+    const produto = tipoPeca(item.nome);
     const chave = produto.toLocaleLowerCase('pt-BR');
     const atual = produtosMap.get(chave) || {
       tipo: produto,
@@ -840,6 +843,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo) {
     atual.faturamento += valor;
     atual.vendidos.push({
       vendaId: item.venda_id,
+      nome: item.nome,
       pedido: item.order_id || null,
       cliente: item.cliente || 'Comprador',
       data: item.data_venda,

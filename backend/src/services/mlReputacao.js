@@ -94,7 +94,7 @@ export function mapearReputacaoMl(dadosCache, perguntasPendentes = 0) {
 
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  const nivel =
+  const nivelCalculado =
     score >= 90
       ? 'Excelente'
       : score >= 80
@@ -103,6 +103,9 @@ export function mapearReputacaoMl(dadosCache, perguntasPendentes = 0) {
           ? 'Atenção'
           : 'Crítica';
   const cor = score >= 80 ? 'success' : score >= 65 ? 'warning' : 'danger';
+  const nivelOficial = Number(nivelId.match(/^[1-5]/)?.[0]) || 0;
+  const selos = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder' };
+  const selo = selos[String(seller.power_seller_status || '').toLowerCase()] || null;
   const problemas = [];
 
   if (taxaReclamacoes > 2) {
@@ -150,9 +153,10 @@ export function mapearReputacaoMl(dadosCache, perguntasPendentes = 0) {
 
   return {
     score,
-    nivel,
-    cor,
-    termometro: Number((score / 20).toFixed(1)),
+    nivel: nivelOficial ? NIVEIS_ML[nivelId] : nivelCalculado,
+    selo,
+    cor: nivelOficial ? (nivelOficial >= 4 ? 'success' : nivelOficial === 3 ? 'warning' : 'danger') : cor,
+    termometro: nivelOficial,
     mensagem: partesMensagem.join(' '),
     periodoDias: periodoEmDias(transacoes.period),
     atualizadoEm:
