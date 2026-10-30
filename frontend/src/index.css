@@ -804,6 +804,22 @@ select {
   88%, 100% { transform: translateX(75%); opacity: 0; }
 }
 
+/* Notificações entram gradualmente pela direita e são exibidas uma por vez. */
+.notification-toast {
+  animation: notification-slide-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes notification-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .rounded-2xl,
 .rounded-3xl {
   transition-property: transform, border-color, background-color, box-shadow;

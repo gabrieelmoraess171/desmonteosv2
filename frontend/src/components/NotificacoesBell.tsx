@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, ShoppingCart } from 'lucide-react';
+import { AlertTriangle, Bell, MessageCircleQuestion, ShoppingCart } from 'lucide-react';
 
 export interface NotificacaoItem {
   id: string;
-  tipo: 'venda' | 'reclamacao';
+  tipo: 'venda' | 'pergunta' | 'reclamacao';
   titulo: string;
   detalhe: string;
   data?: string | null;
@@ -101,15 +101,19 @@ export default function NotificacoesBell({
                   >
                     <span
                       className={`mt-0.5 rounded-lg p-1.5 ${
-                        item.tipo === 'venda'
+                      item.tipo === 'venda'
                           ? 'bg-successSoft text-success'
-                          : 'bg-dangerSoft text-danger'
+                        : item.tipo === 'reclamacao'
+                          ? 'bg-dangerSoft text-danger'
+                          : 'bg-accentSoft text-accent'
                       }`}
                     >
                       {item.tipo === 'venda' ? (
                         <ShoppingCart className="h-4 w-4" />
-                      ) : (
+                      ) : item.tipo === 'reclamacao' ? (
                         <AlertTriangle className="h-4 w-4" />
+                      ) : (
+                        <MessageCircleQuestion className="h-4 w-4" />
                       )}
                     </span>
                     <span className="min-w-0 flex-1">

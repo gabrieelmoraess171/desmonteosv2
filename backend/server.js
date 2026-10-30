@@ -808,10 +808,10 @@ app.use((err, req, res, next) => {
 // Mantém as vendas, perguntas e reclamações em dia sem depender de webhook.
 // O Mercado Livre nem sempre entrega o webhook na hora, então uma varredura
 // curta garante que o painel reflita venda/pergunta nova em pouco tempo.
-const INTERVALO_SYNC_AUTOMATICO_MS = 5 * 60_000;
-const INTERVALO_SYNC_PERGUNTAS_MS = 120_000;
-const INTERVALO_SYNC_PERGUNTAS_COMPLETO_MS = 30 * 60_000;
-const INTERVALO_SYNC_RECLAMACOES_MS = 180_000;
+const INTERVALO_SYNC_AUTOMATICO_MS = 60_000;
+const INTERVALO_SYNC_PERGUNTAS_MS = 60_000;
+const INTERVALO_SYNC_PERGUNTAS_COMPLETO_MS = 15 * 60_000;
+const INTERVALO_SYNC_RECLAMACOES_MS = 60_000;
 let sincronizacaoAutomaticaRodando = false;
 let ultimaSyncPerguntas = 0;
 // O primeiro ciclo deve ser leve; a varredura completa fica para a rotina

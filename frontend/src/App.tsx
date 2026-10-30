@@ -285,25 +285,25 @@ function App() {
   const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
   const [naoLidas, setNaoLidas] = useState(0);
   const [toasts, setToasts] = useState<NotificacaoItem[]>([]);
-  const toastTimersRef = useRef(new Map<string, number>());
   const [contadoresAlerta, setContadoresAlerta] = useState({
     vendasHoje: 0,
     reclamacoesAbertas: 0,
     perguntasPendentes: 0,
   });
 
-  useEffect(
-    () => () => {
-      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      toastTimersRef.current.clear();
-    },
-    []
-  );
+  // A fila garante que os avisos entrem um por vez, sem cobrir a tela com
+  // várias notificações simultâneas.
+  useEffect(() => {
+    if (toasts.length === 0) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setToasts((atual) => atual.slice(1));
+    }, 4600);
+
+    return () => window.clearTimeout(timer);
+  }, [toasts]);
 
   const removerToast = (id: string) => {
-    const timer = toastTimersRef.current.get(id);
-    if (timer !== undefined) window.clearTimeout(timer);
-    toastTimersRef.current.delete(id);
     setToasts((atual) => atual.filter((item) => item.id !== id));
   };
 
@@ -371,7 +371,8 @@ function App() {
     let verificando = false;
     let inicializado =
       Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0) > 0 ||
-      Number(readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0) > 0;
+      Number(readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0) > 0 ||
+      Number(readStored(STORAGE_KEYS.lastSeenPerguntaId) || 0) > 0;
 
     const avisarNavegador = (titulo: string, corpo: string) => {
       if (!('Notification' in window)) return;
@@ -405,10 +406,14 @@ function App() {
         const depoisReclamacao = Number(
           readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0
         );
+        const depoisPergunta = Number(
+          readStored(STORAGE_KEYS.lastSeenPerguntaId) || 0
+        );
         const { data } = await axios.get('/api/vendas/notificacoes', {
           params: {
             vendaId: depoisVenda,
             reclamacaoId: depoisReclamacao,
+            perguntaId: depoisPergunta,
           },
           timeout: 10000,
         });
@@ -421,10 +426,12 @@ function App() {
 
         const ultimoVenda = Number(data?.ultimos?.vendaId) || 0;
         const ultimoReclamacao = Number(data?.ultimos?.reclamacaoId) || 0;
+        const ultimoPergunta = Number(data?.ultimos?.perguntaId) || 0;
 
         if (!inicializado) {
           saveStored(STORAGE_KEYS.lastSeenVendaId, String(ultimoVenda));
           saveStored(STORAGE_KEYS.lastSeenReclamacaoId, String(ultimoReclamacao));
+          saveStored(STORAGE_KEYS.lastSeenPerguntaId, String(ultimoPergunta));
           inicializado = true;
           return;
         }
@@ -432,6 +439,9 @@ function App() {
         const vendasNovas = Array.isArray(data?.vendas) ? data.vendas : [];
         const reclamacoesNovas = Array.isArray(data?.reclamacoes)
           ? data.reclamacoes
+          : [];
+        const perguntasNovas = Array.isArray(data?.perguntas)
+          ? data.perguntas
           : [];
         const itens: NotificacaoItem[] = [
           ...vendasNovas.map(
@@ -472,28 +482,30 @@ function App() {
               destino: 'atendimento' as const,
             })
           ),
+          ...perguntasNovas.map(
+            (item: {
+              id: number;
+              titulo?: string;
+              pergunta?: string;
+              data?: string;
+            }) => ({
+              id: `pergunta-${item.id}`,
+              tipo: 'pergunta' as const,
+              titulo: 'Nova pergunta do Mercado Livre',
+              detalhe: `${item.titulo || 'Anúncio'} • ${item.pergunta || 'Pergunta pendente'}`,
+              data: item.data,
+              destino: 'atendimento' as const,
+            })
+          ),
         ];
 
         if (itens.length > 0) {
           setNotificacoes((atual) => [...itens, ...atual].slice(0, 20));
           setNaoLidas((atual) => atual + itens.length);
-          setToasts((atual) => [...itens, ...atual].slice(0, 4));
-          itens.slice(0, 4).forEach((item) => {
-            const timerAnterior = toastTimersRef.current.get(item.id);
-            if (timerAnterior !== undefined) {
-              window.clearTimeout(timerAnterior);
-            }
-            const timer = window.setTimeout(() => {
-              toastTimersRef.current.delete(item.id);
-              setToasts((atual) =>
-                atual.filter((toast) => toast.id !== item.id)
-              );
-            }, 3000);
-            toastTimersRef.current.set(item.id, timer);
-          });
-          itens.slice(0, 3).forEach((item) => {
-            avisarNavegador(item.titulo, item.detalhe);
-          });
+          setToasts((atual) => [...atual, ...itens].slice(0, 20));
+          // O navegador recebe apenas o primeiro aviso do lote; os demais
+          // entram na fila visual e aparecem gradualmente, um por vez.
+          avisarNavegador(itens[0].titulo, itens[0].detalhe);
         }
 
         if (ultimoVenda > depoisVenda) {
@@ -503,6 +515,9 @@ function App() {
         if (ultimoReclamacao > depoisReclamacao) {
           saveStored(STORAGE_KEYS.lastSeenReclamacaoId, String(ultimoReclamacao));
         }
+        if (ultimoPergunta > depoisPergunta) {
+          saveStored(STORAGE_KEYS.lastSeenPerguntaId, String(ultimoPergunta));
+        }
       } catch {
         // O painel continua sem o sino se a API estiver fora.
       } finally {
@@ -511,7 +526,7 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 15000);
+    const intervalo = window.setInterval(() => void checar(), 10000);
     const aoVisivel = () => void checar();
     document.addEventListener('visibilitychange', aoVisivel);
 
@@ -706,7 +721,9 @@ function App() {
                       setFocoAtendimento(null);
                       setActiveView('vendas');
                     } else {
-                      setFocoAtendimento('reclamacoes');
+                      setFocoAtendimento(
+                        item.tipo === 'pergunta' ? 'perguntas' : 'reclamacoes'
+                      );
                       setActiveView('atendimento');
                     }
                     window.scrollTo(0, 0);
@@ -1007,7 +1024,7 @@ function App() {
 
       {toasts.length > 0 ? (
         <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(92vw,22rem)] flex-col gap-2">
-          {toasts.map((toast) => (
+          {toasts.slice(0, 1).map((toast) => (
             <button
               key={toast.id}
               type="button"
@@ -1018,11 +1035,13 @@ function App() {
                   setVendaFocoId(toast.vendaId || null);
                   setActiveView('vendas');
                 } else {
-                  setFocoAtendimento('reclamacoes');
+                  setFocoAtendimento(
+                    toast.tipo === 'pergunta' ? 'perguntas' : 'reclamacoes'
+                  );
                   setActiveView('atendimento');
                 }
               }}
-              className="pointer-events-auto rounded-2xl border border-line bg-sidebar p-4 text-left shadow-2xl"
+              className="notification-toast pointer-events-auto rounded-2xl border border-line bg-sidebar p-4 text-left shadow-2xl"
               style={{
                 backgroundColor: 'rgba(7, 15, 28, 0.98)',
                 backgroundImage: 'none',

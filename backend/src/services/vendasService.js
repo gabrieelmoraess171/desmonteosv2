@@ -717,7 +717,19 @@ export async function obterNotificacoes(params = {}) {
     0,
     Math.trunc(numero(params.reclamacaoId, 0))
   );
-  const [contadores, ultimaVenda, ultimaReclamacao, vendas, reclamacoes] =
+  const depoisPergunta = Math.max(
+    0,
+    Math.trunc(numero(params.perguntaId, 0))
+  );
+  const [
+    contadores,
+    ultimaVenda,
+    ultimaReclamacao,
+    ultimaPergunta,
+    vendas,
+    reclamacoes,
+    perguntas
+  ] =
     await Promise.all([
       db.get(
         `SELECT
@@ -730,6 +742,7 @@ export async function obterNotificacoes(params = {}) {
       ),
       db.get('SELECT MAX(id) AS id FROM vendas'),
       db.get('SELECT MAX(id) AS id FROM reclamacoes_ml'),
+      db.get('SELECT MAX(id) AS id FROM perguntas_ml'),
       depoisVenda > 0
         ? db.all(
             `SELECT v.id, v.order_id, v.valor,
@@ -762,6 +775,20 @@ export async function obterNotificacoes(params = {}) {
             [depoisReclamacao]
           )
         : Promise.resolve([])
+      ,
+      depoisPergunta > 0
+        ? db.all(
+            `SELECT q.id, q.pergunta, q.respondida,
+                    datetime(q.data_pergunta, 'localtime') AS data_pergunta,
+                    p.nome AS peca_nome
+             FROM perguntas_ml q
+             LEFT JOIN pecas p ON p.id = q.peca_id
+             WHERE q.id > ?
+             ORDER BY q.id DESC
+             LIMIT 12`,
+            [depoisPergunta]
+          )
+        : Promise.resolve([])
     ]);
 
   return {
@@ -772,7 +799,8 @@ export async function obterNotificacoes(params = {}) {
     },
     ultimos: {
       vendaId: numero(ultimaVenda?.id),
-      reclamacaoId: numero(ultimaReclamacao?.id)
+      reclamacaoId: numero(ultimaReclamacao?.id),
+      perguntaId: numero(ultimaPergunta?.id)
     },
     vendas: (vendas || []).map((venda) => ({
       id: venda.id,
@@ -790,8 +818,16 @@ export async function obterNotificacoes(params = {}) {
       pedido_id: item.pedido_id,
       titulo: item.peca_nome || item.motivo || 'Reclamação',
       motivo: item.motivo,
-      status: item.status,
+      status: item.respondida ? 'respondida' : 'pendente',
       data: item.data_reclamacao
+    })),
+    perguntas: (perguntas || []).map((item) => ({
+      id: item.id,
+      tipo: 'pergunta',
+      titulo: item.peca_nome || 'Nova pergunta',
+      pergunta: item.pergunta,
+      status: item.status,
+      data: item.data_pergunta
     }))
   };
 }

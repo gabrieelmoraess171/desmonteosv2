@@ -8,6 +8,7 @@ export const STORAGE_KEYS = {
   onboardingCompleted: 'desmonte.onboardingCompleted',
   lastSeenVendaId: 'desmonte.lastSeenVendaId',
   lastSeenReclamacaoId: 'desmonte.lastSeenReclamacaoId',
+  lastSeenPerguntaId: 'desmonte.lastSeenPerguntaId',
 } as const;
 
 export const SESSION_KEYS = {
