@@ -956,7 +956,12 @@ export async function obterVendasMlHoje(db, dataAlvo = dataLocalISO()) {
        )
        AND (v.plataforma LIKE '%ML%' OR v.plataforma LIKE '%Mercado Livre%')
        AND v.status NOT IN (${STATUS_INVALIDOS})
-     ORDER BY COALESCE(v.financeiro_agendada_para, DATE(v.data_venda, 'localtime')) ASC,
+     ORDER BY CASE
+                WHEN v.financeiro_agendada_para IS NOT NULL
+                 AND TRIM(v.financeiro_agendada_para) <> ''
+                  THEN DATE(v.financeiro_agendada_para)
+                ELSE DATE(v.data_venda, 'localtime')
+              END ASC,
               v.data_venda DESC, v.id DESC`,
     [data, data, data, data]
   );
