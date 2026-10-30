@@ -932,7 +932,9 @@ export async function obterVendasMlHoje(db, dataAlvo = dataLocalISO()) {
      LEFT JOIN pecas p ON p.id = v.peca_id
      WHERE (
          (
-           v.financeiro_status = 'disponivel'
+           COALESCE(v.financeiro_status,
+             CASE WHEN v.enviada_financeiro = 1 THEN 'enviada' ELSE 'disponivel' END
+           ) IN ('disponivel', 'pendente')
            AND COALESCE(v.enviada_financeiro, 0) = 0
            AND (
              (
