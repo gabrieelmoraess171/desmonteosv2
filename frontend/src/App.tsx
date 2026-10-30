@@ -253,6 +253,28 @@ function saveStored(key: string, valor: string) {
   }
 }
 
+function readNotificationHistory(): Set<string> {
+  try {
+    const valor = window.localStorage.getItem(STORAGE_KEYS.notificationHistory);
+    const itens = valor ? JSON.parse(valor) : [];
+    return new Set(Array.isArray(itens) ? itens.filter((item): item is string => typeof item === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNotificationHistory(history: Set<string>) {
+  try {
+    // Mantém a lista pequena para não transformar o localStorage em um banco.
+    window.localStorage.setItem(
+      STORAGE_KEYS.notificationHistory,
+      JSON.stringify(Array.from(history).slice(-250))
+    );
+  } catch {
+    // A aplicação continua funcionando mesmo se o navegador bloquear storage.
+  }
+}
+
 function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -379,6 +401,7 @@ function App() {
       readStored(STORAGE_KEYS.lastSeenReclamacaoId) !== '';
     let perguntasInicializadas =
       readStored(STORAGE_KEYS.lastSeenPerguntaId) !== '';
+    const historicoNotificacoes = readNotificationHistory();
 
     const avisarNavegador = (titulo: string, corpo: string) => {
       if (!('Notification' in window)) return;
@@ -465,7 +488,7 @@ function App() {
         const perguntasNovas = perguntasInicializadas && Number(depoisPergunta) > 0 && Array.isArray(data?.perguntas)
           ? data.perguntas
           : [];
-        const itens: NotificacaoItem[] = [
+        const itensRecebidos: NotificacaoItem[] = [
           ...vendasNovas.map(
             (venda: {
               id: number;
@@ -520,6 +543,19 @@ function App() {
             })
           ),
         ];
+
+        // A API trabalha com marcadores incrementais, mas uma sincronização
+        // pode devolver novamente o mesmo registro. O histórico persistido
+        // impede que a venda volte a gerar sino, contador e toast.
+        const itens = itensRecebidos.filter((item) => {
+          if (historicoNotificacoes.has(item.id)) return false;
+          historicoNotificacoes.add(item.id);
+          return true;
+        });
+
+        if (itensRecebidos.length > 0) {
+          saveNotificationHistory(historicoNotificacoes);
+        }
 
         if (itens.length > 0) {
           setNotificacoes((atual) => [...itens, ...atual].slice(0, 20));

@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   lastSeenVendaId: 'desmonte.lastSeenVendaId',
   lastSeenReclamacaoId: 'desmonte.lastSeenReclamacaoId',
   lastSeenPerguntaId: 'desmonte.lastSeenPerguntaId',
+  notificationHistory: 'desmonte.notificationHistory',
 } as const;
 
 export const SESSION_KEYS = {
