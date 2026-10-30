@@ -46,7 +46,7 @@ export default function ConnectionMonitor({ onStatusChange }: ConnectionMonitorP
         onClick={() => checkConnection(true)}
         title="Clique para verificar a conexão novamente"
         aria-label="Verificar conexão com a API"
-        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+        className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
           isChecking
             ? 'bg-card border-line text-muted'
             : isOnline
@@ -57,11 +57,10 @@ export default function ConnectionMonitor({ onStatusChange }: ConnectionMonitorP
         {isChecking ? (
           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
         ) : isOnline ? (
-          <Wifi className="h-3.5 w-3.5" />
+          <Wifi className="h-4 w-4" />
         ) : (
-          <WifiOff className="h-3.5 w-3.5" />
+          <WifiOff className="h-4 w-4" />
         )}
-        {isChecking ? 'Verificando...' : isOnline ? 'API online' : 'API offline'}
       </button>
     </div>
   );

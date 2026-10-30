@@ -754,36 +754,12 @@ function App() {
                 <ConnectionMonitor onStatusChange={setApiOnline} />
                 <button
                   type="button"
-                  onClick={() => setShowLogoutConfirm(true)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-muted transition-colors hover:bg-secondary hover:text-ink"
-                >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
-                  Logout
-                </button>
-                {lastUpdated && (
-                  <span className="hidden text-xs text-muted lg:inline">
-                    Atualizado às{' '}
-                    {lastUpdated.toLocaleTimeString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                )}
-                <button
-                  type="button"
                   onClick={() => void fetchDashboard()}
-                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-secondary px-3 py-1.5 text-sm text-ink transition-colors hover:bg-line"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-ink transition-colors hover:bg-line"
                   title="Atualizar dados do painel"
+                  aria-label="Atualizar dados do painel"
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  Atualizar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNavigate('config')}
-                  className="whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:brightness-110"
-                >
-                  Configurações
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 </button>
               </div>
             </div>
