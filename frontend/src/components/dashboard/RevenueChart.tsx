@@ -66,17 +66,10 @@ function caminhoSuave(pontos: Array<{ x: number; y: number }>): string {
   let caminho = `M ${pontos[0].x} ${pontos[0].y}`;
 
   for (let indice = 0; indice < pontos.length - 1; indice += 1) {
-    const anterior = pontos[indice - 1] || pontos[indice];
     const atual = pontos[indice];
     const proximo = pontos[indice + 1];
-    const depois = pontos[indice + 2] || proximo;
-
-    const controle1x = atual.x + (proximo.x - anterior.x) / 6;
-    const controle1y = atual.y + (proximo.y - anterior.y) / 6;
-    const controle2x = proximo.x - (depois.x - atual.x) / 6;
-    const controle2y = proximo.y - (depois.y - atual.y) / 6;
-
-    caminho += ` C ${controle1x} ${controle1y}, ${controle2x} ${controle2y}, ${proximo.x} ${proximo.y}`;
+    const meioX = (atual.x + proximo.x) / 2;
+    caminho += ` C ${meioX} ${atual.y}, ${meioX} ${proximo.y}, ${proximo.x} ${proximo.y}`;
   }
 
   return caminho;

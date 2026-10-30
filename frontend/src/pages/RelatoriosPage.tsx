@@ -917,10 +917,8 @@ export default function RelatoriosPage({
       ? coords.slice(1).reduce((caminho, coord, indice) => {
           const anterior = coords[indice];
           const meioX = (anterior.x + coord.x) / 2;
-          const meioY = (anterior.y + coord.y) / 2;
-          return `${caminho} Q ${anterior.x.toFixed(1)} ${anterior.y.toFixed(1)} ${meioX.toFixed(1)} ${meioY.toFixed(1)}`;
-        }, `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`) +
-        ` T ${coords[coords.length - 1].x.toFixed(1)} ${coords[coords.length - 1].y.toFixed(1)}`
+          return `${caminho} C ${meioX.toFixed(1)} ${anterior.y.toFixed(1)} ${meioX.toFixed(1)} ${coord.y.toFixed(1)} ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`;
+        }, `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`)
       : '';
     const area =
       coords.length > 0

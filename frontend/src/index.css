@@ -771,6 +771,8 @@ select {
 }
 
 .chart-point-enter {
+  transform-box: fill-box;
+  transform-origin: center;
   animation: chart-point-reveal 2200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
@@ -861,6 +863,13 @@ select {
 .dashboard-chart-svg text {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, sans-serif;
   letter-spacing: 0.01em;
+}
+
+.liquid-chart-shell .dashboard-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 760 / 300;
 }
 
 @keyframes liquid-sheen {
