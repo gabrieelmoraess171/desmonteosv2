@@ -1450,7 +1450,7 @@ export default function RelatoriosPage({
                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted print:text-[#777]">
                     Evolução financeira
                   </p>
-                  <h3 className="mt-1 text-lg font-bold text-ink print:text-black">
+                  <h3 className="mt-1 text-xl font-bold text-ink print:text-black">
                     {legendaSerie} por{' '}
                     {relatorio.periodo.chave === 'hoje' ? 'hora' : 'dia'}
                   </h3>
@@ -1547,7 +1547,8 @@ export default function RelatoriosPage({
                   >
                     <svg
                       viewBox={`0 0 ${graficoSerie.largura} ${graficoSerie.altura}`}
-                      className="h-[24rem] w-full sm:h-[32rem]"
+                      className="dashboard-chart-svg h-[22rem] w-full sm:h-[30rem] lg:h-[34rem]"
+                      preserveAspectRatio="none"
                       role="img"
                       aria-label={`Gráfico de ${legendaSerie}`}
                       onMouseLeave={() => setIndiceGraficoAtivo(null)}
@@ -1589,7 +1590,7 @@ export default function RelatoriosPage({
                             x={graficoSerie.margem.esquerda - 8}
                             y={tick.y + 3}
                             textAnchor="end"
-                            fontSize="10"
+                            fontSize="11"
                             fill="currentColor"
                             className="text-muted"
                           >
@@ -1695,7 +1696,7 @@ export default function RelatoriosPage({
                           x={coord.x}
                           y={graficoSerie.altura - 8}
                           textAnchor="middle"
-                          fontSize="10"
+                          fontSize="11"
                           fill="currentColor"
                           className="text-muted"
                         >

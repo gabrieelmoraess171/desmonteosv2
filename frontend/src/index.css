@@ -728,18 +728,18 @@ select {
 .chart-line-enter {
   stroke-dasharray: 2200;
   stroke-dashoffset: 2200;
-  animation: chart-line-draw 2600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-line-draw 4200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
 
 .chart-area-enter {
   transform-origin: center bottom;
-  animation: chart-area-reveal 2200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-area-reveal 3600ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
 
 .chart-point-enter {
-  animation: chart-point-reveal 1300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-point-reveal 2200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
 
@@ -775,19 +775,19 @@ select {
 .report-chart-line {
   stroke-dasharray: 2600;
   stroke-dashoffset: 2600;
-  animation: report-line-draw 3.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: report-line-draw 4.8s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
 
 .report-chart-area {
-  animation: chart-fade-up 2.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-fade-up 3.8s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
 }
 
 .report-chart-point {
   transform-box: fill-box;
   transform-origin: center;
-  animation: report-point-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: report-point-in 2.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-play-state: paused;
   transition: r 0.22s cubic-bezier(0.16, 1, 0.3, 1), fill 0.22s ease, stroke-width 0.22s ease;
 }
@@ -824,6 +824,11 @@ select {
 .liquid-chart-shell svg {
   touch-action: pan-y;
   filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.16));
+}
+
+.dashboard-chart-svg text {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, sans-serif;
+  letter-spacing: 0.01em;
 }
 
 @keyframes liquid-sheen {

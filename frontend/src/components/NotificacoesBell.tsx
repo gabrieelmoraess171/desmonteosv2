@@ -80,7 +80,7 @@ export default function NotificacoesBell({
           <div className="border-b border-line px-4 py-3">
             <p className="text-sm font-bold text-ink">Notificações</p>
             <p className="text-[11px] text-muted">
-              Vendas novas e reclamações do Mercado Livre
+              Vendas, perguntas e reclamações do Mercado Livre
             </p>
           </div>
           {itens.length === 0 ? (

@@ -343,7 +343,8 @@ export default function RevenueChart({
       >
         <svg
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
-          className="h-[18rem] w-full overflow-visible sm:h-[24rem]"
+          className="dashboard-chart-svg h-[22rem] w-full overflow-visible sm:h-[30rem] lg:h-[34rem]"
+          preserveAspectRatio="none"
           role="img"
           aria-label={`Gráfico de faturamento ${rotuloValor.toLowerCase()} • ${periodoLabel}`}
           onMouseLeave={() => setIndiceAtivo(null)}
