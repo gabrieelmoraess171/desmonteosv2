@@ -1463,6 +1463,8 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
       linhasCompletas.map((linha) => String(linha.order_id))
     );
 
+    let encontrouPedidoForaDoPeriodo = false;
+
     while (offset < LIMITE_PEDIDOS) {
       const dados = await mlFetch(
         `/orders/search?seller=${encodeURIComponent(
@@ -1473,6 +1475,11 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
         ? dados.results
         : [];
 
+      // A API está ordenada por date_desc. Assim que encontramos o primeiro
+      // pedido fora da janela, não há motivo para continuar consultando
+      // centenas de páginas antigas.
+      const pedidosDaJanela = [];
+
       for (const order of resultados) {
         const dataPedido = new Date(
           order?.date_created || order?.date_closed || 0
@@ -1480,9 +1487,14 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
 
         if (Number.isFinite(dataPedido) && dataPedido < desde) {
           ignorados += 1;
-          continue;
+          encontrouPedidoForaDoPeriodo = true;
+          break;
         }
 
+        pedidosDaJanela.push(order);
+      }
+
+      await mapComLimite(pedidosDaJanela, 6, async (order) => {
         try {
           const payload = montarPayloadVenda(order);
 
@@ -1532,7 +1544,7 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
             error.message
           );
         }
-      }
+      });
 
       total += resultados.length;
       offset += resultados.length;
@@ -1542,7 +1554,8 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
       if (
         resultados.length < 50 ||
         resultados.length === 0 ||
-        (totalApi > 0 && offset >= totalApi)
+        (totalApi > 0 && offset >= totalApi) ||
+        encontrouPedidoForaDoPeriodo
       ) {
         break;
       }

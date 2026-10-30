@@ -110,6 +110,15 @@ function urlAnuncio(peca: Peca): string | null {
   );
 }
 
+function normalizarBusca(valor: unknown): string {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 export default function PecasTable({
   limit,
   onChange,
@@ -209,14 +218,19 @@ export default function PecasTable({
   );
 
   const filtradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
+    const termos = normalizarBusca(busca).split(' ').filter(Boolean);
 
     return pecas.filter((peca) => {
-      const correspondeBusca =
-        !termo ||
-        [peca.nome, peca.sku, peca.carro, peca.categoria, peca.marca]
+      const textoBusca = normalizarBusca(
+        [peca.nome, peca.sku, peca.carro, peca.categoria, peca.marca, peca.modelo, peca.ano, peca.numero_oem]
           .filter(Boolean)
-          .some((valor) => String(valor).toLowerCase().includes(termo));
+          .join(' ')
+      );
+      // A busca é por palavras: "lanterna sw4" encontra "lanterna traseira
+      // direita hilux sw4", mesmo que os termos não sejam consecutivos.
+      const correspondeBusca = termos.every((termo) =>
+        textoBusca.includes(termo)
+      );
 
       if (!correspondeBusca) return false;
 
