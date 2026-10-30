@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CheckSquare, Percent, Square, TrendingUp } from 'lucide-react';
 
 export type PeriodoDashboard = 'hoje' | '7' | '15' | '30';
@@ -91,7 +91,30 @@ export default function RevenueChart({
   const [indiceAtivo, setIndiceAtivo] = useState<number | null>(null);
   const [modoValor, setModoValor] = useState<ModoValor>('liquido');
   const [incluirCanceladas, setIncluirCanceladas] = useState(false);
+  const [graficoVisivel, setGraficoVisivel] = useState(false);
+  const graficoRef = useRef<HTMLDivElement | null>(null);
   const gradientId = `receita-${useId().replace(/:/g, '')}`;
+
+  useEffect(() => {
+    const elemento = graficoRef.current;
+    if (!elemento || typeof IntersectionObserver === 'undefined') {
+      setGraficoVisivel(true);
+      return undefined;
+    }
+
+    const observador = new IntersectionObserver(
+      ([entrada]) => {
+        if (entrada.isIntersecting) {
+          setGraficoVisivel(true);
+          observador.disconnect();
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    observador.observe(elemento);
+    return () => observador.disconnect();
+  }, []);
 
   const totais = useMemo(() => {
     return serie.reduce(
@@ -315,11 +338,12 @@ export default function RevenueChart({
 
       <div
         key={`${periodo}-${serie.map((ponto) => `${ponto.data}-${ponto.vendas}-${ponto.faturamento}`).join('|')}`}
-        className="liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3"
+        ref={graficoRef}
+        className={`liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3 ${graficoVisivel ? 'chart-in-view' : ''}`}
       >
         <svg
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
-          className="h-auto w-full overflow-visible"
+          className="h-[18rem] w-full overflow-visible sm:h-[24rem]"
           role="img"
           aria-label={`Gráfico de faturamento ${rotuloValor.toLowerCase()} • ${periodoLabel}`}
           onMouseLeave={() => setIndiceAtivo(null)}

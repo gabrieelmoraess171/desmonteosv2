@@ -31,6 +31,14 @@ function dataLocalISO(data = new Date()) {
   return `${ano}-${mes}-${dia}`;
 }
 
+function textoData(valor) {
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+    return valor.toISOString();
+  }
+
+  return String(valor || '');
+}
+
 function resolverPeriodo(params = {}) {
   const inicioParam = String(params.inicio || '').trim().slice(0, 10);
   const fimParam = String(params.fim || '').trim().slice(0, 10);
@@ -361,7 +369,7 @@ function gerarSerie(vendas, periodo) {
     const mapa = new Map();
 
     for (const venda of vendas) {
-      const hora = String(venda.data_venda || '').slice(11, 13);
+      const hora = textoData(venda.data_venda).slice(11, 13);
       const chave = /^\d{2}$/.test(hora) ? hora : '00';
       const ponto = mapa.get(chave) || criarPonto(chave, `${chave}h`);
       adicionarNaSerie(ponto, venda);
@@ -379,7 +387,7 @@ function gerarSerie(vendas, periodo) {
   const mapa = new Map();
 
   for (const venda of vendas) {
-    const chave = String(venda.data_venda || '').slice(0, 10);
+    const chave = textoData(venda.data_venda).slice(0, 10);
     const [ano, mes, dia] = chave.split('-');
     const label = dia && mes ? `${dia}/${mes}` : chave;
     const ponto = mapa.get(chave) || criarPonto(chave, label);

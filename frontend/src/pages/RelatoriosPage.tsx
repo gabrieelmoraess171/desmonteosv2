@@ -499,10 +499,33 @@ export default function RelatoriosPage({
   const [erro, setErro] = useState('');
   const [indicadorAberto, setIndicadorAberto] = useState<string | null>(null);
   const [indiceGraficoAtivo, setIndiceGraficoAtivo] = useState<number | null>(null);
+  const [graficoVisivel, setGraficoVisivel] = useState(false);
+  const graficoRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (statusInicial) setStatus(statusInicial);
   }, [statusInicial]);
+
+  useEffect(() => {
+    const elemento = graficoRef.current;
+    if (!elemento || typeof IntersectionObserver === 'undefined') {
+      setGraficoVisivel(true);
+      return undefined;
+    }
+
+    const observador = new IntersectionObserver(
+      ([entrada]) => {
+        if (entrada.isIntersecting) {
+          setGraficoVisivel(true);
+          observador.disconnect();
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    observador.observe(elemento);
+    return () => observador.disconnect();
+  }, []);
 
   const periodoValido =
     periodo !== 'custom' || (Boolean(inicio) && Boolean(fim) && inicio <= fim);
@@ -1518,10 +1541,13 @@ export default function RelatoriosPage({
                     </div>
                   </div>
 
-                  <div className="liquid-chart-shell mt-3 overflow-hidden rounded-xl border border-line/50 p-2 sm:p-3 print:bg-white">
+                  <div
+                    ref={graficoRef}
+                    className={`liquid-chart-shell report-chart-shell mt-3 overflow-hidden rounded-xl border border-line/50 p-2 sm:p-3 print:bg-white ${graficoVisivel ? 'chart-in-view' : ''}`}
+                  >
                     <svg
                       viewBox={`0 0 ${graficoSerie.largura} ${graficoSerie.altura}`}
-                      className="h-60 w-full sm:h-72"
+                      className="h-[24rem] w-full sm:h-[32rem]"
                       role="img"
                       aria-label={`Gráfico de ${legendaSerie}`}
                       onMouseLeave={() => setIndiceGraficoAtivo(null)}

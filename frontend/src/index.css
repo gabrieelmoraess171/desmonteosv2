@@ -727,16 +727,29 @@ select {
 
 .chart-line-enter {
   stroke-dasharray: 2200;
-  animation: chart-line-draw 1100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  stroke-dashoffset: 2200;
+  animation: chart-line-draw 2600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
 }
 
 .chart-area-enter {
   transform-origin: center bottom;
-  animation: chart-area-reveal 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-area-reveal 2200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
 }
 
 .chart-point-enter {
-  animation: chart-point-reveal 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-point-reveal 1300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
+}
+
+.chart-in-view .chart-line-enter,
+.chart-in-view .chart-area-enter,
+.chart-in-view .chart-point-enter,
+.chart-in-view .report-chart-line,
+.chart-in-view .report-chart-area,
+.chart-in-view .report-chart-point {
+  animation-play-state: running;
 }
 
 @keyframes chart-area-reveal {
@@ -761,17 +774,21 @@ select {
 
 .report-chart-line {
   stroke-dasharray: 2600;
-  animation: report-line-draw 1.05s cubic-bezier(0.16, 1, 0.3, 1) both;
+  stroke-dashoffset: 2600;
+  animation: report-line-draw 3.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
 }
 
 .report-chart-area {
-  animation: chart-fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chart-fade-up 2.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
 }
 
 .report-chart-point {
   transform-box: fill-box;
   transform-origin: center;
-  animation: report-point-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: report-point-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-play-state: paused;
   transition: r 0.22s cubic-bezier(0.16, 1, 0.3, 1), fill 0.22s ease, stroke-width 0.22s ease;
 }
 
