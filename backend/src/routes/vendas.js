@@ -142,18 +142,24 @@ export function pontuacaoDestinatario(envio, destinatario) {
   const documentoPedido = String(envio.venda_cpf || '').replace(/\D/g, '');
   const documentoCorrespondente = Boolean(
     documentoXml &&
-      documentoPedido &&
-      documentoXml === documentoPedido
+      (!documentoPedido || documentoXml === documentoPedido)
   );
   const documentoValido = [11, 14].includes(documentoXml.length);
-  const enderecoXml = normalizarComparacao(destinatario.endereco);
+  const enderecosXml = [
+    destinatario.endereco,
+    ...(Array.isArray(destinatario.enderecos) ? destinatario.enderecos : [])
+  ]
+    .map(normalizarComparacao)
+    .filter(Boolean);
   const enderecosPedido = [envio.receiver_address, envio.venda_endereco]
     .map(normalizarComparacao)
     .filter((endereco) => endereco.length >= 5);
-  const enderecoCorrespondente = enderecosPedido.some(
-    (endereco) =>
-      enderecoXml.length >= 5 &&
-      (endereco.includes(enderecoXml) || enderecoXml.includes(endereco))
+  const enderecoCorrespondente = enderecosXml.some((enderecoXml) =>
+    enderecosPedido.some(
+      (endereco) =>
+        enderecoXml.length >= 5 &&
+        (endereco.includes(enderecoXml) || enderecoXml.includes(endereco))
+    )
   );
 
   if (

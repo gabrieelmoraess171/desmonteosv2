@@ -96,19 +96,25 @@ export function extrairDestinatarioXml(conteudo) {
   const endereco = destinatario.match(
     /<(?:[\w.-]+:)?enderDest\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?enderDest\s*>/i
   )?.[1] || '';
+  const entrega = conteudo.match(
+    /<(?:[\w.-]+:)?entrega\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?entrega\s*>/i
+  )?.[1] || '';
   const documento =
     extrairTagXml(destinatario, 'CPF') ||
     extrairTagXml(destinatario, 'CNPJ');
+  const montarEndereco = (bloco) =>
+    [extrairTagXml(bloco, 'xLgr'), extrairTagXml(bloco, 'nro')]
+      .filter(Boolean)
+      .join(' ');
+  const enderecos = [montarEndereco(endereco), montarEndereco(entrega)].filter(
+    (valor, indice, lista) => valor && lista.indexOf(valor) === indice
+  );
   const cliente = {
     nome: extrairTagXml(destinatario, 'xNome'),
     documento: documento.replace(/\D/g, ''),
     cep: extrairTagXml(endereco, 'CEP').replace(/\D/g, ''),
-    endereco: [
-      extrairTagXml(endereco, 'xLgr'),
-      extrairTagXml(endereco, 'nro')
-    ]
-      .filter(Boolean)
-      .join(' ')
+    endereco: enderecos[0] || '',
+    enderecos
   };
 
   if (!cliente.nome) {
