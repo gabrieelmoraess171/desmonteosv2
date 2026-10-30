@@ -313,7 +313,10 @@ export default function RevenueChart({
         </div>
       </div>
 
-      <div className="liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3">
+      <div
+        key={`${periodo}-${serie.map((ponto) => `${ponto.data}-${ponto.vendas}-${ponto.faturamento}`).join('|')}`}
+        className="liquid-chart-shell relative min-w-0 overflow-hidden rounded-xl border border-white/[0.06] p-2 sm:p-3"
+      >
         <svg
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
           className="h-auto w-full overflow-visible"

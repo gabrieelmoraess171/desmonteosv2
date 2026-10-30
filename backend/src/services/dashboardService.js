@@ -94,6 +94,15 @@ function arredondarValor(valor) {
   return Number(numero(valor).toFixed(2));
 }
 
+function normalizarChaveDia(valor) {
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+    return valor.toISOString().slice(0, 10);
+  }
+
+  const texto = String(valor || '').trim();
+  return texto.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || texto;
+}
+
 function montarPontoSerie(data, label, registro) {
   const vendas = numero(registro?.vendas);
   const faturamentoBruto = arredondarValor(registro?.faturamento);
@@ -117,7 +126,9 @@ function montarPontoSerie(data, label, registro) {
 }
 
 function gerarSerieDiaria(rows, dias) {
-  const mapa = new Map(rows.map((row) => [row.dia, row]));
+  const mapa = new Map(
+    rows.map((row) => [normalizarChaveDia(row.dia), row])
+  );
   const base = hojeLocal();
   const serie = [];
 
