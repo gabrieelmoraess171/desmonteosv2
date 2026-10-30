@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, ChevronDown, Layers, Trophy } from 'lucide-react';
+import { ArrowRight, ChevronDown, ImageOff, Layers, Trophy } from 'lucide-react';
+import { API_URL } from '../../config/api';
 
 interface ProdutoVendido {
   vendaId: number;
   nome?: string;
+  imagem?: string | null;
   pedido?: string | null;
   cliente: string;
   data: string;
@@ -175,9 +177,13 @@ export default function TopTiposPeca({
                 </button>
                 {expandido && (
                   <div className="ml-12 mr-2 space-y-2 border-l border-line pb-2 pl-3">
-                    {(item.vendidos || []).map((venda) => (
-                      <div key={`${venda.vendaId}-${venda.quantidade}`} className="flex justify-between gap-3 text-xs">
-                        <span className="min-w-0 text-muted">
+                    {(item.vendidos || []).map((venda, indice) => (
+                      <div key={`${venda.vendaId}-${indice}`} className="flex items-center gap-3 text-xs">
+                        <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] text-muted">
+                          <ImageOff className="h-4 w-4" aria-hidden="true" />
+                          {venda.imagem && <img src={venda.imagem.startsWith('/') ? `${API_URL}${venda.imagem}` : venda.imagem} alt={`Foto de ${venda.nome || item.tipo}`} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+                        </span>
+                        <span className="min-w-0 flex-1 text-muted">
                           <span className="block font-medium text-ink">{venda.nome || item.tipo}</span>
                           Pedido {venda.pedido || venda.vendaId} • {venda.cliente} • {venda.quantidade} un.
                         </span>

@@ -755,6 +755,8 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
     db.all(
       `SELECT vi.venda_id, v.order_id,
               COALESCE(NULLIF(TRIM(vi.descricao), ''), p.nome, 'Produto sem nome') AS nome,
+              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
+                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
               vi.quantidade, vi.preco_unitario, v.cliente,
               datetime(v.data_venda, 'localtime') AS data_venda
        FROM venda_itens vi
@@ -768,6 +770,8 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
 
        SELECT v.id AS venda_id, v.order_id,
               COALESCE(NULLIF(TRIM(p.nome), ''), 'Produto sem nome') AS nome,
+              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
+                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
               1 AS quantidade, v.valor AS preco_unitario, v.cliente,
               datetime(v.data_venda, 'localtime') AS data_venda
        FROM vendas v
@@ -850,6 +854,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
     atual.vendidos.push({
       vendaId: item.venda_id,
       nome: item.nome,
+      imagem: item.imagem || null,
       pedido: item.order_id || null,
       cliente: item.cliente || 'Comprador',
       data: item.data_venda,
