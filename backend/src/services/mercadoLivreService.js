@@ -434,7 +434,20 @@ async function requisicaoComToken(token, caminho, opcoes = {}) {
 
 export async function mlFetch(caminho, opcoes = {}, estado = {}) {
   const token = await obterAccessToken();
-  const { resposta, dados } = await requisicaoComToken(token, caminho, opcoes);
+  const timeoutMs = Math.min(
+    30000,
+    Math.max(5000, numero(opcoes.timeoutMs) || 20000)
+  );
+  const fetchOpcoes = { ...opcoes };
+  delete fetchOpcoes.timeoutMs;
+  if (!fetchOpcoes.signal) {
+    fetchOpcoes.signal = AbortSignal.timeout(timeoutMs);
+  }
+  const { resposta, dados } = await requisicaoComToken(
+    token,
+    caminho,
+    fetchOpcoes
+  );
 
   if (resposta.status === 401 && !estado.renovouToken) {
     await renovarToken(await obterIntegracao());
@@ -1444,6 +1457,7 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
   return comSincronizacao('vendas', async () => {
     const integracao = await obterIntegracaoObrigatoria();
     const desde = Date.now() - Math.max(1, numero(dias) || 30) * 86400000;
+    const buscarFiscaisAntigos = Number(dias) > 7;
     let offset = 0;
     let total = 0;
     let criados = 0;
@@ -1498,7 +1512,14 @@ export async function sincronizarVendas({ dias = 30 } = {}) {
         try {
           const payload = montarPayloadVenda(order);
 
-          if (!clientesCompletos.has(String(order.id))) {
+          const idadePedido = Number.isFinite(dataPedido)
+            ? Date.now() - dataPedido
+            : Number.POSITIVE_INFINITY;
+          const precisaDadosFiscais =
+            !clientesCompletos.has(String(order.id)) &&
+            (buscarFiscaisAntigos || idadePedido <= 2 * 86400000);
+
+          if (precisaDadosFiscais) {
             const dadosCliente = await obterBillingClienteMl(order.id);
 
             if (dadosCliente) {
