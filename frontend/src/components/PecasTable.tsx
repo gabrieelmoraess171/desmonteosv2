@@ -24,10 +24,12 @@ interface Peca extends PecaCompleta {
   quantidade: number;
   preco: number;
   ml_ativo: number;
+  ml_status?: string | null;
   imagem_principal?: string | null;
   imagens_count?: number;
   ml_thumbnail?: string | null;
   ml_permalink?: string | null;
+  vendas_count?: number | null;
   status?: 'inativo' | 'revisar' | 'pronto';
   motivos?: string[];
 }
@@ -117,6 +119,19 @@ function normalizarBusca(valor: unknown): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function anuncioVendido(peca: Peca): boolean {
+  return (
+    String(peca.ml_status || '').toLowerCase() === 'closed' ||
+    (Number(peca.vendas_count || 0) > 0 && Number(peca.quantidade || 0) <= 0)
+  );
+}
+
+function prioridadeListagem(peca: Peca): number {
+  if (Boolean(peca.ml_ativo)) return 0;
+  if (anuncioVendido(peca)) return 1;
+  return 2;
 }
 
 export default function PecasTable({
@@ -220,7 +235,8 @@ export default function PecasTable({
   const filtradas = useMemo(() => {
     const termos = normalizarBusca(busca).split(' ').filter(Boolean);
 
-    return pecas.filter((peca) => {
+    return pecas
+      .filter((peca) => {
       const textoBusca = normalizarBusca(
         [peca.nome, peca.sku, peca.carro, peca.categoria, peca.marca, peca.modelo, peca.ano, peca.numero_oem]
           .filter(Boolean)
@@ -244,8 +260,13 @@ export default function PecasTable({
       if (statusFiltro === 'revisar') return peca.status === 'revisar';
       if (statusFiltro === 'inativo') return !peca.ml_ativo;
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        const prioridade = prioridadeListagem(a) - prioridadeListagem(b);
+        if (prioridade !== 0) return prioridade;
+        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+      });
   }, [pecas, busca, categoriaFiltro, statusFiltro]);
 
   const exibidas = limit !== undefined ? filtradas.slice(0, limit) : filtradas;
@@ -506,6 +527,7 @@ export default function PecasTable({
                 const status = STATUS_CONFIG[statusKey];
                 const condicao = infoCondicao(peca.condicao);
                 const revisar = statusKey === 'revisar';
+                const vendido = anuncioVendido(peca);
 
                 return (
                   <tr
@@ -550,10 +572,18 @@ export default function PecasTable({
                             )}
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted">
-                            <span className="font-mono text-accent">
+                            <span className="font-mono text-sm font-bold text-accent">
                               {peca.sku || 'Sem SKU'}
                             </span>
                             <span>•</span>
+                            {vendido && (
+                              <>
+                                <span className="inline-flex rounded-md border border-warning/30 bg-warningSoft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-warning">
+                                  Vendido
+                                </span>
+                                <span>•</span>
+                              </>
+                            )}
                             <span
                               className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${condicao.className}`}
                             >
@@ -613,16 +643,23 @@ export default function PecasTable({
                       {formatarMoeda(peca.preco)}
                     </td>
                     <td className="px-3 py-3.5">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${status.className}`}
-                      >
-                        {revisar ? (
-                          <AlertTriangle className="h-3 w-3" />
-                        ) : (
-                          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                      <div className="flex flex-col items-start gap-1.5">
+                        {vendido && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warningSoft px-2.5 py-1 text-xs font-bold text-warning">
+                            Vendido
+                          </span>
                         )}
-                        {status.label}
-                      </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${status.className}`}
+                        >
+                          {revisar ? (
+                            <AlertTriangle className="h-3 w-3" />
+                          ) : (
+                            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                          )}
+                          {status.label}
+                        </span>
+                      </div>
                       {revisar && (
                         <button
                           type="button"
@@ -721,6 +758,7 @@ export default function PecasTable({
               const status = STATUS_CONFIG[statusKey];
               const condicao = infoCondicao(peca.condicao);
               const revisar = statusKey === 'revisar';
+              const vendido = anuncioVendido(peca);
 
               return (
                 <article
@@ -764,14 +802,21 @@ export default function PecasTable({
                             </a>
                           )}
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {vendido && (
+                            <span className="rounded-full border border-warning/30 bg-warningSoft px-2 py-0.5 text-[10px] font-bold uppercase text-warning">
+                              Vendido
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                        <span className="font-mono text-accent">
+                        <span className="font-mono text-xs font-bold text-accent">
                           {peca.sku || 'Sem SKU'}
                         </span>
                         <span

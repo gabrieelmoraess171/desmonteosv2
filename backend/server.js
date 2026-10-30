@@ -266,6 +266,12 @@ app.get('/api/pecas', async (req, res) => {
          p.quantidade, p.preco, p.ml_ativo,
          p.ml_titulo, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
+         (
+           SELECT COUNT(*)
+           FROM vendas v
+           WHERE v.peca_id = p.id
+             AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado')
+         ) AS vendas_count,
          p.peso_kg, p.comprimento_cm, p.largura_cm, p.altura_cm,
          LENGTH(TRIM(COALESCE(p.descricao, ''))) AS descricao_len`
       : 'p.*';
