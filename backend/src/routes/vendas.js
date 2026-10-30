@@ -98,6 +98,33 @@ function textoBuscaEnvio(envio) {
   );
 }
 
+function pontuacaoProdutoXml(envio, itens) {
+  const textoEnvio = textoBuscaEnvio(envio);
+  let melhor = 0;
+
+  for (const item of Array.isArray(itens) ? itens : []) {
+    const nome = normalizarNomeCompleto(item.nome);
+    const codigo = normalizarComparacao(item.codigo);
+    const codigoEnvio = normalizarComparacao(
+      [envio.sku, envio.venda_peca_sku].filter(Boolean).join(' ')
+    );
+
+    if (codigo && codigoEnvio.includes(codigo)) {
+      melhor = Math.max(melhor, 100);
+      continue;
+    }
+
+    const termos = nome.split(' ').filter((termo) => termo.length >= 3);
+    if (!termos.length) continue;
+
+    const encontrados = termos.filter((termo) => textoEnvio.includes(termo));
+    const pontuacao = encontrados.length / termos.length;
+    melhor = Math.max(melhor, pontuacao);
+  }
+
+  return melhor;
+}
+
 export function pontuacaoDestinatario(envio, destinatario) {
   const nomeXml = normalizarNomeCompleto(destinatario.nome);
   const nomesPedido = [
@@ -174,19 +201,35 @@ async function encontrarEnvioDoXml(file, preparado) {
       .map((envio) => {
         const texto = textoBuscaEnvio(envio);
         const encontrados = termosArquivo.filter((termo) => texto.includes(termo));
-        return { envio, encontrados };
+        return {
+          envio,
+          encontrados,
+          produtoPontuacao: pontuacaoProdutoXml(envio, preparado.itens)
+        };
       })
       .filter(
         (item) =>
           termosArquivo.length >= 2 &&
           item.encontrados.length === termosArquivo.length
       )
-      .sort((a, b) => b.encontrados.length - a.encontrados.length);
+      .sort(
+        (a, b) =>
+          b.produtoPontuacao - a.produtoPontuacao ||
+          b.encontrados.length - a.encontrados.length
+      );
 
     const melhor = candidatosPorNome[0];
     const segundo = candidatosPorNome[1];
 
-    if (melhor && (!segundo || segundo.encontrados.length < melhor.encontrados.length)) {
+    const desempateProduto =
+      melhor?.produtoPontuacao > 0 &&
+      (!segundo || segundo.produtoPontuacao < melhor.produtoPontuacao);
+    const candidatoUnicoPorNome =
+      melhor &&
+      melhor.produtoPontuacao === 0 &&
+      (!segundo || segundo.encontrados.length < melhor.encontrados.length);
+
+    if (desempateProduto || candidatoUnicoPorNome) {
       return melhor.envio;
     }
 

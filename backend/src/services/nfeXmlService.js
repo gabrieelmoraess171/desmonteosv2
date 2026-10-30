@@ -122,6 +122,25 @@ export function extrairDestinatarioXml(conteudo) {
   return cliente;
 }
 
+export function extrairItensXml(conteudo) {
+  const itens = [];
+  const expressao = /<(?:[\w.-]+:)?det\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?det\s*>/gi;
+  let correspondencia;
+
+  while ((correspondencia = expressao.exec(conteudo))) {
+    const bloco = correspondencia[1];
+    const produto = bloco.match(
+      /<(?:[\w.-]+:)?prod\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?prod\s*>/i
+    )?.[1] || bloco;
+    const nome = extrairTagXml(produto, 'xProd');
+    const codigo = extrairTagXml(produto, 'cProd');
+
+    if (nome || codigo) itens.push({ nome, codigo });
+  }
+
+  return itens;
+}
+
 function validarConteudoXml(conteudo, nomeArquivo) {
   if (
     /<!DOCTYPE|<!ENTITY/i.test(conteudo) ||
@@ -229,7 +248,8 @@ export async function prepararXmlNfe(file) {
     return {
       ...xmlExtraido,
       filePath: file.path,
-      destinatario: extrairDestinatarioXml(xmlExtraido.conteudo)
+      destinatario: extrairDestinatarioXml(xmlExtraido.conteudo),
+      itens: extrairItensXml(xmlExtraido.conteudo)
     };
   } catch (error) {
     if (xmlExtraido.caminho !== file.path) {
