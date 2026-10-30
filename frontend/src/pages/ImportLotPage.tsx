@@ -56,6 +56,14 @@ interface ProdutoLidoIa {
   largura_cm?: number;
   altura_cm?: number;
   observacoes?: string;
+  peca?: string;
+  lado?: string;
+  marca?: string;
+  modelo?: string;
+  anos?: string;
+  aplicacao?: string;
+  confianca?: string;
+  referenciasMercadoLivre?: Array<{ titulo: string; url?: string }>;
 }
 
 interface LeituraLoteIa {
@@ -65,7 +73,9 @@ interface LeituraLoteIa {
   modelo?: string;
 }
 
-const MAX_FILES = 200;
+const MAX_FILES = 500;
+const MAX_IMAGENS_IA_LOTE = 500;
+const TAMANHO_LOTE_IA = 100;
 
 function createFileId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -276,34 +286,55 @@ export default function ImportLotPage({
     const restantes = arquivos.filter(
       (item) => !etiquetas.some((etiqueta) => etiqueta.id === item.id)
     );
-    const selecionadas = [...etiquetas, ...restantes].slice(0, 8);
+    const selecionadas = [...etiquetas, ...restantes].slice(0, MAX_IMAGENS_IA_LOTE);
 
     setAnalisandoIa(true);
     setIaErro('');
     setSuccessMessage('');
 
     try {
-      const imagens = await prepararImagensParaIa(
-        selecionadas.map((item) => ({ file: item.file, nome: item.name })),
-        8
-      );
-
-      if (imagens.length === 0) {
-        throw new Error('As fotos selecionadas não puderam ser lidas.');
-      }
-
-      const { data } = await axios.post<LeituraLoteIa>(
-        '/api/ia/analisar-lote',
-        {
+      const respostas: LeituraLoteIa[] = [];
+      for (let inicio = 0; inicio < selecionadas.length; inicio += TAMANHO_LOTE_IA) {
+        const bloco = selecionadas.slice(inicio, inicio + TAMANHO_LOTE_IA);
+        const imagens = await prepararImagensParaIa(
+          bloco.map((item) => ({ file: item.file, nome: item.name })),
+          TAMANHO_LOTE_IA,
+          220 * 1024
+        );
+        if (imagens.length === 0) continue;
+        const skuPorArquivo = Object.fromEntries(bloco.filter((item) => item.skuDetected).map((item) => [item.name, item.skuDetected]));
+        const { data } = await axios.post<LeituraLoteIa>('/api/ia/analisar-lote', {
           imagens,
-          arquivos: uploadedFiles.map((item) => item.name),
-          contexto: {
-            veiculoOrigem: selectedVehicle.trim(),
-            modo: processingMode,
-          },
-        },
-        { timeout: 120000 }
-      );
+          arquivos: bloco.map((item) => item.name),
+          contexto: { veiculoOrigem: selectedVehicle.trim(), modo: processingMode, skuPorArquivo },
+        }, { timeout: 300000 });
+        respostas.push(data);
+        setSuccessMessage(`IA analisou ${Math.min(inicio + TAMANHO_LOTE_IA, selecionadas.length)} de ${selecionadas.length} imagens...`);
+      }
+      if (respostas.length === 0) throw new Error('As fotos selecionadas não puderam ser lidas.');
+      const produtosPorSku = new Map<string, ProdutoLidoIa>();
+      const alertas = new Set<string>();
+      for (const resposta of respostas) {
+        (resposta.alertas || []).forEach((alerta) => alertas.add(alerta));
+        for (const produto of resposta.produtos || []) {
+          const chave = produto.sku && produto.sku !== 'DESCONHECIDO' ? produto.sku : `DESCONHECIDO:${produto.nome || produtosPorSku.size}`;
+          const anterior = produtosPorSku.get(chave);
+          produtosPorSku.set(chave, anterior ? {
+            ...anterior,
+            ...produto,
+            arquivos: [...new Set([...(anterior.arquivos || []), ...(produto.arquivos || [])])],
+            nome: produto.nome || anterior.nome,
+            observacoes: [anterior.observacoes, produto.observacoes].filter(Boolean).join(' '),
+            referenciasMercadoLivre: [...(anterior.referenciasMercadoLivre || []), ...(produto.referenciasMercadoLivre || [])].slice(0, 5),
+          } : produto);
+        }
+      }
+      const data: LeituraLoteIa = {
+        produtos: Array.from(produtosPorSku.values()),
+        alertas: Array.from(alertas),
+        fonte: 'Gemini + Google + Mercado Livre',
+        modelo: respostas[respostas.length - 1]?.modelo,
+      };
 
       const skuPorArquivo: Record<string, string> = {};
       const nomes: Record<string, string> = {};
@@ -800,8 +831,9 @@ export default function ImportLotPage({
                           {produto.sku}
                         </p>
                         <p className="mt-0.5 text-sm text-text-primary">
-                          {produto.nome || 'Produto sem nome'}
+                          {produto.peca || produto.nome || 'Produto sem nome'}{produto.lado ? ` ${produto.lado}` : ''}{produto.marca || produto.modelo ? ` · ${produto.marca || ''} ${produto.modelo || ''}`.trim() : ''}
                         </p>
+                        {produto.aplicacao && <p className="mt-1 text-[11px] text-success">Aplicação: {produto.aplicacao}{produto.anos ? ` · ${produto.anos}` : ''}</p>}
                         <p className="mt-1 text-[11px] text-text-secondary">
                           {produto.arquivos.length} foto(s)
                           {produto.peso_kg

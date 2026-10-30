@@ -19,6 +19,7 @@ export interface FotoSelecionada {
   id: string;
   file: File;
   preview: string;
+  grupo?: 'sku' | 'produto' | 'medidas' | 'codigo';
 }
 
 interface ProductPhotoPickerProps {
@@ -29,6 +30,8 @@ interface ProductPhotoPickerProps {
   maxPhotos?: number;
   maxFileSizeMB?: number;
   disabled?: boolean;
+  heading?: string;
+  description?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -47,6 +50,8 @@ export default function ProductPhotoPicker({
   maxPhotos = 10,
   maxFileSizeMB = 10,
   disabled = false,
+  heading = 'Fotos do produto',
+  description = 'Arraste imagens ou selecione. JPG, PNG, WEBP, GIF ou BMP, até',
 }: ProductPhotoPickerProps) {
   const [dragActive, setDragActive] = useState(false);
   const [validationMessage, setValidationMessage] = useState('');
@@ -174,10 +179,9 @@ export default function ProductPhotoPicker({
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-ink">Fotos do produto</p>
+            <p className="font-medium text-ink">{heading}</p>
             <p className="text-sm text-muted">
-              Arraste imagens ou selecione. A primeira foto será a capa do
-              anúncio no Mercado Livre. JPG, PNG, WEBP, GIF ou BMP, até{' '}
+              {description}{' '}
               {maxFileSizeMB} MB cada.
             </p>
           </div>

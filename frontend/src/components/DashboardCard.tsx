@@ -35,13 +35,14 @@ export default function DashboardCard({
       onKeyDown={handleKeyDown}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      className={`group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all ${
+      className={`dashboard-card group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all ${
         onClick
           ? 'cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
           : ''
       }`}
     >
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-cyan to-transparent opacity-50 transition-opacity group-hover:opacity-100" />
+      <div className="dashboard-card__sheen pointer-events-none absolute -inset-y-20 -left-1/2 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
 
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">

@@ -28,6 +28,7 @@ import {
 import axios from 'axios';
 import PecaFotosEditor from '../components/PecaFotosEditor';
 import {
+  CAMPOS_CATEGORIA,
   CATEGORIAS_PECA,
   camposDaCategoria,
   categoriaMlDe,
@@ -101,6 +102,51 @@ interface FormAnuncio {
   atributos: Record<string, string>;
 }
 
+interface FichaCompletaIa {
+  titulo?: string;
+  nome?: string;
+  categoria?: string;
+  categoria_ml?: string;
+  marca?: string;
+  modelo?: string;
+  ano?: string;
+  carro?: string;
+  condicao?: string;
+  numero_oem?: string;
+  garantia?: string;
+  peso_kg?: number;
+  comprimento_cm?: number;
+  largura_cm?: number;
+  altura_cm?: number;
+  descricao?: string;
+  preco_sugerido?: number;
+  quantidade_sugerida?: number;
+  gtin?: string;
+  localizacao?: string;
+  tipo_anuncio?: string;
+  modo_compra?: string;
+  atributos?: Record<string, string>;
+  estimados?: string[];
+}
+
+interface RespostaFichaCompletaIa {
+  dados: FichaCompletaIa;
+  fonte: string;
+  modelo?: string;
+  estimados?: string[];
+  aviso?: string;
+  imagensAnalisadas?: number;
+}
+
+interface ResultadoVerificadorAnuncio {
+  aprovado: boolean;
+  confianca: string;
+  problemas: Array<{ campo: string; mensagem: string }>;
+  avisos: Array<{ campo: string; mensagem: string }>;
+  confirmados: string[];
+  observacao?: string;
+}
+
 interface EditorAnunciosPageProps {
   onOpenApproval?: () => void;
   onOpenNew?: () => void;
@@ -133,6 +179,16 @@ function parsePreco(value: string): number {
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function textoPreenchido(valor: unknown, atual: string): string {
+  const texto = String(valor ?? '').trim();
+  return texto || atual;
+}
+
+function numeroPreenchido(valor: unknown, atual: string): string {
+  const numero = Number(valor);
+  return Number.isFinite(numero) && numero > 0 ? String(numero) : atual;
 }
 
 function formularioDaPeca(peca: Peca): FormAnuncio {
@@ -261,6 +317,10 @@ export default function EditorAnunciosPage({
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [gerando, setGerando] = useState(false);
+  const [completandoFicha, setCompletandoFicha] = useState(false);
+  const [estimadosFicha, setEstimadosFicha] = useState<string[]>([]);
+  const [verificandoAnuncio, setVerificandoAnuncio] = useState(false);
+  const [resultadoVerificacao, setResultadoVerificacao] = useState<ResultadoVerificadorAnuncio | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
@@ -358,6 +418,9 @@ export default function EditorAnunciosPage({
       setFormulario(formularioDaPeca(pecaDetalheSelecionada));
       setErro('');
       setAviso('');
+      setEstimadosFicha([]);
+      setResultadoVerificacao(null);
+      setCompletandoFicha(false);
     } else if (!pecaSelecionada) {
       setFormulario(null);
     }
@@ -403,6 +466,7 @@ export default function EditorAnunciosPage({
     setGerando(true);
     setErro('');
     setAviso('');
+    setEstimadosFicha([]);
 
     try {
       const { data } = await axios.post<{
@@ -442,6 +506,181 @@ export default function EditorAnunciosPage({
       }
     } finally {
       setGerando(false);
+    }
+  };
+
+  const aplicarFichaCompleta = (dados: FichaCompletaIa) => {
+    setFormulario((atual) => {
+      if (!atual) return atual;
+
+      const categoriaInformada = String(dados.categoria || '').trim();
+      const categoriaValida = (
+        CATEGORIAS_PECA as readonly string[]
+      ).includes(categoriaInformada)
+        ? categoriaInformada
+        : atual.categoria;
+      const categoriaFinal = atual.categoria || categoriaValida;
+      const condicaoInformada = String(dados.condicao || '').toLowerCase();
+      const condicao = ['novo', 'usado', 'recondicionado'].includes(
+        condicaoInformada
+      )
+        ? condicaoInformada
+        : atual.condicao;
+      const tipoInformado = String(dados.tipo_anuncio || '').toLowerCase();
+      const modoInformado = String(dados.modo_compra || '').toLowerCase();
+      const atributosIa =
+        dados.atributos && typeof dados.atributos === 'object'
+          ? Object.fromEntries(
+              Object.entries(dados.atributos)
+                .map(([chave, valor]) => [
+                  String(chave || '').trim(),
+                  String(valor ?? '').trim(),
+                ])
+                .filter(([chave, valor]) => chave && valor)
+            )
+          : {};
+      const atributosAtuais = Object.fromEntries(
+        Object.entries(atual.atributos || {}).filter(([, valor]) =>
+          String(valor ?? '').trim()
+        )
+      );
+      const precoAtual = parsePreco(atual.preco);
+      const precoSugerido = Number(dados.preco_sugerido);
+      const quantidadeAtual = Number(atual.quantidade);
+      const quantidadeSugerida = Number(dados.quantidade_sugerida);
+      const categoriaMl =
+        atual.categoriaMl ||
+        textoPreenchido(dados.categoria_ml, '') ||
+        categoriaMlDe(categoriaFinal);
+
+      return {
+        ...atual,
+        titulo: textoPreenchido(dados.titulo, atual.titulo).slice(0, 60),
+        descricao: textoPreenchido(dados.descricao, atual.descricao),
+        nome: textoPreenchido(
+          dados.nome,
+          atual.nome || dados.titulo || atual.titulo
+        ).slice(0, 200),
+        categoria: categoriaFinal,
+        categoriaMl,
+        carro: textoPreenchido(dados.carro, atual.carro),
+        marca: textoPreenchido(dados.marca, atual.marca),
+        modelo: textoPreenchido(dados.modelo, atual.modelo),
+        ano: textoPreenchido(dados.ano, atual.ano),
+        condicao,
+        numeroOem: textoPreenchido(dados.numero_oem, atual.numeroOem),
+        garantia: textoPreenchido(dados.garantia, atual.garantia),
+        pesoKg: numeroPreenchido(dados.peso_kg, atual.pesoKg),
+        comprimentoCm: numeroPreenchido(
+          dados.comprimento_cm,
+          atual.comprimentoCm
+        ),
+        larguraCm: numeroPreenchido(dados.largura_cm, atual.larguraCm),
+        alturaCm: numeroPreenchido(dados.altura_cm, atual.alturaCm),
+        preco:
+          precoAtual > 0
+            ? atual.preco
+            : Number.isFinite(precoSugerido) && precoSugerido > 0
+              ? precoSugerido.toFixed(2)
+              : atual.preco,
+        quantidade:
+          quantidadeAtual > 0
+            ? atual.quantidade
+            : Number.isFinite(quantidadeSugerida) && quantidadeSugerida > 0
+              ? String(Math.trunc(quantidadeSugerida))
+              : atual.quantidade,
+        gtin: textoPreenchido(dados.gtin, atual.gtin),
+        localizacao: textoPreenchido(dados.localizacao, atual.localizacao),
+        tipoAnuncio:
+          atual.tipoAnuncio ||
+          (['clássico', 'premium', 'grátis'].includes(tipoInformado)
+            ? tipoInformado
+            : 'clássico'),
+        modoCompra:
+          atual.modoCompra ||
+          (['buy_it_now', 'auction'].includes(modoInformado)
+            ? modoInformado
+            : 'buy_it_now'),
+        atributos: { ...atributosIa, ...atributosAtuais },
+      };
+    });
+  };
+
+  const completarFichaComIa = async () => {
+    if (!pecaSelecionada || !formulario || completandoFicha) return;
+
+    setCompletandoFicha(true);
+    setErro('');
+    setAviso('');
+    setEstimadosFicha([]);
+
+    try {
+      const { data } = await axios.post<RespostaFichaCompletaIa>(
+        '/api/ia/completar-ficha',
+        {
+          pecaId: pecaSelecionada.id,
+          categorias: CATEGORIAS_PECA,
+          camposPorCategoria: CAMPOS_CATEGORIA,
+          contexto: {
+            peca: {
+              nome: formulario.nome,
+              ml_titulo: formulario.titulo,
+              sku: formulario.sku,
+              carro: formulario.carro,
+              descricao: formulario.descricao,
+              categoria: formulario.categoria,
+              categoria_ml: formulario.categoriaMl,
+              marca: formulario.marca,
+              modelo: formulario.modelo,
+              ano: formulario.ano,
+              condicao: formulario.condicao,
+              numero_oem: formulario.numeroOem,
+              garantia: formulario.garantia,
+              peso_kg: Number(formulario.pesoKg) || 0,
+              comprimento_cm: Number(formulario.comprimentoCm) || 0,
+              largura_cm: Number(formulario.larguraCm) || 0,
+              altura_cm: Number(formulario.alturaCm) || 0,
+              tipo_anuncio: formulario.tipoAnuncio,
+              gtin: formulario.gtin,
+              localizacao: formulario.localizacao,
+              modo_compra: formulario.modoCompra,
+              quantidade: Number(formulario.quantidade) || 0,
+              preco: parsePreco(formulario.preco) || 0,
+              atributos: formulario.atributos,
+            },
+          },
+        },
+        { timeout: 150000 }
+      );
+
+      if (data?.dados) aplicarFichaCompleta(data.dados);
+
+      const estimados = Array.isArray(data?.estimados)
+        ? data.estimados
+        : Array.isArray(data?.dados?.estimados)
+          ? data.dados.estimados
+          : [];
+
+      setEstimadosFicha(estimados);
+      setAviso(
+        data?.aviso ||
+          `Ficha completa gerada${
+            data?.imagensAnalisadas
+              ? ` com ${data.imagensAnalisadas} foto(s)`
+              : ''
+          }. Revise os campos antes de enviar para aprovação.`
+      );
+    } catch (error) {
+      if (axios.isAxiosError<{ error?: string }>(error)) {
+        setErro(
+          error.response?.data?.error ||
+            'Não foi possível completar a ficha com IA.'
+        );
+      } else {
+        setErro('Não foi possível completar a ficha com IA.');
+      }
+    } finally {
+      setCompletandoFicha(false);
     }
   };
 
@@ -551,6 +790,27 @@ export default function EditorAnunciosPage({
       }
     } finally {
       setEnviando(false);
+    }
+  };
+
+  const verificarAnuncio = async () => {
+    if (!pecaSelecionada || verificandoAnuncio) return;
+    setVerificandoAnuncio(true);
+    setErro('');
+    try {
+      const { data } = await axios.post<ResultadoVerificadorAnuncio>(
+        '/api/ia/verificar-anuncio',
+        { pecaId: pecaSelecionada.id },
+        { timeout: 150000 }
+      );
+      setResultadoVerificacao(data);
+      setAviso(data.aprovado ? 'Agente verificador: anúncio pronto para revisão final.' : 'Agente verificador encontrou pontos que precisam ser corrigidos.');
+    } catch (error) {
+      setErro(axios.isAxiosError<{ error?: string }>(error)
+        ? error.response?.data?.error || 'Não foi possível verificar o anúncio.'
+        : 'Não foi possível verificar o anúncio.');
+    } finally {
+      setVerificandoAnuncio(false);
     }
   };
 
@@ -859,22 +1119,89 @@ export default function EditorAnunciosPage({
                   >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[11px] text-muted">
-                        Gere uma sugestão com IA e revise antes de enviar.
+                        Complete a ficha com IA e revise antes de enviar.
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => void gerarComIa()}
-                        disabled={gerando}
-                        className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {gerando ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        {gerando ? 'Gerando...' : 'Gerar com IA'}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void completarFichaComIa()}
+                          disabled={completandoFicha || gerando}
+                          className="inline-flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {completandoFicha ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3.5 w-3.5" />
+                          )}
+                          {completandoFicha
+                            ? 'Completando ficha...'
+                            : 'Completar ficha com IA'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void gerarComIa()}
+                          disabled={gerando || completandoFicha}
+                          className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {gerando ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          {gerando ? 'Gerando...' : 'Gerar com IA'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void verificarAnuncio()}
+                          disabled={verificandoAnuncio || gerando || completandoFicha}
+                          className="inline-flex items-center gap-2 rounded-xl border border-success/30 bg-successSoft px-3.5 py-2 text-xs font-semibold text-success transition hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {verificandoAnuncio ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                          {verificandoAnuncio ? 'Verificando...' : 'Verificar anúncio'}
+                        </button>
+                      </div>
                     </div>
+
+                    {estimadosFicha.length > 0 && (
+                      <div className="mb-3 flex items-start gap-2 rounded-xl border border-warning/25 bg-warningSoft px-3.5 py-2.5 text-xs leading-relaxed text-warning">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <div>
+                          <p className="font-semibold">
+                            Campos preenchidos por estimativa
+                          </p>
+                          <p className="mt-1">{estimadosFicha.join(', ')}.</p>
+                          <p className="mt-1">
+                            A IA não confirmou esses dados nas fotos ou no
+                            título. Revise antes de salvar.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {resultadoVerificacao && (
+                      <div className={`mb-3 rounded-xl border px-3.5 py-3 text-xs leading-relaxed ${resultadoVerificacao.aprovado ? 'border-success/25 bg-successSoft text-success' : 'border-warning/25 bg-warningSoft text-warning'}`}>
+                        <p className="font-semibold">
+                          Agente verificador • confiança {resultadoVerificacao.confianca}
+                        </p>
+                        {resultadoVerificacao.problemas.length > 0 && (
+                          <ul className="mt-1 list-disc pl-4">
+                            {resultadoVerificacao.problemas.map((item, indice) => <li key={`problema-${indice}`}>{item.mensagem}</li>)}
+                          </ul>
+                        )}
+                        {resultadoVerificacao.avisos.length > 0 && (
+                          <ul className="mt-1 list-disc pl-4 opacity-90">
+                            {resultadoVerificacao.avisos.map((item, indice) => <li key={`aviso-${indice}`}>{item.mensagem}</li>)}
+                          </ul>
+                        )}
+                        {resultadoVerificacao.confirmados.length > 0 && (
+                          <p className="mt-1">Confirmado: {resultadoVerificacao.confirmados.join(' • ')}</p>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <Campo label="Título do anúncio">

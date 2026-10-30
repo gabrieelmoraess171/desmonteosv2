@@ -74,6 +74,7 @@ export default function StockHealth({
                   cy="70"
                   r={RAIO}
                   fill="none"
+                  className="stock-ring-in"
                   stroke="#30D158"
                   strokeWidth="14"
                   strokeDasharray={`${comprimentoDisponivel} ${CIRCUNFERENCIA}`}
@@ -129,7 +130,7 @@ export default function StockHealth({
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-cyan to-accent transition-all duration-700"
+            className="stock-bar-in h-full rounded-full bg-gradient-to-r from-cyan to-accent transition-all duration-700"
             style={{ width: `${coberturaAnuncios}%` }}
           />
         </div>

@@ -8,6 +8,22 @@ const TIMEOUT_MS = 15000;
 const TIMEOUT_RESERVA_MS = 10000;
 const TIMEOUT_FREELLMAPI_MS = 15000;
 
+// A chave do Google AI Studio também pode ser configurada como GOOGLE_AI_KEY.
+// Assim o painel aceita tanto a nomenclatura antiga (GEMINI_*) quanto a nova.
+function chaveGemini() {
+  return String(
+    process.env.GEMINI_KEY || process.env.GOOGLE_AI_KEY || ''
+  ).trim();
+}
+
+function modeloGemini() {
+  return String(
+    process.env.GEMINI_MODEL ||
+      process.env.GOOGLE_AI_MODEL ||
+      MODELO_PADRAO
+  ).trim();
+}
+
 function limparTexto(valor, limite = 700) {
   return String(valor ?? '')
     .replace(/\s+/g, ' ')
@@ -323,7 +339,8 @@ async function gerarSugestaoFreeLLMAPI(prompt, configuracao, opcoes = {}) {
             typeof parte === 'string' ? parte : parte?.text || ''
           )
           .join(' ')
-      : conteudo
+      : conteudo,
+    opcoes.limiteCaracteres ?? 700
   );
 
   if (!texto) throw new Error('FreeLLMAPI não retornou texto');
@@ -338,10 +355,8 @@ async function gerarSugestaoFreeLLMAPI(prompt, configuracao, opcoes = {}) {
 export async function gerarSugestaoResposta({ pergunta, peca }) {
   const perguntaLimpa = limparTexto(pergunta, 600);
   const sugestaoFallback = fallback(perguntaLimpa, peca);
-  const chave = String(process.env.GEMINI_KEY || '').trim();
-  const modeloConfigurado = String(
-    process.env.GEMINI_MODEL || MODELO_PADRAO
-  ).trim();
+  const chave = chaveGemini();
+  const modeloConfigurado = String(opcoes.modelo || modeloGemini()).trim();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice
@@ -420,6 +435,7 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
             generationConfig: {
               temperature: 0.7,
               maxOutputTokens: 320,
@@ -487,13 +503,11 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
 }
 
 async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
-  const chave = String(process.env.GEMINI_KEY || '').trim();
+  const chave = chaveGemini();
 
   if (!chave) throw new Error('Gemini não configurado');
 
-  const modeloConfigurado = String(
-    process.env.GEMINI_MODEL || MODELO_PADRAO
-  ).trim();
+  const modeloConfigurado = modeloGemini();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice
@@ -541,7 +555,8 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
             ]
           }),
           signal: AbortSignal.timeout(
-            indice === 0 ? TIMEOUT_MS : TIMEOUT_RESERVA_MS
+            opcoes.timeoutMs ??
+              (indice === 0 ? TIMEOUT_MS : TIMEOUT_RESERVA_MS)
           )
         }
       );
@@ -553,7 +568,8 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
       const dados = await resposta.json();
       const partes = dados?.candidates?.[0]?.content?.parts || [];
       const texto = limparTexto(
-        partes.map((parte) => parte?.text || '').join(' ')
+        partes.map((parte) => parte?.text || '').join(' '),
+        opcoes.limiteCaracteres ?? 700
       );
 
       if (!texto) throw new Error('Gemini não retornou texto');
@@ -613,6 +629,11 @@ export async function gerarTextoComIa(prompt, opcoes = {}) {
   );
 
   return null;
+}
+
+// Usa explicitamente o Google AI Studio, sem passar pelo provedor alternativo.
+export async function gerarTextoComGemini(prompt, opcoes = {}) {
+  return gerarTextoGeminiGenerico(prompt, opcoes);
 }
 
 function limparBloco(valor, limite = 2000) {
@@ -756,7 +777,7 @@ export async function gerarAnaliseComIa(dados = {}) {
 
 const TIMEOUT_VISAO_MS = 45000;
 
-function extrairJson(texto) {
+export function extrairJson(texto) {
   const bruto = String(texto || '')
     .replace(/```json/gi, '')
     .replace(/```/g, '')
@@ -803,7 +824,7 @@ function normalizarAtributosIa(valor) {
   );
 }
 
-async function chamarVisaoFreeLLMAPI(prompt, imagens, configuracao) {
+async function chamarVisaoFreeLLMAPI(prompt, imagens, configuracao, opcoes = {}) {
   const endpoint = configuracao.url.endsWith('/v1')
     ? `${configuracao.url}/chat/completions`
     : `${configuracao.url}/v1/chat/completions`;
@@ -828,10 +849,10 @@ async function chamarVisaoFreeLLMAPI(prompt, imagens, configuracao) {
           ]
         }
       ],
-      temperature: 0.25,
-      max_tokens: 1400
+      temperature: opcoes.temperature ?? 0.25,
+      max_tokens: opcoes.maxTokens ?? 1400
     }),
-    signal: AbortSignal.timeout(TIMEOUT_VISAO_MS)
+    signal: AbortSignal.timeout(opcoes.timeoutMs ?? TIMEOUT_VISAO_MS)
   });
 
   if (!resposta.ok) {
@@ -867,13 +888,13 @@ async function chamarVisaoFreeLLMAPI(prompt, imagens, configuracao) {
   };
 }
 
-async function chamarVisaoGemini(prompt, imagens) {
-  const chave = String(process.env.GEMINI_KEY || '').trim();
+async function chamarVisaoGemini(prompt, imagens, opcoes = {}) {
+  const chave = chaveGemini();
 
   if (!chave) throw new Error('Gemini não configurado');
 
   const modeloConfigurado = String(
-    process.env.GEMINI_VISAO_MODEL || process.env.GEMINI_MODEL || MODELO_PADRAO
+    opcoes.modelo || process.env.GEMINI_VISAO_MODEL || modeloGemini()
   ).trim();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
@@ -912,9 +933,10 @@ async function chamarVisaoGemini(prompt, imagens) {
                 ]
               }
             ],
+            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
             generationConfig: {
-              temperature: 0.25,
-              maxOutputTokens: 1400,
+              temperature: opcoes.temperature ?? 0.25,
+              maxOutputTokens: opcoes.maxTokens ?? 1400,
               topP: 0.9,
               thinkingConfig: { thinkingBudget: 0 }
             },
@@ -938,7 +960,8 @@ async function chamarVisaoGemini(prompt, imagens) {
             ]
           }),
           signal: AbortSignal.timeout(
-            indice === 0 ? TIMEOUT_VISAO_MS : 30000
+            opcoes.timeoutMs ??
+              (indice === 0 ? TIMEOUT_VISAO_MS : 30000)
           )
         }
       );
@@ -966,7 +989,7 @@ async function chamarVisaoGemini(prompt, imagens) {
   throw ultimoErro || new Error('Gemini não retornou texto');
 }
 
-async function gerarVisaoComIa(prompt, imagens) {
+export async function gerarVisaoComIa(prompt, imagens, opcoes = {}) {
   if (!Array.isArray(imagens) || imagens.length === 0) {
     return null;
   }
@@ -974,9 +997,14 @@ async function gerarVisaoComIa(prompt, imagens) {
   const freeLLMAPI = configuracaoFreeLLMAPI();
   let ultimoErro = null;
 
-  if (freeLLMAPI) {
+  if (freeLLMAPI && !opcoes.googleSearchOnly) {
     try {
-      return await chamarVisaoFreeLLMAPI(prompt, imagens, freeLLMAPI);
+      return await chamarVisaoFreeLLMAPI(
+        prompt,
+        imagens,
+        freeLLMAPI,
+        opcoes
+      );
     } catch (error) {
       ultimoErro = error;
       console.warn(
@@ -987,7 +1015,7 @@ async function gerarVisaoComIa(prompt, imagens) {
   }
 
   try {
-    return await chamarVisaoGemini(prompt, imagens);
+    return await chamarVisaoGemini(prompt, imagens, opcoes);
   } catch (error) {
     ultimoErro = error;
     console.warn(
@@ -1006,10 +1034,13 @@ async function gerarVisaoComIa(prompt, imagens) {
 
 const PROMPT_PECA = [
   'Você é especialista em autopeças de desmonte e anúncios do Mercado Livre no Brasil.',
-  'Analise TODAS as fotos enviadas e monte a ficha completa do anúncio.',
-  'A primeira foto costuma ser a etiqueta com SKU/OEM; as seguintes mostram o produto, medidas e peso.',
+  'Analise TODAS as fotos enviadas e monte a ficha completa do anúncio. A identificação visual vem antes de qualquer pesquisa externa.',
+  'As fotos chegam com rótulos de grupo no nome: [SKU], [PRODUTO], [MEDIDAS] e [CODIGO]. Esses rótulos são a fonte principal para saber a função de cada imagem.',
+  'Leia a foto [SKU] com OCR visual: aproxime-se da etiqueta, copie todos os caracteres visíveis e não substitua letras por números. Se houver apenas um número, use somente esse número no campo sku.',
+  'Nas fotos [MEDIDAS], leia a escala da trena/régua e converta para centímetros. Nas fotos de balança, leia o visor e converta para quilogramas. Se houver mais de uma medida, associe a maior dimensão a comprimento, a seguinte a largura e a menor a altura.',
   'Responda SOMENTE com um JSON válido, sem explicações, usando exatamente este formato:',
   '{',
+  '  "sku": "número/código lido na etiqueta; se a etiqueta mostrar apenas 543, retorne 543",',
   '  "titulo": "título do anúncio com no máximo 60 caracteres",',
   '  "nome": "nome interno da peça",',
   '  "categoria": "uma categoria da lista informada",',
@@ -1030,6 +1061,20 @@ const PROMPT_PECA = [
   '}',
   'Regras obrigatórias:',
   '- Não invente OEM, garantia, medidas, peso, marca, modelo ou ano que não estejam visíveis ou claramente identificáveis.',
+  '- Não transforme uma hipótese em certeza. Se a peça puder ser confundida com outra, use o nome funcional mais conservador e marque confianca como baixa.',
+  '- A pesquisa externa não pode substituir o que aparece nas fotos e não pode escolher um resultado só porque contém uma palavra parecida.',
+  '- Nunca use o número do SKU como numero_oem sem evidência de que é um código OEM.',
+  '- Se uma foto de medida ou peso estiver legível, preencha os números mesmo que outras informações da peça estejam incertas.',
+  '- Se houver marca, logotipo, inscrição moldada ou código OEM, use essa evidência para pesquisar a aplicação e o modelo correto.',
+  '- Se o modelo não puder ser confirmado, deixe modelo e ano vazios e explique em observacoes; não invente um veículo.',
+  '- Classifique primeiro o objeto visível pela forma e função. Uma peça de acabamento, console, difusor, moldura ou painel interno nunca pode virar retrovisor apenas porque uma busca encontrou esse termo.',
+  '- Diferencie peças de acabamento interno de peças mecânicas: porta-luvas, console, moldura, difusor, painel e acabamento interno não são amortecedor, suspensão, motor ou outra peça mecânica.',
+  '- Para chamar algo de amortecedor, é obrigatório haver evidência visual de conjunto telescópico/cilindro, haste e/ou mola. Sem essa evidência, deixe a classificação mecânica vazia e explique a dúvida.',
+  '- Para chamar algo de retrovisor, é obrigatório haver carcaça/espelho ou conjunto externo de retrovisão. Uma moldura, tampa, acabamento interno ou porta-objeto nunca deve receber esse nome.',
+  '- Estas regras valem para qualquer fabricante: Chevrolet, Volkswagen, Fiat, Ford, Renault, Hyundai, Toyota, Honda, Nissan, Jeep, BMW, Mercedes-Benz, Audi, Volvo e demais marcas.',
+  '- Não use "Universal" nem anos genéricos sem evidência visual ou código confirmado.',
+  '- Classifique primeiro o objeto visível pela forma e função. Uma peça de acabamento, console, difusor, moldura ou painel interno nunca pode virar retrovisor apenas porque uma busca encontrou esse termo.',
+  '- Não use "Universal" nem anos genéricos sem evidência visual ou código confirmado.',
   '- Quando não houver certeza, deixe o campo vazio (texto) ou 0 (números).',
   '- O título deve ter no máximo 60 caracteres e conter peça, lado/posição, veículo e ano quando visíveis.',
   '- Use apenas categorias da lista enviada no contexto.',
@@ -1075,13 +1120,26 @@ export async function analisarFotosPecaComIa({
     '',
     `Categorias permitidas: ${categorias.join(', ') || 'não informadas'}.`,
     `Dados já digitados pelo vendedor: ${resumoPeca(contexto.peca || {})}`,
-    `Nomes dos arquivos: ${imagens
+    `Nomes dos arquivos e grupos: ${imagens
       .map((imagem) => imagem.nome)
       .filter(Boolean)
       .join(', ')}`
   ].join('\n');
 
-  const resultado = await gerarVisaoComIa(prompt, imagens);
+  const resultado = await gerarVisaoComIa(prompt, imagens, {
+    modelo: 'gemini-2.5-flash',
+    // A primeira etapa deve interpretar a foto sem resultados de busca
+    // contaminando a classificação visual. A pesquisa só é feita depois,
+    // quando há um OEM legível para confirmar aplicação.
+    googleSearch: false,
+    // A API agregadora está configurada com um modelo lite e estava gerando
+    // classificações visuais frágeis. Para a Nova peça, use diretamente o
+    // Gemini Flash com visão, deixando a pesquisa para a etapa seguinte.
+    googleSearchOnly: true,
+    temperature: 0.08,
+    maxTokens: 2800,
+    timeoutMs: 120000
+  });
 
   if (!resultado?.texto) {
     return {
@@ -1105,6 +1163,7 @@ export async function analisarFotosPecaComIa({
 
   const categoria = normalizarCategoriaIa(json.categoria, categorias);
   const dados = {
+    sku: limparTexto(json.sku, 100),
     titulo: limparTexto(json.titulo || json.nome, 60),
     nome: limparTexto(json.nome || json.titulo, 200),
     categoria,
@@ -1132,12 +1191,38 @@ export async function analisarFotosPecaComIa({
     observacoes: limparTexto(json.observacoes, 600)
   };
 
+  let dadosFinais = dados;
+  const codigoParaPesquisa = /^[A-Z0-9][A-Z0-9.\/-]{4,}$/i.test(dados.numero_oem || '') && !/^não visível$/i.test(dados.numero_oem)
+    ? dados.numero_oem
+    : '';
+
+  if (codigoParaPesquisa) {
+    const identificado = await identificarProdutoLoteComGoogle({
+      sku: codigoParaPesquisa,
+      nome: dados.nome,
+      observacoes: dados.observacoes
+    });
+    dadosFinais = {
+      ...dados,
+      // A leitura visual da peça é a fonte principal. A pesquisa externa só
+      // completa campos que a imagem não conseguiu preencher.
+      nome: dados.nome || identificado.peca,
+      marca: dados.marca || identificado.marca,
+      modelo: dados.modelo || identificado.modelo,
+      ano: dados.ano || identificado.anos,
+      carro: dados.carro || identificado.aplicacao,
+      observacoes: [dados.observacoes, identificado.observacoes].filter(Boolean).join(' ')
+    };
+  }
+
+  const dadosConfirmados = await confirmarFichaComPesquisa(dadosFinais, imagens);
+
   return {
-    dados,
-    fonte: resultado.fonte,
+    dados: dadosConfirmados,
+    fonte: `${resultado.fonte} + Google Search/MODO IA + Mercado Livre`,
     modelo: resultado.modelo,
     aviso:
-      dados.observacoes ||
+      dadosConfirmados.observacoes ||
       'Confira os dados lidos nas fotos antes de salvar o anúncio.'
   };
 }
@@ -1145,6 +1230,8 @@ export async function analisarFotosPecaComIa({
 const PROMPT_LOTE = [
   'Você é especialista em desmonte de veículos e organização de fotos de autopeças.',
   'A ordem correta das fotos de cada produto é: 1) foto da etiqueta/SKU, 2) fotos do produto, 3) fotos das medidas, 4) foto do peso.',
+  'Classifique primeiro a forma e a função física da peça e depois confirme fabricante, código OEM, modelo e anos. Essa regra vale para qualquer marca.',
+  'Uma peça de acabamento, console, difusor, moldura ou painel interno não pode ser classificada como retrovisor, farol ou outra peça externa sem evidência visual.',
   'Analise as fotos e os nomes dos arquivos enviados e agrupe cada produto.',
   'Responda SOMENTE com JSON válido neste formato:',
   '{',
@@ -1166,8 +1253,149 @@ const PROMPT_LOTE = [
   '- Use exatamente os nomes de arquivo fornecidos na lista.',
   '- Não invente SKU. Se a etiqueta não estiver legível, use "DESCONHECIDO".',
   '- Agrupe pela peça, não pela ordem de envio.',
-  '- Aponte em alertas quando a sequência estiver fora da ordem ou faltar a foto de SKU/medidas/peso.'
+  '- Aponte em alertas quando a sequência estiver fora da ordem ou faltar a foto de SKU/medidas/peso.',
+  '- A última imagem de cada produto é a referência do código OEM/part number; use-a para identificar a peça.',
+  '- Não descarte fotos recebidas. Os nomes devem ser copiados exatamente, inclusive arquivos IMG_*.jpeg.'
 ].join('\n');
+
+async function buscarAnunciosMercadoLivreLote(sku) {
+  const resposta = await fetch(`https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(sku)}&limit=5`, {
+    signal: AbortSignal.timeout(8000),
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'DesmonteOS/1.0 lote lookup',
+      ...(process.env.MERCADOLIVRE_ACCESS_TOKEN ? { authorization: `Bearer ${process.env.MERCADOLIVRE_ACCESS_TOKEN}` } : {})
+    }
+  });
+  if (!resposta.ok) return [];
+  const dados = await resposta.json();
+  return (Array.isArray(dados.results) ? dados.results : []).slice(0, 5).map((item) => ({
+    titulo: limparTexto(item.title, 240),
+    url: limparTexto(item.permalink, 500),
+    atributos: Array.isArray(item.attributes) ? item.attributes.filter((atributo) => /BRAND|MODEL|OEM|PART|NUMBER|REFER/i.test(`${atributo.id} ${atributo.name}`)).map((atributo) => `${atributo.name || atributo.id}: ${atributo.value_name || ''}`).join(' | ') : ''
+  }));
+}
+
+async function identificarProdutoLoteComGoogle(produto) {
+  if (!produto?.sku || produto.sku === 'DESCONHECIDO') return produto;
+  let anuncios = [];
+  try { anuncios = await buscarAnunciosMercadoLivreLote(produto.sku); } catch { anuncios = []; }
+  const prompt = `Identifique esta autopeça pelo código OEM/SKU "${produto.sku}". Primeiro respeite o nome e a forma visual já reconhecida; use Google e Mercado Livre apenas para confirmar aplicação. Isso vale para qualquer fabricante. Nunca troque uma peça interna por retrovisor, farol ou peça externa apenas por coincidência de busca. Não use Universal ou anos sem evidência. Retorne confiança baixa se houver conflito. Responda somente JSON: {"peca":"", "lado":"direito|esquerdo|", "marca":"", "modelo":"", "anos":"", "aplicacao":"", "confianca":"alta|media|baixa", "observacao":""}. Anúncios: ${JSON.stringify(anuncios)}. Nome preliminar: ${produto.nome || 'não informado'}.`;
+  try {
+    const resposta = await gerarTextoComGemini(prompt, { modelo: 'gemini-2.5-flash', googleSearch: true, maxTokens: 500, limiteCaracteres: 1800, timeoutMs: 20000 });
+    const json = extrairJson(resposta?.texto || '');
+    return {
+      ...produto,
+      peca: produto.peca || produto.nome || limparTexto(json?.peca, 160),
+      lado: produto.lado || limparTexto(json?.lado, 30),
+      marca: produto.marca || limparTexto(json?.marca, 100),
+      modelo: produto.modelo || limparTexto(json?.modelo, 100),
+      anos: produto.anos || limparTexto(json?.anos, 100),
+      aplicacao: produto.aplicacao || limparTexto(json?.aplicacao, 300),
+      confianca: limparTexto(json?.confianca || 'baixa', 20),
+      referenciasMercadoLivre: anuncios,
+      observacoes: [produto.observacoes, limparTexto(json?.observacao, 500)].filter(Boolean).join(' ')
+    };
+  } catch {
+    return { ...produto, referenciasMercadoLivre: anuncios };
+  }
+}
+
+async function confirmarFichaComPesquisa(dados, imagens) {
+  const desconhecido = (valor) => {
+    const texto = normalizar(valor);
+    return !texto || [
+      'nao informado',
+      'nao visivel',
+      'peca usada',
+      'peca nao identificada',
+      'produto para revisao'
+    ].includes(texto);
+  };
+  const consulta = [dados.numero_oem, dados.nome, dados.marca, dados.modelo]
+    .map((item) => limparTexto(item, 120))
+    .filter(Boolean)
+    .join(' ');
+
+  if (!Array.isArray(imagens) || imagens.length === 0) {
+    return dados;
+  }
+
+  let anuncios = [];
+  try {
+    anuncios = await buscarAnunciosMercadoLivreLote(consulta);
+  } catch {
+    anuncios = [];
+  }
+
+  const prompt = [
+    'Você é um agente de confirmação de autopeças usadas.',
+    'Analise novamente as fotos e cruze a evidência visual com Google Search/MODO IA e os anúncios do Mercado Livre fornecidos.',
+    'A forma e a função visíveis nas fotos têm prioridade. Pesquisa serve para confirmar marca, modelo, ano e OEM; nunca escolha um resultado apenas por conter uma palavra semelhante.',
+    'Se a pesquisa discordar da imagem, mantenha o tipo visual da peça e marque confiança baixa.',
+    'Não invente carro, ano, lado, OEM ou compatibilidade. Nunca use Universal sem evidência.',
+    'Exemplo de bloqueio: uma peça de acabamento interno, porta-luvas, console, moldura ou difusor não pode ser convertida em amortecedor, retrovisor ou outra peça mecânica/externa sem evidência visual clara.',
+    'Responda somente com JSON válido neste formato:',
+    '{"nome":"","marca":"","modelo":"","ano":"","numero_oem":"","aplicacao":"","confianca":"alta|media|baixa","observacoes":"","fontes":[""]}',
+    '',
+    `Ficha visual preliminar: ${JSON.stringify({
+      nome: dados.nome,
+      marca: dados.marca,
+      modelo: dados.modelo,
+      ano: dados.ano,
+      numero_oem: dados.numero_oem,
+      confianca: dados.confianca
+    })}`,
+    `Consulta no Mercado Livre: ${consulta}`,
+    `Anúncios encontrados no Mercado Livre: ${JSON.stringify(anuncios)}`
+  ].join('\n');
+
+  try {
+    const resposta = await gerarVisaoComIa(prompt, imagens, {
+      modelo: 'gemini-2.5-flash',
+      googleSearch: true,
+      googleSearchOnly: true,
+      temperature: 0.08,
+      maxTokens: 1200,
+      timeoutMs: 120000
+    });
+    const json = extrairJson(resposta?.texto || '');
+    if (!json) return dados;
+
+    const confianca = limparTexto(json.confianca || dados.confianca || 'baixa', 20).toLowerCase();
+    const fontes = Array.isArray(json.fontes)
+      ? json.fontes.map((fonte) => limparTexto(fonte, 300)).filter(Boolean).slice(0, 5)
+      : [];
+    const fontesComReferencia = fontes.filter((fonte) => /^https?:\/\//i.test(fonte));
+    const aplicacaoConfirmada = confianca === 'alta' &&
+      (fontesComReferencia.length >= 2 || anuncios.length >= 2);
+
+    return {
+      ...dados,
+      // O resultado visual continua sendo a base. A confirmação só completa
+      // campos vazios ou corrige o tipo quando a segunda leitura encontrou
+      // evidência visual e fontes concordantes.
+      nome: confianca !== 'baixa' && json.nome && desconhecido(dados.nome)
+        ? limparTexto(json.nome, 200)
+        : dados.nome,
+      marca: desconhecido(dados.marca) && aplicacaoConfirmada ? limparTexto(json.marca, 120) : dados.marca,
+      modelo: desconhecido(dados.modelo) && aplicacaoConfirmada ? limparTexto(json.modelo, 120) : dados.modelo,
+      ano: desconhecido(dados.ano) && aplicacaoConfirmada ? limparTexto(json.ano, 40) : dados.ano,
+      numero_oem: desconhecido(dados.numero_oem) ? limparTexto(json.numero_oem, 120) : dados.numero_oem,
+      carro: desconhecido(dados.carro) && aplicacaoConfirmada ? limparTexto(json.aplicacao, 300) : dados.carro,
+      confianca,
+      observacoes: [
+        dados.observacoes,
+        limparTexto(json.observacoes, 600),
+        fontes.length ? `Fontes consultadas: ${fontes.join(' | ')}` : '',
+        !aplicacaoConfirmada ? 'Aplicação do veículo não confirmada por fontes suficientes; revise antes de publicar.' : '',
+        anuncios.length ? `${anuncios.length} anúncio(s) do Mercado Livre usado(s) como referência.` : ''
+      ].filter(Boolean).join(' ')
+    };
+  } catch {
+    return dados;
+  }
+}
 
 export async function analisarFotosLoteComIa({
   imagens = [],
@@ -1177,6 +1405,9 @@ export async function analisarFotosLoteComIa({
   const nomes = arquivos
     .map((arquivo) => limparTexto(arquivo, 220))
     .filter(Boolean);
+  const skuPorArquivo = contexto.skuPorArquivo && typeof contexto.skuPorArquivo === 'object'
+    ? contexto.skuPorArquivo
+    : {};
   const prompt = [
     PROMPT_LOTE,
     '',
@@ -1185,20 +1416,59 @@ export async function analisarFotosLoteComIa({
       200
     ) || 'não informado'}.`,
     `Modo do lote: ${limparTexto(contexto.modo, 40) || 'misto'}.`,
+    `Mapeamento de SKU já detectado pelos nomes dos arquivos: ${JSON.stringify(skuPorArquivo)}`,
     '',
     'Nomes de todos os arquivos do lote:',
     nomes.join('\n') || 'nenhum nome informado'
   ].join('\n');
 
-  const resultado = await gerarVisaoComIa(prompt, imagens);
+  const produtosFallback = Object.entries(skuPorArquivo)
+    .reduce((grupos, [arquivo, sku]) => {
+      const codigo = limparTexto(sku, 100).toUpperCase();
+      if (!codigo) return grupos;
+      const atual = grupos.get(codigo) || {
+        sku: codigo,
+        nome: `Produto ${codigo}`,
+        arquivos: [],
+        peso_kg: 0,
+        comprimento_cm: 0,
+        largura_cm: 0,
+        altura_cm: 0,
+        observacoes: 'Agrupamento recuperado pelo nome da etiqueta; revise os dados com a IA.'
+      };
+      atual.arquivos.push(arquivo);
+      grupos.set(codigo, atual);
+      return grupos;
+    }, new Map())
+    .values();
+  const fallbackProdutos = Array.from(produtosFallback);
+  if (fallbackProdutos.length === 0 && nomes.length > 0) {
+    fallbackProdutos.push({
+      sku: 'DESCONHECIDO',
+      nome: 'Produto para revisão',
+      arquivos: nomes,
+      peso_kg: 0,
+      comprimento_cm: 0,
+      largura_cm: 0,
+      altura_cm: 0,
+      observacoes: 'A IA não respondeu; confira o SKU e separe os grupos manualmente.'
+    });
+  }
+
+  const resultado = await gerarVisaoComIa(prompt, imagens, {
+    modelo: 'gemini-2.5-flash',
+    googleSearch: true,
+    maxTokens: 2600,
+    timeoutMs: 120000
+  });
 
   if (!resultado?.texto) {
     return {
-      produtos: [],
       alertas: [
-        'A IA não respondeu agora. Use a detecção de SKU pelo nome dos arquivos ou organize manualmente.'
+        'A IA não respondeu agora. Os grupos foram recuperados pelos nomes das etiquetas; tente a leitura novamente para completar nome, aplicação, medidas e peso.'
       ],
-      fonte: 'local'
+      fonte: 'local',
+      produtos: fallbackProdutos
     };
   }
 
@@ -1206,9 +1476,9 @@ export async function analisarFotosLoteComIa({
 
   if (!json) {
     return {
-      produtos: [],
+      produtos: fallbackProdutos,
       alertas: [
-        'A IA respondeu em um formato inesperado. Revise o agrupamento manualmente.'
+        'A IA respondeu em um formato inesperado. Os grupos foram recuperados pelos nomes das etiquetas; revise o agrupamento manualmente.'
       ],
       fonte: resultado.fonte
     };
@@ -1233,8 +1503,22 @@ export async function analisarFotosLoteComIa({
         .filter((produto) => produto.arquivos.length > 0)
     : [];
 
+  const produtosEnriquecidos = await Promise.all(produtos.slice(0, 20).map((produto) => identificarProdutoLoteComGoogle(produto)));
+  if (produtosEnriquecidos.length === 0) {
+    return {
+      produtos: fallbackProdutos,
+      alertas: [
+        ...(Array.isArray(json.alertas)
+          ? json.alertas.map((alerta) => limparTexto(alerta, 300)).filter(Boolean)
+          : []),
+        'A IA não encontrou grupos válidos nessa resposta. As fotos foram preservadas para revisão; tente a leitura novamente para completar a identificação.'
+      ],
+      fonte: resultado.fonte,
+      modelo: resultado.modelo
+    };
+  }
   return {
-    produtos,
+    produtos: produtosEnriquecidos,
     alertas: Array.isArray(json.alertas)
       ? json.alertas.map((alerta) => limparTexto(alerta, 300)).filter(Boolean)
       : [],
@@ -1313,5 +1597,1021 @@ export async function gerarAnuncioComIa(peca = {}) {
     modelo: null,
     aviso:
       'A IA não respondeu agora. O título e a descrição foram montados com os dados da peça.'
+  };
+}
+
+const ROTULOS_ESTIMADOS = {
+  titulo: 'Título',
+  nome: 'Nome',
+  categoria: 'Categoria',
+  categoria_ml: 'Categoria Mercado Livre',
+  marca: 'Marca',
+  modelo: 'Modelo',
+  ano: 'Ano',
+  carro: 'Aplicação',
+  aplicacao: 'Aplicação',
+  condicao: 'Condição',
+  numero_oem: 'Código OEM',
+  garantia: 'Garantia',
+  peso_kg: 'Peso',
+  comprimento_cm: 'Medidas',
+  largura_cm: 'Medidas',
+  altura_cm: 'Medidas',
+  descricao: 'Descrição',
+  preco_sugerido: 'Preço',
+  preco: 'Preço',
+  quantidade_sugerida: 'Quantidade',
+  quantidade: 'Quantidade',
+  gtin: 'GTIN',
+  localizacao: 'Localização',
+  tipo_anuncio: 'Tipo de anúncio',
+  modo_compra: 'Modo de compra'
+};
+
+function rotuloEstimado(item, campos = [], atributosExistentes = {}) {
+  const limpo = limparTexto(item, 120);
+  if (!limpo) return '';
+
+  const semPrefixo = limpo.replace(/^atributos?\./i, '');
+
+  if (['atributo', 'atributos'].includes(semPrefixo.toLowerCase())) {
+    return '';
+  }
+
+  const campo = campos.find(
+    (candidato) =>
+      normalizarComparacao(candidato.key) ===
+        normalizarComparacao(semPrefixo) ||
+      normalizarComparacao(candidato.label) ===
+        normalizarComparacao(semPrefixo)
+  );
+
+  if (campo) {
+    const existente =
+      atributosExistentes[campo.key] ??
+      atributosExistentes[campo.label] ??
+      '';
+    if (valorUtil(existente)) return '';
+    return campo.label || campo.key;
+  }
+
+  return ROTULOS_ESTIMADOS[semPrefixo.toLowerCase()] || limpo;
+}
+
+function atributosDePeca(peca = {}) {
+  const valor = peca?.atributos;
+
+  if (valor && typeof valor === 'object' && !Array.isArray(valor)) {
+    return normalizarAtributosIa(valor);
+  }
+
+  if (typeof valor === 'string' && valor.trim()) {
+    try {
+      const json = JSON.parse(valor);
+
+      if (json && typeof json === 'object' && !Array.isArray(json)) {
+        return normalizarAtributosIa(json);
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function descricaoValida(valor, minimo = 80) {
+  const texto = limparBloco(valor, 5000);
+  return texto.length >= minimo ? texto : '';
+}
+
+function descricaoCompletaFallback(peca = {}, categoria = '') {
+  const nome = limparTexto(peca.nome || 'Peça', 200);
+  const aplicacao = limparTexto(
+    peca.carro || 'aplicação informada no anúncio',
+    200
+  );
+  const condicao = limparTexto(peca.condicao || 'usado', 40);
+  const garantia = limparTexto(peca.garantia, 120) || '90 dias';
+  const linhas = [
+    `${nome}${peca.carro ? ` para ${aplicacao}` : ''}${
+      categoria ? ` - ${categoria}` : ''
+    }.`,
+    'Peça usada de desmonte, revisada visualmente e armazenada em estoque interno.',
+    `Condição: ${condicao}.`,
+    `Garantia: ${garantia}.`,
+    peca.numero_oem
+      ? `Código OEM/referência: ${limparTexto(peca.numero_oem, 120)}.`
+      : '',
+    `Aplicação: ${aplicacao}. Confirme o modelo, o ano e a versão do veículo antes de comprar.`,
+    'A instalação deve ser feita por profissional qualificado. Em caso de dúvida, use o campo de perguntas do anúncio.'
+  ];
+
+  return limparBloco(linhas.filter(Boolean).join('\n\n'), 5000);
+}
+
+const PERFIS_CATEGORIA = {
+  Retrovisores: {
+    peso_kg: 1.2,
+    comprimento_cm: 30,
+    largura_cm: 20,
+    altura_cm: 15,
+    preco: 300,
+    atributos: {
+      lado: 'Par',
+      acionamento: 'Elétrico',
+      cor: 'Preta',
+      aquecimento: 'Não'
+    }
+  },
+  'Faróis e Lanternas': {
+    peso_kg: 2,
+    comprimento_cm: 50,
+    largura_cm: 30,
+    altura_cm: 25,
+    preco: 400,
+    atributos: {
+      lado: 'Par',
+      tipo_lampada: 'H4',
+      lente: 'Original',
+      regulagem: 'Manual'
+    }
+  },
+  Parachoques: {
+    peso_kg: 5,
+    comprimento_cm: 140,
+    largura_cm: 45,
+    altura_cm: 35,
+    preco: 600,
+    atributos: {
+      posicao: 'Dianteiro',
+      cor: 'Preta',
+      sensores: 'Não',
+      farol_milha: 'Não'
+    }
+  },
+  'Portas e Capôs': {
+    peso_kg: 12,
+    comprimento_cm: 110,
+    largura_cm: 90,
+    altura_cm: 15,
+    preco: 700,
+    atributos: {
+      posicao: 'Dianteira esquerda',
+      cor: 'Preta',
+      vidro: 'Sim',
+      macaneta: 'Sim'
+    }
+  },
+  'Motor e Componentes': {
+    peso_kg: 35,
+    comprimento_cm: 50,
+    largura_cm: 40,
+    altura_cm: 40,
+    preco: 3500,
+    atributos: {
+      combustivel: 'Flex',
+      cilindrada: '1.0',
+      cambio: 'Manual',
+      numero_cilindros: '4'
+    }
+  },
+  'Suspensão e Direção': {
+    peso_kg: 4,
+    comprimento_cm: 55,
+    largura_cm: 20,
+    altura_cm: 20,
+    preco: 350,
+    atributos: {
+      posicao: 'Dianteira',
+      tipo: 'Amortecedor',
+      lado: 'Par'
+    }
+  },
+  Freios: {
+    peso_kg: 5,
+    comprimento_cm: 35,
+    largura_cm: 35,
+    altura_cm: 15,
+    preco: 300,
+    atributos: {
+      posicao: 'Dianteiro',
+      tipo: 'Disco',
+      diametro: '280 mm'
+    }
+  },
+  'Rodas e Pneus': {
+    peso_kg: 8,
+    comprimento_cm: 60,
+    largura_cm: 60,
+    altura_cm: 20,
+    preco: 450,
+    atributos: {
+      medida: '185/65 R15',
+      aro: '15',
+      material: 'Liga leve',
+      pneu_incluso: 'Não'
+    }
+  },
+  'Radiadores e Arrefecimento': {
+    peso_kg: 4,
+    comprimento_cm: 65,
+    largura_cm: 45,
+    altura_cm: 15,
+    preco: 500,
+    atributos: {
+      material: 'Alumínio',
+      transmissao: 'Manual',
+      ventoinha: 'Não'
+    }
+  },
+  Elétrica: {
+    peso_kg: 4,
+    comprimento_cm: 30,
+    largura_cm: 25,
+    altura_cm: 20,
+    preco: 350,
+    atributos: {
+      tipo: 'Alternador',
+      tensao: '12V',
+      conectores: '4 pinos'
+    }
+  },
+  Interior: {
+    peso_kg: 4,
+    comprimento_cm: 50,
+    largura_cm: 40,
+    altura_cm: 30,
+    preco: 250,
+    atributos: {
+      posicao: 'Dianteira',
+      cor: 'Preta',
+      material: 'Tecido'
+    }
+  },
+  Vidros: {
+    peso_kg: 5,
+    comprimento_cm: 110,
+    largura_cm: 70,
+    altura_cm: 10,
+    preco: 300,
+    atributos: {
+      posicao: 'Para-brisa',
+      tipo: 'Original',
+      cor: 'Incolor'
+    }
+  },
+  Escapamento: {
+    peso_kg: 6,
+    comprimento_cm: 90,
+    largura_cm: 30,
+    altura_cm: 25,
+    preco: 350,
+    atributos: {
+      posicao: 'Traseiro',
+      material: 'Aço carbono',
+      catalisador: 'Não'
+    }
+  },
+  Transmissão: {
+    peso_kg: 30,
+    comprimento_cm: 50,
+    largura_cm: 40,
+    altura_cm: 35,
+    preco: 1800,
+    atributos: {
+      tipo: 'Câmbio',
+      cambio: 'Manual',
+      tracao: 'Dianteira'
+    }
+  },
+  Baterias: {
+    peso_kg: 15,
+    comprimento_cm: 30,
+    largura_cm: 20,
+    altura_cm: 20,
+    preco: 350,
+    atributos: {
+      amperagem: '60Ah',
+      tensao: '12V',
+      tecnologia: 'Chumbo-ácido'
+    }
+  },
+  Outros: {
+    peso_kg: 3,
+    comprimento_cm: 30,
+    largura_cm: 30,
+    altura_cm: 30,
+    preco: 200,
+    atributos: {
+      aplicacao: 'Não informada'
+    }
+  }
+};
+
+const MODOS_COMPRA = ['buy_it_now', 'auction'];
+
+function normalizarComparacao(valor) {
+  return String(valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function opcaoValida(valor, opcoes = []) {
+  const alvo = normalizarComparacao(valor);
+  if (!alvo) return '';
+
+  return (
+    opcoes.find((opcao) => normalizarComparacao(opcao) === alvo) || ''
+  );
+}
+
+function normalizarTipoAnuncio(valor) {
+  const tipo = normalizarComparacao(valor);
+
+  if (tipo === 'gold pro' || tipo === 'gold premium' || tipo === 'premium') {
+    return 'premium';
+  }
+
+  if (tipo === 'gold special' || tipo === 'classico') {
+    return 'clássico';
+  }
+
+  if (tipo === 'free' || tipo === 'gratis') {
+    return 'grátis';
+  }
+
+  return '';
+}
+
+function valorUtil(valor, limite = 200) {
+  const texto = limparTexto(valor, limite);
+  if (!texto) return '';
+
+  const normalizado = normalizarComparacao(texto);
+
+  if (
+    [
+      'nao informado',
+      'nao informada',
+      'nao visivel',
+      'nao identificado',
+      'nao identificada',
+      'desconhecido',
+      'desconhecida',
+      'sem informacao',
+      'nao sei'
+    ].includes(normalizado)
+  ) {
+    return '';
+  }
+
+  return texto;
+}
+
+function perfilCategoria(categoria) {
+  return PERFIS_CATEGORIA[categoria] || PERFIS_CATEGORIA.Outros;
+}
+
+function pareceMoto(peca = {}) {
+  return /moto|motocicleta|scooter|cinquentinha/i.test(
+    `${peca.ml_titulo || ''} ${peca.nome || ''} ${peca.carro || ''}`
+  );
+}
+
+function ajustarAtributosMoto(
+  atributos,
+  estimadosAtributos = [],
+  campos = [],
+  peca = {}
+) {
+  if (!pareceMoto(peca)) return;
+
+  const foiEstimado = (label) =>
+    estimadosAtributos.some(
+      (item) =>
+        normalizarComparacao(item) === normalizarComparacao(label)
+    );
+  const temCampo = (key) => campos.some((campo) => campo.key === key);
+
+  if (temCampo('numero_cilindros') && foiEstimado('Número de cilindros')) {
+    atributos.numero_cilindros = '1';
+  }
+
+  if (temCampo('combustivel') && foiEstimado('Combustível')) {
+    atributos.combustivel = 'Gasolina';
+  }
+}
+
+function normalizarCamposPorCategoria(valor) {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return {};
+
+  return Object.fromEntries(
+    Object.entries(valor)
+      .map(([categoria, campos]) => [
+        limparTexto(categoria, 80),
+        Array.isArray(campos)
+          ? campos
+              .map((campo) => ({
+                key: limparTexto(campo?.key, 80),
+                label: limparTexto(campo?.label, 120),
+                tipo: campo?.tipo === 'select' ? 'select' : 'text',
+                opcoes: Array.isArray(campo?.opcoes)
+                  ? campo.opcoes
+                      .map((opcao) => limparTexto(opcao, 120))
+                      .filter(Boolean)
+                  : []
+              }))
+              .filter((campo) => campo.key)
+          : []
+      ])
+      .filter(([categoria]) => categoria)
+  );
+}
+
+function completarAtributos(
+  categoria,
+  atributosIa = {},
+  campos = [],
+  atributosExistentes = {}
+) {
+  const perfil = perfilCategoria(categoria);
+  const existentes =
+    atributosExistentes && typeof atributosExistentes === 'object'
+      ? normalizarAtributosIa(atributosExistentes)
+      : {};
+  // Preserva atributos que já existem, inclusive os de outras categorias.
+  const atributos = { ...existentes };
+  const estimados = [];
+
+  for (const campo of campos) {
+    const existente = existentes[campo.key] ?? existentes[campo.label] ?? '';
+    const bruto =
+      atributosIa && typeof atributosIa === 'object'
+        ? atributosIa[campo.key] ?? atributosIa[campo.label]
+        : '';
+
+    if (campo.tipo === 'select') {
+      const opcaoExistente = opcaoValida(existente, campo.opcoes || []);
+
+      if (opcaoExistente) {
+        atributos[campo.key] = opcaoExistente;
+        continue;
+      }
+
+      const opcao = opcaoValida(bruto, campo.opcoes || []);
+
+      if (opcao) {
+        atributos[campo.key] = opcao;
+      } else {
+        const estimativa =
+          opcaoValida(perfil.atributos?.[campo.key], campo.opcoes || []) ||
+          campo.opcoes?.[0] ||
+          'Não informado';
+        atributos[campo.key] = estimativa;
+        estimados.push(campo.label || campo.key);
+      }
+    } else {
+      const textoExistente = valorUtil(existente);
+
+      if (textoExistente) {
+        atributos[campo.key] = textoExistente;
+        continue;
+      }
+
+      const texto = valorUtil(bruto);
+
+      if (texto) {
+        atributos[campo.key] = texto;
+      } else {
+        atributos[campo.key] =
+          valorUtil(perfil.atributos?.[campo.key]) || 'Não informado';
+        estimados.push(campo.label || campo.key);
+      }
+    }
+  }
+
+  return { atributos, estimados };
+}
+
+function fichaCompletaFallback(peca = {}, categoria = '', campos = []) {
+  const categoriaFinal =
+    categoria || limparTexto(peca.categoria, 80) || 'Outros';
+  const perfil = perfilCategoria(categoriaFinal);
+  const { atributos, estimados: estimadosAtributos } = completarAtributos(
+    categoriaFinal,
+    {},
+    campos,
+    atributosDePeca(peca)
+  );
+
+  ajustarAtributosMoto(atributos, estimadosAtributos, campos, peca);
+
+  const titulo = limparTexto(
+    peca.ml_titulo || peca.nome || 'Peça usada',
+    60
+  );
+  const nome = limparTexto(
+    peca.nome || peca.ml_titulo || 'Peça usada',
+    200
+  );
+  const condicaoInformada = String(peca.condicao || '').toLowerCase();
+  const condicao = ['novo', 'usado', 'recondicionado'].includes(
+    condicaoInformada
+  )
+    ? condicaoInformada
+    : 'usado';
+  const descricao =
+    descricaoValida(peca.descricao) ||
+    descricaoCompletaFallback(
+      {
+        ...peca,
+        nome,
+        condicao
+      },
+      categoriaFinal
+    );
+  const estimados = [];
+
+  if (!valorUtil(peca.marca, 120)) estimados.push('Marca');
+  if (!valorUtil(peca.modelo, 120)) estimados.push('Modelo');
+  if (!valorUtil(peca.ano, 40)) estimados.push('Ano');
+  if (!valorUtil(peca.carro, 200)) estimados.push('Aplicação');
+  if (!valorUtil(peca.numero_oem, 120)) estimados.push('Código OEM');
+  if (!valorUtil(peca.garantia, 120)) estimados.push('Garantia');
+  if (!numero(peca.peso_kg)) estimados.push('Peso');
+  if (
+    !numero(peca.comprimento_cm) ||
+    !numero(peca.largura_cm) ||
+    !numero(peca.altura_cm)
+  ) {
+    estimados.push('Medidas');
+  }
+  if (!numero(peca.preco)) estimados.push('Preço');
+  if (!numero(peca.quantidade)) estimados.push('Quantidade');
+  if (!valorUtil(peca.categoria_ml, 300)) {
+    estimados.push('Categoria Mercado Livre');
+  }
+  estimados.push(...estimadosAtributos);
+
+  return {
+    dados: {
+      titulo,
+      nome,
+      categoria: categoriaFinal,
+      categoria_ml:
+        valorUtil(peca.categoria_ml, 300) ||
+        'Autopeças > Peças de Carros e Caminhonetes > Outros',
+      marca: valorUtil(peca.marca, 120) || 'Não informado',
+      modelo: valorUtil(peca.modelo, 120) || 'Não informado',
+      ano: valorUtil(peca.ano, 40) || 'Não informado',
+      carro: valorUtil(peca.carro, 200) || 'Não informado',
+      condicao,
+      numero_oem: valorUtil(peca.numero_oem, 120) || 'Não visível',
+      garantia: valorUtil(peca.garantia, 120) || '90 dias',
+      peso_kg: numero(peca.peso_kg) || perfil.peso_kg,
+      comprimento_cm: numero(peca.comprimento_cm) || perfil.comprimento_cm,
+      largura_cm: numero(peca.largura_cm) || perfil.largura_cm,
+      altura_cm: numero(peca.altura_cm) || perfil.altura_cm,
+      descricao,
+      preco_sugerido: numero(peca.preco) || perfil.preco,
+      quantidade_sugerida: Math.max(
+        1,
+        Math.trunc(numero(peca.quantidade) || 1)
+      ),
+      gtin: valorUtil(peca.gtin, 40) || 'SEM GTIN',
+      localizacao:
+        valorUtil(peca.localizacao, 120) || 'Estoque interno',
+      tipo_anuncio: normalizarTipoAnuncio(peca.tipo_anuncio) || 'clássico',
+      modo_compra: MODOS_COMPRA.includes(
+        String(peca.modo_compra || '').toLowerCase()
+      )
+        ? String(peca.modo_compra).toLowerCase()
+        : 'buy_it_now',
+      atributos,
+      confianca: 'baixa',
+      estimados: [...new Set(estimados)],
+      observacoes:
+        'Ficha completada com estimativas locais. Confira os campos marcados antes de salvar.'
+    },
+    estimados: [...new Set(estimados)]
+  };
+}
+
+const PROMPT_FICHA_COMPLETA = [
+  'Você é especialista em autopeças usadas de desmonte e anúncios do Mercado Livre no Brasil.',
+  'Sua tarefa é COMPLETAR TODA a ficha de um anúncio a partir do título e das fotos enviadas.',
+  'Preencha o que estiver comprovado nas fotos ou nos dados já informados. Identidade da peça, veículo, marca, modelo, ano e OEM não podem ser inventados para evitar deixar campos vazios.',
+  '',
+  'Responda SOMENTE com um JSON válido, sem markdown e sem explicações, neste formato:',
+  '{',
+  '  "sku": "código lido na etiqueta; se aparecer apenas o número, mantenha somente o número",',
+  '  "titulo": "título do anúncio com no máximo 60 caracteres",',
+  '  "nome": "nome interno da peça",',
+  '  "categoria": "uma categoria da lista permitida",',
+  '  "categoria_ml": "caminho da categoria no Mercado Livre, se souber",',
+  '  "marca": "marca do veículo ou da peça",',
+  '  "modelo": "modelo do veículo",',
+  '  "ano": "ano ou faixa de anos",',
+  '  "carro": "veículo/aplicação completa",',
+  '  "condicao": "usado, novo ou recondicionado",',
+  '  "numero_oem": "código OEM/referência visível ou Não visível",',
+  '  "garantia": "garantia informada ou 90 dias",',
+  '  "peso_kg": 0,',
+  '  "comprimento_cm": 0,',
+  '  "largura_cm": 0,',
+  '  "altura_cm": 0,',
+  '  "descricao": "descrição de 3 a 6 parágrafos curtos",',
+  '  "preco_sugerido": 0,',
+  '  "quantidade_sugerida": 1,',
+  '  "gtin": "SEM GTIN",',
+  '  "localizacao": "Estoque interno",',
+  '  "tipo_anuncio": "clássico, premium ou grátis",',
+  '  "modo_compra": "buy_it_now ou auction",',
+  '  "atributos": { "chave_tecnica": "valor" },',
+  '  "confianca": "alta, media ou baixa",',
+  '  "estimados": ["nomes dos campos preenchidos por estimativa"],',
+  '  "observacoes": "o que precisa ser conferido"',
+  '}',
+  '',
+  'Regras obrigatórias:',
+  '- Use as fotos para identificar a peça, lado, posição, cor, material, conectores, etiqueta OEM, medidas e peso.',
+  '- As fotos podem vir rotuladas como [SKU], [PRODUTO], [MEDIDAS] e [CODIGO]. Leia primeiro [SKU] e [CODIGO] com OCR e use [MEDIDAS] para preencher peso e dimensões.',
+  '- Use o título para identificar veículo, marca, modelo, ano e aplicação.',
+  '- Quando a informação não estiver visível, deixe o campo de identificação vazio e inclua o nome em "estimados". Medidas e peso também devem ficar em 0 quando não houver leitura legível.',
+  '- Para campos de seleção, use EXATAMENTE uma das opções informadas na ficha técnica.',
+  '- Para "atributos", preencha TODAS as chaves da categoria escolhida.',
+  '- Se a categoria atual estiver definida, mantenha-a; caso contrário, escolha a mais adequada da lista.',
+  '- O título deve ter no máximo 60 caracteres e conter peça, lado/posição, veículo e ano quando possível.',
+  '- Classifique primeiro a forma e a função. Console central, porta-luvas, moldura, difusor e acabamento interno não são alternador, amortecedor, farol ou retrovisor.',
+  '- Para alternador, amortecedor, farol ou retrovisor, exige-se evidência visual específica da peça; uma busca externa nunca pode criar essa evidência.',
+  '- Não use "Universal", "Geral" ou anos genéricos. Se não houver aplicação confirmada, deixe marca, modelo, carro e ano sem preencher.',
+  '- A descrição deve ter 3 a 6 parágrafos curtos, sem emojis, com aplicação, condição, garantia, procedência e orientações.',
+  '- Preço sugerido em BRL para peça usada; quantidade sugerida mínima 1; GTIN "SEM GTIN" se não houver; localização "Estoque interno".',
+  '- OEM: use o código visível ou "Não visível". Garantia: use a informada ou "90 dias".',
+  '- "estimados" deve listar os nomes dos campos preenchidos por estimativa.',
+  '- Se usar um valor padrão porque a informação não estava disponível (por exemplo, "90 dias", "SEM GTIN", "Estoque interno" ou "Não visível"), inclua o campo correspondente em "estimados".',
+  '- "observacoes" deve resumir o que o vendedor precisa conferir.'
+].join('\n');
+
+export async function completarFichaComIa({
+  peca = {},
+  imagens = [],
+  categorias = [],
+  camposPorCategoria = {},
+  modo = 'completo'
+} = {}) {
+  const categoriasLimpas = Array.isArray(categorias)
+    ? categorias.map((item) => limparTexto(item, 80)).filter(Boolean)
+    : [];
+  const camposLimpos = normalizarCamposPorCategoria(camposPorCategoria);
+  const categoriaAtual =
+    categoriasLimpas.length > 0
+      ? categoriasLimpas.find(
+          (categoria) =>
+            normalizarComparacao(categoria) ===
+            normalizarComparacao(peca.categoria)
+        ) || ''
+      : limparTexto(peca.categoria, 80);
+  const categoriaParaFallback =
+    categoriaAtual ||
+    (categoriasLimpas.length === 1 ? categoriasLimpas[0] : 'Outros');
+  const camposFallback =
+    camposLimpos[categoriaParaFallback] || camposLimpos.Outros || [];
+
+  const schema = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(camposLimpos).map(([categoria, campos]) => [
+        categoria,
+        campos.map((campo) => ({
+          chave: campo.key,
+          rotulo: campo.label,
+          tipo: campo.tipo,
+          opcoes: campo.opcoes
+        }))
+      ])
+    )
+  );
+
+  const prompt = [
+    PROMPT_FICHA_COMPLETA,
+    '',
+    'Dados atuais da peça:',
+    resumoPeca(peca),
+    '',
+    `Categorias permitidas: ${
+      categoriasLimpas.join(', ') || 'não informadas'
+    }.`,
+    `Categoria atual: ${categoriaAtual || 'não definida'}.`,
+    '',
+    'Ficha técnica por categoria (JSON):',
+    schema || '{}',
+    '',
+    `Nomes das fotos: ${
+      imagens
+        .map((imagem) => imagem?.nome)
+        .filter(Boolean)
+        .join(', ') || 'nenhuma foto enviada'
+    }`,
+    '',
+    `Modo solicitado: ${limparTexto(modo, 40) || 'completo'}.`
+  ].join('\n');
+
+  let resultado = null;
+
+  if (Array.isArray(imagens) && imagens.length > 0) {
+    resultado = await gerarVisaoComIa(prompt, imagens, {
+      modelo: 'gemini-2.5-flash',
+      googleSearch: false,
+      googleSearchOnly: true,
+      maxTokens: 3000,
+      temperature: 0.08,
+      timeoutMs: 60000
+    });
+  }
+
+  if (!resultado?.texto) {
+    resultado = await gerarTextoComIa(prompt, {
+      maxTokens: 3000,
+      temperature: 0.3,
+      timeoutMs: 60000,
+      limiteCaracteres: 20000
+    });
+  }
+
+  if (!resultado?.texto) {
+    const fallback = fichaCompletaFallback(
+      peca,
+      categoriaParaFallback,
+      camposFallback
+    );
+
+    return {
+      ...fallback,
+      fonte: 'local',
+      modelo: null,
+      aviso:
+        'A IA não respondeu agora. A ficha foi completada com os dados atuais e estimativas locais. Revise os campos marcados.'
+    };
+  }
+
+  const json = extrairJson(resultado.texto);
+
+  if (!json && process.env.DEBUG_IA_FICHA === '1') {
+    console.warn(
+      'Resposta bruta da IA (ficha):',
+      String(resultado.texto || '').slice(0, 8000)
+    );
+  }
+
+  if (!json) {
+    const fallback = fichaCompletaFallback(
+      peca,
+      categoriaParaFallback,
+      camposFallback
+    );
+
+    return {
+      ...fallback,
+      fonte: resultado.fonte,
+      modelo: resultado.modelo,
+      aviso:
+        'A IA respondeu em um formato inesperado. A ficha foi completada com os dados atuais e estimativas locais. Revise os campos marcados.'
+    };
+  }
+
+  const categoriaIa = normalizarCategoriaIa(json.categoria, categoriasLimpas);
+  const categoria =
+    categoriaAtual ||
+    (categoriasLimpas.length > 0
+      ? categoriasLimpas.includes(categoriaIa)
+        ? categoriaIa
+        : categoriasLimpas.includes('Outros')
+          ? 'Outros'
+          : categoriasLimpas[0]
+      : categoriaIa || 'Outros');
+  const campos =
+    camposLimpos[categoria] || camposLimpos[categoriaAtual] || camposFallback;
+  const atributosExistentes = atributosDePeca(peca);
+  const { atributos, estimados: estimadosAtributos } = completarAtributos(
+    categoria,
+    json.atributos,
+    campos,
+    atributosExistentes
+  );
+
+  ajustarAtributosMoto(atributos, estimadosAtributos, campos, peca);
+
+  const perfil = perfilCategoria(categoria);
+  const condicaoExistente = String(peca.condicao || '').toLowerCase();
+  const condicaoInformada = String(json.condicao || '').toLowerCase();
+  const condicao = ['novo', 'usado', 'recondicionado'].includes(
+    condicaoExistente
+  )
+    ? condicaoExistente
+    : ['novo', 'usado', 'recondicionado'].includes(condicaoInformada)
+      ? condicaoInformada
+      : 'usado';
+  const tipoExistente = normalizarTipoAnuncio(peca.tipo_anuncio);
+  const tipoInformado = normalizarTipoAnuncio(json.tipo_anuncio);
+  const tipoAnuncio = tipoExistente || tipoInformado || 'clássico';
+  const modoExistente = String(peca.modo_compra || '').toLowerCase();
+  const modoInformado = String(json.modo_compra || '').toLowerCase();
+  const modoCompra = MODOS_COMPRA.includes(modoExistente)
+    ? modoExistente
+    : MODOS_COMPRA.includes(modoInformado)
+      ? modoInformado
+      : 'buy_it_now';
+  const titulo = limparTexto(
+    peca.ml_titulo || peca.nome || json.titulo || json.nome || 'Peça usada',
+    60
+  );
+  const nome = limparTexto(
+    peca.nome || json.nome || json.titulo || 'Peça usada',
+    200
+  );
+  const descricao =
+    descricaoValida(peca.descricao) ||
+    descricaoValida(json.descricao) ||
+    descricaoCompletaFallback(
+      {
+        ...peca,
+        nome,
+        condicao
+      },
+      categoria
+    );
+  const estimados = new Set(
+    Array.isArray(json.estimados)
+      ? json.estimados
+          .map((item) => rotuloEstimado(item, campos, atributosExistentes))
+          .filter(Boolean)
+      : []
+  );
+
+  estimadosAtributos.forEach((item) => estimados.add(item));
+
+  if (!valorUtil(peca.marca, 120) && !valorUtil(json.marca, 120)) {
+    estimados.add('Marca');
+  }
+  if (!valorUtil(peca.modelo, 120) && !valorUtil(json.modelo, 120)) {
+    estimados.add('Modelo');
+  }
+  if (!valorUtil(peca.ano, 40) && !valorUtil(json.ano, 40)) {
+    estimados.add('Ano');
+  }
+  if (
+    !valorUtil(peca.carro, 200) &&
+    !valorUtil(json.carro || json.aplicacao, 200)
+  ) {
+    estimados.add('Aplicação');
+  }
+  if (
+    !valorUtil(peca.numero_oem, 120) &&
+    !valorUtil(json.numero_oem, 120)
+  ) {
+    estimados.add('Código OEM');
+  }
+  if (
+    !valorUtil(peca.garantia, 120) &&
+    !valorUtil(json.garantia, 120)
+  ) {
+    estimados.add('Garantia');
+  }
+  if (!numero(peca.peso_kg) && !numero(json.peso_kg)) {
+    estimados.add('Peso');
+  }
+  if (
+    (!numero(peca.comprimento_cm) && !numero(json.comprimento_cm)) ||
+    (!numero(peca.largura_cm) && !numero(json.largura_cm)) ||
+    (!numero(peca.altura_cm) && !numero(json.altura_cm))
+  ) {
+    estimados.add('Medidas');
+  }
+  if (!numero(peca.preco) && !numero(json.preco_sugerido)) {
+    estimados.add('Preço');
+  }
+  if (
+    !numero(peca.quantidade) &&
+    !numero(json.quantidade_sugerida)
+  ) {
+    estimados.add('Quantidade');
+  }
+  if (
+    !valorUtil(peca.categoria_ml, 300) &&
+    !valorUtil(json.categoria_ml, 300)
+  ) {
+    estimados.add('Categoria Mercado Livre');
+  }
+
+  const dados = {
+    titulo,
+    nome,
+    categoria,
+    categoria_ml:
+      valorUtil(peca.categoria_ml, 300) ||
+      valorUtil(json.categoria_ml, 300) ||
+      'Autopeças > Peças de Carros e Caminhonetes > Outros',
+    marca:
+      valorUtil(peca.marca, 120) ||
+      valorUtil(json.marca, 120) ||
+      'Não informado',
+    modelo:
+      valorUtil(peca.modelo, 120) ||
+      valorUtil(json.modelo, 120) ||
+      'Não informado',
+    ano:
+      valorUtil(peca.ano, 40) ||
+      valorUtil(json.ano, 40) ||
+      'Não informado',
+    carro:
+      valorUtil(peca.carro, 200) ||
+      valorUtil(json.carro || json.aplicacao, 200) ||
+      'Não informado',
+    condicao,
+    numero_oem:
+      valorUtil(peca.numero_oem, 120) ||
+      valorUtil(json.numero_oem, 120) ||
+      'Não visível',
+    garantia:
+      valorUtil(peca.garantia, 120) ||
+      valorUtil(json.garantia, 120) ||
+      '90 dias',
+    peso_kg: numero(peca.peso_kg) || numero(json.peso_kg) || perfil.peso_kg,
+    comprimento_cm:
+      numero(peca.comprimento_cm) ||
+      numero(json.comprimento_cm) ||
+      perfil.comprimento_cm,
+    largura_cm:
+      numero(peca.largura_cm) ||
+      numero(json.largura_cm) ||
+      perfil.largura_cm,
+    altura_cm:
+      numero(peca.altura_cm) ||
+      numero(json.altura_cm) ||
+      perfil.altura_cm,
+    descricao,
+    preco_sugerido:
+      numero(peca.preco) || numero(json.preco_sugerido) || perfil.preco,
+    quantidade_sugerida: Math.max(
+      1,
+      Math.trunc(
+        numero(peca.quantidade) || numero(json.quantidade_sugerida) || 1
+      )
+    ),
+    gtin:
+      valorUtil(peca.gtin, 40) ||
+      valorUtil(json.gtin, 40) ||
+      'SEM GTIN',
+    localizacao:
+      valorUtil(peca.localizacao, 120) ||
+      valorUtil(json.localizacao, 120) ||
+      'Estoque interno',
+    tipo_anuncio: tipoAnuncio,
+    modo_compra: modoCompra,
+    atributos,
+    confianca: limparTexto(json.confianca || 'media', 20),
+    estimados: [...estimados],
+    observacoes: limparTexto(json.observacoes, 600)
+  };
+
+  const estimadosLista = dados.estimados;
+  const fonteLabel =
+    resultado.fonte === 'freellmapi'
+      ? 'FreeLLMAPI'
+      : resultado.fonte === 'gemini'
+        ? 'Gemini'
+        : 'IA';
+
+  // O primeiro modelo pode acertar o tipo da peça e ainda errar o veículo.
+  // Para a confirmação, descarte aplicação inferida e mantenha apenas o que
+  // já foi informado pelo vendedor; o agente de pesquisa precisa reconquistar
+  // marca/modelo/ano com fontes suficientes.
+  const dadosParaConfirmacao = {
+    ...dados,
+    marca: valorUtil(peca.marca, 120) ? dados.marca : '',
+    modelo: valorUtil(peca.modelo, 120) ? dados.modelo : '',
+    ano: valorUtil(peca.ano, 40) ? dados.ano : '',
+    carro: valorUtil(peca.carro, 200) ? dados.carro : ''
+  };
+  const dadosConfirmados = await confirmarFichaComPesquisa(dadosParaConfirmacao, imagens);
+
+  return {
+    dados: dadosConfirmados,
+    fonte: `${resultado.fonte} + Google Search/MODO IA + Mercado Livre`,
+    modelo: resultado.modelo,
+    estimados: estimadosLista,
+    aviso: [
+      `Ficha completa gerada com ${fonteLabel}.`,
+      estimadosLista.length > 0
+        ? `Campos estimados: ${estimadosLista
+            .slice(0, 14)
+            .join(', ')}${estimadosLista.length > 14 ? '...' : ''}.`
+        : 'Nenhum campo precisou de estimativa.',
+      'Revise os dados antes de salvar.'
+    ].join(' ')
   };
 }

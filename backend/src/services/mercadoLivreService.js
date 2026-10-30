@@ -3215,9 +3215,36 @@ export async function publicarAnuncioPeca(
   }
 
   const imagens = await db.all(
-    `SELECT caminho FROM peca_imagens
-     WHERE peca_id = ?
-     ORDER BY is_principal DESC, ordem ASC, id ASC
+    `SELECT pi.caminho FROM peca_imagens pi
+     WHERE pi.peca_id = ?
+       AND (
+         (
+           EXISTS (
+             SELECT 1 FROM peca_imagens sku
+             WHERE sku.peca_id = pi.peca_id AND sku.grupo = 'sku'
+           )
+           AND COALESCE(pi.grupo, 'produto') = 'produto'
+         )
+         OR (
+           NOT EXISTS (
+             SELECT 1 FROM peca_imagens sku
+             WHERE sku.peca_id = pi.peca_id AND sku.grupo = 'sku'
+           )
+           AND (
+             (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) = 1
+             OR (
+               (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) <= 8
+               AND pi.ordem > (SELECT MIN(todas.ordem) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+             )
+             OR (
+               (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) > 8
+               AND pi.ordem > (SELECT MIN(todas.ordem) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+               AND pi.ordem < (SELECT MAX(todas.ordem) - 4 FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+             )
+           )
+         )
+       )
+     ORDER BY pi.ordem ASC, pi.id ASC
      LIMIT 20`,
     [id]
   );

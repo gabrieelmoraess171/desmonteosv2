@@ -32,6 +32,7 @@ import ProductPhotoPicker, {
 import PecaFotosEditor from './PecaFotosEditor';
 import FichaMercadoLivre, { CompatibilidadeMl, type ConfigAnuncioMl } from './FichaMercadoLivre';
 import {
+  CAMPOS_CATEGORIA,
   CATEGORIAS_PECA,
   camposDaCategoria,
   categoriaMlDe,
@@ -84,6 +85,7 @@ interface ModalCadastroPecaProps {
 }
 
 interface FichaIaPeca {
+  sku?: string;
   titulo?: string;
   nome?: string;
   categoria?: string;
@@ -91,6 +93,7 @@ interface FichaIaPeca {
   marca?: string;
   modelo?: string;
   ano?: string;
+  carro?: string;
   condicao?: string;
   numero_oem?: string;
   garantia?: string;
@@ -99,8 +102,15 @@ interface FichaIaPeca {
   largura_cm?: number;
   altura_cm?: number;
   descricao?: string;
+  preco_sugerido?: number;
+  quantidade_sugerida?: number;
+  gtin?: string;
+  localizacao?: string;
+  tipo_anuncio?: string;
+  modo_compra?: string;
   atributos?: Record<string, string>;
   confianca?: string;
+  estimados?: string[];
   observacoes?: string;
 }
 
@@ -109,6 +119,15 @@ interface RespostaIaPeca {
   fonte: string;
   modelo?: string;
   aviso?: string;
+}
+
+interface RespostaFichaCompletaIa {
+  dados: FichaIaPeca;
+  fonte: string;
+  modelo?: string;
+  estimados?: string[];
+  aviso?: string;
+  imagensAnalisadas?: number;
 }
 
 interface PecaFormData {
@@ -134,7 +153,6 @@ interface PecaFormData {
   tipo_anuncio: string;
   gtin: string;
   localizacao: string;
-  video_url: string;
   modo_compra: string;
   quantidade: string;
   preco: string;
@@ -151,21 +169,23 @@ const createInitialFormData = (): PecaFormData => ({
   categoria: '',
   categoria_ml: '',
   ml_category_id: '',
-  ml_config: {},
+  ml_config: {
+    shipping: { mode: 'not_specified', free_shipping: false, local_pick_up: false },
+    sale_terms: { WARRANTY_TYPE: 'Sem garantia' },
+  },
   marca: '',
   modelo: '',
   ano: '',
   condicao: 'usado',
   numero_oem: '',
-  garantia: '',
+  garantia: 'Sem garantia',
   peso_kg: '',
   comprimento_cm: '',
   largura_cm: '',
   altura_cm: '',
-  tipo_anuncio: 'clássico',
+  tipo_anuncio: 'premium',
   gtin: '',
   localizacao: '',
-  video_url: '',
   modo_compra: 'buy_it_now',
   quantidade: '1',
   preco: '',
@@ -187,6 +207,49 @@ function textoNumero(valor: unknown): string {
   return Number.isFinite(numero) ? String(numero) : '';
 }
 
+function expandirFaixaAnos(valor: string): string {
+  const texto = String(valor || '').trim();
+  const faixa = texto.match(/\b(19\d{2}|20\d{2})\s*(?:a|até|[-–—])\s*(19\d{2}|20\d{2})\b/i);
+  if (!faixa) return texto;
+  const inicio = Number(faixa[1]);
+  const fim = Number(faixa[2]);
+  if (fim < inicio || fim - inicio > 30) return texto;
+  return Array.from({ length: fim - inicio + 1 }, (_, indice) => String(inicio + indice)).join(' ');
+}
+
+function formatarSkuIa(valor: unknown, atual: string): string {
+  const lido = String(valor || '').trim().toUpperCase();
+  if (!lido) return atual;
+  const numero = lido.match(/\d+/)?.[0];
+  const prefixo = atual.match(/^(.*?)(?:\d+)\s*$/)?.[1]?.trim();
+  if (numero && prefixo && !/[A-Z]/.test(lido)) return `${prefixo}${numero}`.replace(/\s+/g, ' ').trim();
+  return lido.replace(/\bG\s*SKU\b/i, 'G SKU').replace(/\s+/g, ' ').trim();
+}
+
+function montarTituloPadrao(dados: { nome?: string; titulo?: string; marca?: string; modelo?: string; ano?: string; lado?: string }): string {
+  const marca = String(dados.marca || '').trim();
+  const modelo = String(dados.modelo || '').trim();
+  // Sem marca/modelo confirmados, anos soltos criam títulos genéricos e
+  // passam uma aplicação que a foto não comprovou.
+  const anos = marca || modelo ? expandirFaixaAnos(String(dados.ano || '')).trim() : '';
+  const baseOriginal = String(dados.nome || dados.titulo || 'Peça automotiva').trim();
+  const lado = String(dados.lado || baseOriginal.match(/\b(direito|esquerdo)\b/i)?.[1] || '').toLowerCase();
+  const base = baseOriginal
+    .replace(new RegExp(`\\b${marca.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'ig'), '')
+    .replace(new RegExp(`\\b${modelo.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'ig'), '')
+    .replace(/\b(?:19|20)\d{2}\b/g, '')
+    .replace(/\b(universal|geral|usado|nova?|principal)\b/ig, '')
+    .replace(/\b(direito|esquerdo)\b/ig, '')
+    .replace(/\s+/g, ' ').trim();
+  return [base, lado ? lado.charAt(0).toUpperCase() + lado.slice(1) : '', marca, modelo, anos]
+    .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function ordemFotosParaEnvio(lista: FotoSelecionada[]): FotoSelecionada[] {
+  const ordem: Array<FotoSelecionada['grupo']> = ['sku', 'produto', 'medidas', 'codigo'];
+  return [...lista].sort((a, b) => ordem.indexOf(a.grupo) - ordem.indexOf(b.grupo));
+}
+
 function dadosDaPeca(peca: PecaCompleta): PecaFormData {
   return {
     nome: peca.nome || '',
@@ -197,21 +260,20 @@ function dadosDaPeca(peca: PecaCompleta): PecaFormData {
     categoria: peca.categoria || '',
     categoria_ml: peca.categoria_ml || '',
     ml_category_id: peca.ml_category_id || '',
-    ml_config: (() => { try { return typeof peca.ml_config === 'string' ? JSON.parse(peca.ml_config) : peca.ml_config || {}; } catch { return {}; } })(),
+    ml_config: (() => { try { return { shipping: { mode: 'not_specified', free_shipping: false, local_pick_up: false }, sale_terms: { WARRANTY_TYPE: 'Sem garantia' }, ...(typeof peca.ml_config === 'string' ? JSON.parse(peca.ml_config) : peca.ml_config || {}) }; } catch { return { shipping: { mode: 'not_specified', free_shipping: false, local_pick_up: false }, sale_terms: { WARRANTY_TYPE: 'Sem garantia' } }; } })(),
     marca: peca.marca || '',
     modelo: peca.modelo || '',
     ano: peca.ano || '',
     condicao: peca.condicao || 'usado',
     numero_oem: peca.numero_oem || '',
-    garantia: peca.garantia || '',
+    garantia: 'Sem garantia',
     peso_kg: textoNumero(peca.peso_kg),
     comprimento_cm: textoNumero(peca.comprimento_cm),
     largura_cm: textoNumero(peca.largura_cm),
     altura_cm: textoNumero(peca.altura_cm),
-    tipo_anuncio: peca.tipo_anuncio || 'clássico',
+    tipo_anuncio: 'premium',
     gtin: peca.gtin || '',
     localizacao: peca.localizacao || '',
-    video_url: peca.video_url || '',
     modo_compra: peca.modo_compra || 'buy_it_now',
     quantidade: textoNumero(peca.quantidade) || '0',
     preco: textoNumero(peca.preco),
@@ -302,10 +364,16 @@ export default function ModalCadastroPeca({
   const [loading, setLoading] = useState(false);
   const [classificando, setClassificando] = useState(false);
   const [lendoFotos, setLendoFotos] = useState(false);
+  const [completandoFicha, setCompletandoFicha] = useState(false);
   const [iaAviso, setIaAviso] = useState('');
   const [iaFonte, setIaFonte] = useState('');
+  const [estimadosIa, setEstimadosIa] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [skuSugerido, setSkuSugerido] = useState('');
+  const [consultandoOem, setConsultandoOem] = useState(false);
+  const [referenciasOem, setReferenciasOem] = useState<Array<{ titulo: string; marca: string; modelo: string; url: string; numero?: string; aplicacoes?: string; fonte?: string }>>([]);
+  const [fontesOem, setFontesOem] = useState<Array<{ nome: string; url: string; status: string }>>([]);
+  const [identificacaoIa, setIdentificacaoIa] = useState<{ peca?: string; lado?: string; marca?: string; modelos?: string[]; anos?: string; veiculos?: string[]; confianca?: string; observacao?: string; fonte?: string } | null>(null);
   const tituloInputRef = useRef<HTMLInputElement>(null);
   const fotosRef = useRef<FotoSelecionada[]>([]);
 
@@ -326,11 +394,12 @@ export default function ModalCadastroPeca({
     []
   );
 
-  const handleAddFotos = useCallback((files: File[]) => {
+  const handleAddFotos = useCallback((files: File[], grupo: FotoSelecionada['grupo']) => {
     const novas = files.slice(0, 20).map((file) => ({
       id: criarIdFoto(),
       file,
       preview: URL.createObjectURL(file),
+      grupo,
     }));
 
     setFotos((atuais) => [...atuais, ...novas].slice(0, 20));
@@ -380,7 +449,8 @@ export default function ModalCadastroPeca({
 
       return {
         ...atual,
-        ml_titulo: textoPreenchido(dados.titulo, atual.ml_titulo).slice(0, 60),
+        ml_titulo: montarTituloPadrao({ nome: dados.nome || atual.nome, titulo: dados.titulo || atual.ml_titulo, marca: dados.marca || atual.marca, modelo: dados.modelo || atual.modelo, ano: dados.ano || atual.ano }),
+        sku: formatarSkuIa(dados.sku, atual.sku),
         nome: textoPreenchido(dados.nome, atual.nome),
         categoria: categoriaValida,
         categoria_ml:
@@ -390,9 +460,9 @@ export default function ModalCadastroPeca({
         marca: textoPreenchido(dados.marca, atual.marca),
         modelo: textoPreenchido(dados.modelo, atual.modelo),
         ano: textoPreenchido(dados.ano, atual.ano),
-        condicao,
-        numero_oem: textoPreenchido(dados.numero_oem, atual.numero_oem),
-        garantia: textoPreenchido(dados.garantia, atual.garantia),
+        condicao: 'usado',
+        numero_oem: textoPreenchido(atual.numero_oem, dados.numero_oem || ''),
+        garantia: 'Sem garantia',
         peso_kg: numeroPreenchido(dados.peso_kg, atual.peso_kg),
         comprimento_cm: numeroPreenchido(
           dados.comprimento_cm,
@@ -405,6 +475,213 @@ export default function ModalCadastroPeca({
       };
     });
   }, []);
+
+  const aplicarFichaCompletaIa = useCallback((dados: FichaIaPeca) => {
+    setFormData((atual) => {
+      const categoriaInformada = String(dados.categoria || '').trim();
+      const categoriaValida = (
+        CATEGORIAS_PECA as readonly string[]
+      ).includes(categoriaInformada)
+        ? categoriaInformada
+        : atual.categoria;
+      const categoriaFinal = atual.categoria || categoriaValida;
+      const condicaoInformada = String(dados.condicao || '').toLowerCase();
+      const condicao = ['novo', 'usado', 'recondicionado'].includes(
+        condicaoInformada
+      )
+        ? condicaoInformada
+        : atual.condicao;
+      const tipoInformado = String(dados.tipo_anuncio || '').toLowerCase();
+      const modoInformado = String(dados.modo_compra || '').toLowerCase();
+      const atributosIa =
+        dados.atributos && typeof dados.atributos === 'object'
+          ? Object.fromEntries(
+              Object.entries(dados.atributos)
+                .map(([chave, valor]) => [
+                  String(chave || '').trim(),
+                  String(valor ?? '').trim(),
+                ])
+                .filter(([chave, valor]) => chave && valor)
+            )
+          : {};
+      const atributosAtuais = Object.fromEntries(
+        Object.entries(atual.atributos || {}).filter(([, valor]) =>
+          String(valor ?? '').trim()
+        )
+      );
+      const precoAtual = parsePreco(atual.preco);
+      const precoSugerido = Number(dados.preco_sugerido);
+      const quantidadeAtual = Number(atual.quantidade);
+      const quantidadeSugerida = Number(dados.quantidade_sugerida);
+      const categoriaMl =
+        atual.categoria_ml ||
+        textoPreenchido(dados.categoria_ml, '') ||
+        categoriaMlDe(categoriaFinal);
+
+      return {
+        ...atual,
+        ml_titulo: montarTituloPadrao({ nome: dados.nome || atual.nome, titulo: dados.titulo || atual.ml_titulo, marca: dados.marca || atual.marca, modelo: dados.modelo || atual.modelo, ano: dados.ano || atual.ano }),
+        sku: formatarSkuIa(dados.sku, atual.sku),
+        nome: textoPreenchido(
+          dados.nome,
+          atual.nome || dados.titulo || atual.ml_titulo
+        ).slice(0, 200),
+        categoria: categoriaFinal,
+        categoria_ml: categoriaMl,
+        marca: textoPreenchido(dados.marca, atual.marca),
+        modelo: textoPreenchido(dados.modelo, atual.modelo),
+        ano: textoPreenchido(dados.ano, atual.ano),
+        carro: textoPreenchido(dados.carro, atual.carro),
+        condicao: 'usado',
+        numero_oem: textoPreenchido(atual.numero_oem, dados.numero_oem || ''),
+        garantia: 'Sem garantia',
+        peso_kg: numeroPreenchido(dados.peso_kg, atual.peso_kg),
+        comprimento_cm: numeroPreenchido(
+          dados.comprimento_cm,
+          atual.comprimento_cm
+        ),
+        largura_cm: numeroPreenchido(dados.largura_cm, atual.largura_cm),
+        altura_cm: numeroPreenchido(dados.altura_cm, atual.altura_cm),
+        descricao: textoPreenchido(dados.descricao, atual.descricao),
+        preco:
+          precoAtual > 0
+            ? atual.preco
+            : Number.isFinite(precoSugerido) && precoSugerido > 0
+              ? precoSugerido.toFixed(2)
+              : atual.preco,
+        quantidade:
+          quantidadeAtual > 0
+            ? atual.quantidade
+            : Number.isFinite(quantidadeSugerida) && quantidadeSugerida > 0
+              ? String(Math.trunc(quantidadeSugerida))
+              : atual.quantidade,
+        gtin: textoPreenchido(dados.gtin, atual.gtin),
+        localizacao: '',
+        tipo_anuncio: 'premium',
+        modo_compra:
+          atual.modo_compra ||
+          (['buy_it_now', 'auction'].includes(modoInformado)
+            ? modoInformado
+            : 'buy_it_now'),
+        atributos: { ...atributosIa, ...atributosAtuais },
+      };
+    });
+  }, []);
+
+  const handleCompletarFichaComIa = useCallback(async () => {
+    if (completandoFicha || loading) return;
+
+    const titulo = formData.ml_titulo.trim() || formData.nome.trim();
+
+    if (!peca && fotos.length === 0 && !titulo) {
+      setError(
+        'Informe o título ou adicione ao menos uma foto para a IA completar a ficha.'
+      );
+      return;
+    }
+
+    setCompletandoFicha(true);
+    setError('');
+    setIaAviso('');
+    setIaFonte('');
+    setEstimadosIa([]);
+
+    try {
+      const imagens =
+        fotos.length > 0
+          ? await prepararImagensParaIa(
+              ordemFotosParaEnvio(fotos).map((foto) => ({
+                file: foto.file,
+                nome: `[${foto.grupo?.toUpperCase() || 'PRODUTO'}] ${foto.file.name}`,
+              })),
+              20
+            )
+          : [];
+
+      const { data } = await axios.post<RespostaFichaCompletaIa>(
+        '/api/ia/completar-ficha',
+        {
+          pecaId: peca?.id,
+          imagens,
+          categorias: CATEGORIAS_PECA,
+          camposPorCategoria: CAMPOS_CATEGORIA,
+          contexto: {
+            peca: {
+              nome: formData.nome,
+              ml_titulo: formData.ml_titulo,
+              sku: formData.sku,
+              carro: formData.carro,
+              descricao: formData.descricao,
+              categoria: formData.categoria,
+              categoria_ml: formData.categoria_ml,
+              marca: formData.marca,
+              modelo: formData.modelo,
+              ano: formData.ano,
+              condicao: formData.condicao,
+              numero_oem: formData.numero_oem,
+              garantia: 'Sem garantia',
+              peso_kg: Number(formData.peso_kg) || 0,
+              comprimento_cm: Number(formData.comprimento_cm) || 0,
+              largura_cm: Number(formData.largura_cm) || 0,
+              altura_cm: Number(formData.altura_cm) || 0,
+              tipo_anuncio: 'premium',
+              gtin: formData.gtin,
+              localizacao: '',
+              modo_compra: formData.modo_compra,
+              quantidade: Number(formData.quantidade) || 0,
+              preco: parsePreco(formData.preco) || 0,
+              atributos: formData.atributos,
+            },
+          },
+        },
+        { timeout: 150000 }
+      );
+
+      if (data?.dados) aplicarFichaCompletaIa(data.dados);
+      // A ficha completa conduz o operador pelas cinco etapas para que o preenchimento
+      // da IA seja percebido como um fluxo contínuo, sem exigir cliques intermediários.
+      ['02', '03', '04', '05'].forEach((chave, indice) => {
+        window.setTimeout(() => setEtapa(chave), (indice + 1) * 850);
+      });
+
+      const estimados = Array.isArray(data?.estimados)
+        ? data.estimados
+        : Array.isArray(data?.dados?.estimados)
+          ? data.dados.estimados
+          : [];
+
+      setEstimadosIa(estimados);
+      setIaFonte(data?.fonte || '');
+      setIaAviso(
+        data?.aviso ||
+          `Ficha completa gerada${
+            data?.imagensAnalisadas
+              ? ` com ${data.imagensAnalisadas} foto(s)`
+              : ''
+          }. Confira os campos antes de salvar.`
+      );
+    } catch (err: unknown) {
+      if (axios.isAxiosError<{ error?: string }>(err)) {
+        setError(
+          err.response?.data?.error ||
+            'Não foi possível completar a ficha com IA agora.'
+        );
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Não foi possível completar a ficha com IA agora.');
+      }
+    } finally {
+      setCompletandoFicha(false);
+    }
+  }, [
+    aplicarFichaCompletaIa,
+    completandoFicha,
+    formData,
+    fotos,
+    loading,
+    peca,
+  ]);
 
   const handleLerFotosComIa = useCallback(async () => {
     if (lendoFotos || loading) return;
@@ -423,8 +700,11 @@ export default function ModalCadastroPeca({
 
     try {
       const imagens = await prepararImagensParaIa(
-        fotos.map((foto) => ({ file: foto.file, nome: foto.file.name })),
-        8
+        ordemFotosParaEnvio(fotos).map((foto) => ({
+          file: foto.file,
+          nome: `[${foto.grupo?.toUpperCase() || 'PRODUTO'}] ${foto.file.name}`,
+        })),
+        20
       );
 
       if (imagens.length === 0) {
@@ -445,7 +725,7 @@ export default function ModalCadastroPeca({
               carro: formData.carro,
               marca: formData.marca,
               modelo: formData.modelo,
-              ano: formData.ano,
+              ano: expandirFaixaAnos(formData.ano),
               categoria: formData.categoria,
               descricao: formData.descricao,
             },
@@ -484,7 +764,9 @@ export default function ModalCadastroPeca({
     setError('');
     setIaAviso('');
     setIaFonte('');
+    setEstimadosIa([]);
     setLendoFotos(false);
+    setCompletandoFicha(false);
     onClose();
   }, [limparFotos, loading, onClose]);
 
@@ -500,7 +782,9 @@ export default function ModalCadastroPeca({
     setSkuSugerido('');
     setIaAviso('');
     setIaFonte('');
+    setEstimadosIa([]);
     setLendoFotos(false);
+    setCompletandoFicha(false);
 
     const timer = window.setTimeout(() => tituloInputRef.current?.focus(), 120);
 
@@ -638,6 +922,80 @@ export default function ModalCadastroPeca({
     }
   };
 
+  const consultarPartNumber = useCallback(async () => {
+    const partNumber = formData.numero_oem.trim();
+    if (partNumber.length < 3) return;
+    setConsultandoOem(true);
+    setError('');
+    try {
+      type ResultadoCatalogo = { titulo: string; marca: string; modelo: string; url: string; numero?: string; aplicacoes?: string; fonte?: string };
+      type RespostaCatalogo = { resultados?: ResultadoCatalogo[]; fontes?: Array<{ nome: string; url: string; status: string }>; identificacaoIa?: { peca?: string; lado?: string; marca?: string; modelos?: string[]; anos?: string; veiculos?: string[]; confianca?: string; observacao?: string; fonte?: string } | null };
+      let data: RespostaCatalogo;
+      try {
+        ({ data } = await axios.get<RespostaCatalogo>(`/api/catalogo/part-number/${encodeURIComponent(partNumber)}`));
+      } catch (backendError) {
+        const consulta = partNumber.replace(/[^a-zA-Z0-9]/g, '');
+        const resposta7zap = await axios.get<{ results?: Array<{ code?: string; brand?: string; brand_code?: string; name?: string; applicability_count?: number }> }>('https://7zap.com/api/parts-search/search-prefix', { params: { q: consulta, limit: 24 }, headers: { Accept: 'application/json' } });
+        const resultados = (resposta7zap.data.results || []).map((item) => ({
+          titulo: item.name || item.code || partNumber,
+          marca: item.brand || '', modelo: '', numero: item.code || partNumber,
+          aplicacoes: item.applicability_count ? `${item.applicability_count} aplicação(ões) no catálogo` : '',
+          url: `https://7zap.com/pt/part/${encodeURIComponent(item.brand_code || item.brand || 'catalog')}/${encodeURIComponent(item.code || partNumber)}/`, fonte: '7zap'
+        }));
+        if (!resultados.length && axios.isAxiosError(backendError)) throw backendError;
+        data = { resultados, fontes: [{ nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: resultados.length ? 'encontrado' : 'nenhum resultado' }] };
+      }
+      setReferenciasOem(data.resultados || []);
+      setFontesOem(data.fontes || []);
+      setIdentificacaoIa(data.identificacaoIa || null);
+      const primeiro = data.resultados?.[0];
+      if (primeiro) {
+        setFormData((atual) => ({
+          ...atual,
+          marca: atual.marca || data.identificacaoIa?.marca || primeiro.marca,
+          modelo: atual.modelo || primeiro.modelo || data.identificacaoIa?.modelos?.[0] || '',
+          ml_titulo: atual.ml_titulo || montarTituloPadrao({ nome: data.identificacaoIa?.peca || primeiro.titulo, titulo: primeiro.titulo, marca: data.identificacaoIa?.marca || primeiro.marca, modelo: data.identificacaoIa?.modelos?.[0] || primeiro.modelo, ano: data.identificacaoIa?.anos, lado: data.identificacaoIa?.lado }),
+          descricao: atual.descricao || `Peça identificada automaticamente pelo ${primeiro.fonte || 'catálogo'}: ${primeiro.titulo}.${primeiro.marca ? ` Marca: ${primeiro.marca}.` : ''}${primeiro.aplicacoes ? ` ${primeiro.aplicacoes}.` : ''}`,
+        }));
+      }
+    } catch (err) {
+      setError(axios.isAxiosError<{ error?: string }>(err) ? err.response?.data?.error || 'Não foi possível identificar o part number.' : 'Não foi possível identificar o part number.');
+    } finally {
+      setConsultandoOem(false);
+    }
+  }, [formData.numero_oem]);
+
+  const aplicarIdentificacaoIa = useCallback(() => {
+    if (!identificacaoIa) return;
+    const primeiro = referenciasOem[0];
+    const veiculos = identificacaoIa.veiculos?.filter(Boolean) || [];
+    const modelo = identificacaoIa.modelos?.[0] || primeiro?.modelo || '';
+    const marca = identificacaoIa.marca || primeiro?.marca || '';
+    const nomePeca = identificacaoIa.peca || primeiro?.titulo || '';
+    const nomeVeiculo = veiculos[0] || `${marca} ${modelo}`.trim();
+    const descricao = [
+      nomePeca ? `Peça identificada: ${nomePeca}.` : '',
+      marca ? `Marca: ${marca}.` : '',
+      modelo ? `Modelo: ${modelo}.` : '',
+      identificacaoIa.anos ? `Anos compatíveis: ${identificacaoIa.anos}.` : '',
+      veiculos.length ? `Aplicações: ${veiculos.join(', ')}.` : '',
+      identificacaoIa.observacao || ''
+    ].filter(Boolean).join(' ');
+
+    setFormData((atual) => ({
+      ...atual,
+      numero_oem: primeiro?.numero || atual.numero_oem,
+      marca: marca || atual.marca,
+      modelo: modelo || atual.modelo,
+      ano: expandirFaixaAnos(identificacaoIa.anos || atual.ano),
+      carro: nomeVeiculo || atual.carro,
+      ml_titulo: montarTituloPadrao({ nome: nomePeca, marca, modelo, ano: identificacaoIa.anos, lado: identificacaoIa.lado }),
+      nome: nomePeca || `${marca} ${modelo}`.trim() || atual.nome,
+      descricao: descricao || atual.descricao
+    }));
+    setIaAviso('Dados da identificação aplicados à ficha. Revise antes de salvar.');
+  }, [identificacaoIa, referenciasOem]);
+
   const validar = (): string | null => {
     if (!formData.ml_titulo.trim()) {
       return 'Título do anúncio é obrigatório.';
@@ -678,11 +1036,13 @@ export default function ModalCadastroPeca({
 
     try {
       const payload = new FormData();
+      const fotosParaEnviar = ordemFotosParaEnvio(fotos);
       payload.append(
         'nome',
         formData.ml_titulo.trim() || formData.nome.trim() || 'Peça sem título'
       );
-      payload.append('ml_titulo', formData.ml_titulo.trim());
+      const tituloPadrao = montarTituloPadrao({ nome: formData.nome, titulo: formData.ml_titulo, marca: formData.marca, modelo: formData.modelo, ano: formData.ano });
+      payload.append('ml_titulo', tituloPadrao);
       payload.append('sku', formData.sku.trim().toUpperCase());
       payload.append('carro', formData.carro.trim());
       payload.append('descricao', formData.descricao.trim());
@@ -692,26 +1052,26 @@ export default function ModalCadastroPeca({
       payload.append('ml_config', JSON.stringify(formData.ml_config));
       payload.append('marca', formData.marca.trim());
       payload.append('modelo', formData.modelo.trim());
-      payload.append('ano', formData.ano.trim());
+      payload.append('ano', expandirFaixaAnos(formData.ano));
       payload.append('condicao', formData.condicao);
       payload.append('numero_oem', formData.numero_oem.trim());
-      payload.append('garantia', formData.garantia.trim());
+      payload.append('garantia', 'Sem garantia');
       payload.append('peso_kg', formData.peso_kg || '0');
       payload.append('comprimento_cm', formData.comprimento_cm || '0');
       payload.append('largura_cm', formData.largura_cm || '0');
       payload.append('altura_cm', formData.altura_cm || '0');
       payload.append('atributos', JSON.stringify(formData.atributos));
-      payload.append('tipo_anuncio', formData.tipo_anuncio);
+      payload.append('tipo_anuncio', 'premium');
       payload.append('gtin', formData.gtin.trim());
-      payload.append('localizacao', formData.localizacao.trim());
-      payload.append('video_url', formData.video_url.trim());
+      payload.append('localizacao', '');
       payload.append('modo_compra', formData.modo_compra);
       payload.append('quantidade', formData.quantidade);
       payload.append('preco', String(parsePreco(formData.preco)));
       payload.append('ml_ativo', formData.ml_ativo ? '1' : '0');
 
       if (!editando) {
-        fotos.forEach((foto) => payload.append('fotos', foto.file));
+        fotosParaEnviar.forEach((foto) => payload.append('fotos', foto.file));
+        payload.append('foto_grupos', JSON.stringify(fotosParaEnviar.map((foto) => foto.grupo || 'produto')));
       }
 
       const response = await axios.request<{
@@ -865,31 +1225,67 @@ export default function ModalCadastroPeca({
                       Fotos do anúncio e leitura com IA
                     </p>
                     <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted">
-                      Envie etiqueta com SKU, produto, medidas e peso. A IA sugere os dados; confira antes de salvar.
+                      A IA verifica as fotos e o título para preencher todas as
+                      características do anúncio, sem deixar campos vazios.
+                      {editando
+                        ? ' Usa as fotos já cadastradas e, se preciso, a miniatura do Mercado Livre.'
+                        : ' Envie etiqueta com SKU, produto, medidas e peso.'}{' '}
+                      Confira os campos estimados antes de salvar.
                     </p>
                   </div>
                 </div>
 
-                {!editando && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void handleLerFotosComIa()}
-                    disabled={lendoFotos || loading || fotos.length === 0}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => void handleCompletarFichaComIa()}
+                    disabled={
+                      completandoFicha ||
+                      loading ||
+                      (!peca &&
+                        fotos.length === 0 &&
+                        !formData.ml_titulo.trim() &&
+                        !formData.nome.trim())
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {lendoFotos ? (
+                    {completandoFicha ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Sparkles className="h-4 w-4" />
+                      <Wand2 className="h-4 w-4" />
                     )}
-                    {lendoFotos ? 'Lendo fotos...' : 'Ler fotos com IA'}
+                    {completandoFicha
+                      ? 'Completando ficha...'
+                      : 'Completar ficha com IA'}
                   </button>
-                )}
+
+                  {!editando && (
+                    <button
+                      type="button"
+                      onClick={() => void handleLerFotosComIa()}
+                      disabled={
+                        lendoFotos ||
+                        completandoFicha ||
+                        loading ||
+                        fotos.length === 0
+                      }
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2.5 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {lendoFotos ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                      {lendoFotos ? 'Lendo fotos...' : 'Ler fotos com IA'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {!editando && fotos.length === 0 && (
                 <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-muted">
-                  Adicione as fotos abaixo para liberar a leitura com IA.
+                  Adicione fotos abaixo ou informe o título para liberar a
+                  leitura com IA.
                 </p>
               )}
 
@@ -906,43 +1302,71 @@ export default function ModalCadastroPeca({
                   </div>
                 </div>
               )}
+
+              {estimadosIa.length > 0 && (
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/25 bg-warningSoft px-3 py-2.5 text-xs leading-relaxed text-warning">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      Campos preenchidos por estimativa
+                    </p>
+                    <p className="mt-1">{estimadosIa.join(', ')}.</p>
+                    <p className="mt-1">
+                      A IA não confirmou esses dados nas fotos ou no título.
+                      Revise antes de salvar.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="cadastro-fotos">
-            {editando && peca ? (
-              <PecaFotosEditor
-                pecaId={peca.id}
-                onChange={() => onSuccess()}
-              />
-            ) : (
+            <div className="cadastro-fotos space-y-4">
+            {editando && peca ? <PecaFotosEditor pecaId={peca.id} onChange={() => onSuccess()} /> : <>
               <ProductPhotoPicker
-                photos={fotos}
-                onAddFiles={handleAddFotos}
+                photos={fotos.filter((foto) => foto.grupo === 'sku')}
+                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'sku')}
                 onRemove={handleRemoveFoto}
                 onMakeCover={handleMakeCover}
-                maxPhotos={20}
+                maxPhotos={1}
                 maxFileSizeMB={10}
+                heading="1. Foto do SKU"
+                description="Envie somente uma foto nítida da etiqueta ou código SKU."
                 disabled={loading || lendoFotos}
               />
-            )}
-
-            </div>
-            <div className="cadastro-video mt-4">
-              <label htmlFor="peca-video" className="mb-1.5 block text-sm font-medium">
-                Vídeo do anúncio (opcional)
-              </label>
-              <input
-                id="peca-video"
-                type="url"
-                name="video_url"
-                value={formData.video_url}
-                onChange={handleChange}
-                className="w-full rounded-xl border p-3"
-                placeholder="https://www.youtube.com/watch?v=..."
+              <ProductPhotoPicker
+                photos={fotos.filter((foto) => foto.grupo === 'produto')}
+                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'produto')}
+                onRemove={handleRemoveFoto}
+                onMakeCover={handleMakeCover}
+                maxPhotos={12}
+                maxFileSizeMB={10}
+                heading="2. Fotos do produto"
+                description="Mostre a peça por diferentes ângulos, até 12 imagens."
+                disabled={loading || lendoFotos}
               />
-              <p className="mt-1.5 text-[11px] text-muted">
-                O Mercado Livre aceita vídeo do YouTube no anúncio.
-              </p>
+              <ProductPhotoPicker
+                photos={fotos.filter((foto) => foto.grupo === 'medidas')}
+                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'medidas')}
+                onRemove={handleRemoveFoto}
+                onMakeCover={handleMakeCover}
+                maxPhotos={4}
+                maxFileSizeMB={10}
+                heading="3. Medidas e peso"
+                description="Envie até 4 imagens mostrando medidas, dimensões e peso."
+                disabled={loading || lendoFotos}
+              />
+              <ProductPhotoPicker
+                photos={fotos.filter((foto) => foto.grupo === 'codigo')}
+                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'codigo')}
+                onRemove={handleRemoveFoto}
+                onMakeCover={handleMakeCover}
+                maxPhotos={1}
+                maxFileSizeMB={10}
+                heading="4. Foto do código da peça"
+                description="A última foto será usada para identificar o part number/OEM."
+                disabled={loading || lendoFotos}
+              />
+            </>}
             </div>
 
             <div className="cadastro-dados mt-5 grid gap-4 md:grid-cols-2">
@@ -1031,12 +1455,40 @@ export default function ModalCadastroPeca({
                   name="tipo_anuncio"
                   value={formData.tipo_anuncio}
                   onChange={handleChange}
+                  disabled
                   className="w-full rounded-xl border p-3"
                 >
                   <option value="clássico">Clássico</option>
                   <option value="premium">Premium</option>
                   <option value="grátis">Grátis</option>
                 </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="peca-oem" className="mb-1.5 block text-sm font-medium">
+                  Part number / código OEM
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="peca-oem"
+                    type="text"
+                    name="numero_oem"
+                    value={formData.numero_oem}
+                    onChange={handleChange}
+                    onBlur={() => void consultarPartNumber()}
+                    className="min-w-0 flex-1 rounded-xl border p-3 font-mono"
+                    placeholder="Digite o número da peça para consultar os catálogos"
+                  />
+                  <button type="button" onClick={() => void consultarPartNumber()} disabled={consultandoOem || formData.numero_oem.trim().length < 3} className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-accent/30 px-3 text-xs font-semibold text-accent disabled:opacity-50">
+                    {consultandoOem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Consultar
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted">Consulta automática no catálogo OEM 7zap e preenche os dados encontrados nesta peça.</p>
+                {(referenciasOem.length > 0 || fontesOem.length > 0) && <div className="mt-2 rounded-xl border border-accent/20 bg-accentSoft p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2"><p className="font-semibold text-accent">Identificação automática</p><div className="flex flex-wrap justify-end gap-1">{fontesOem.map((fonte) => <span key={fonte.nome} className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${fonte.status === 'encontrado' ? 'border-success/40 text-success' : 'border-white/10 text-muted'}`}>{fonte.nome} · {fonte.status}</span>)}</div></div>
+                  {!!referenciasOem.length && <div className="mt-2 space-y-2">{referenciasOem.slice(0, 8).map((referencia, indice) => <div key={`${referencia.numero || referencia.url}-${indice}`} className="rounded-lg border border-white/10 bg-black/10 p-2"><p className="font-semibold text-ink">{referencia.titulo}</p><p className="mt-0.5 text-muted">{referencia.numero || 'Código não informado'}{referencia.marca ? ` · ${referencia.marca}` : ''}{referencia.aplicacoes ? ` · ${referencia.aplicacoes}` : ''}</p></div>)}</div>}
+                  {!!identificacaoIa && <div className="mt-2 rounded-lg border border-violet-400/20 bg-violet-400/5 p-2.5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-violet-200">Aplicação sugerida pela IA do Google</p><p className="mt-1 text-muted">{identificacaoIa.veiculos?.length ? identificacaoIa.veiculos.join(' · ') : identificacaoIa.modelos?.join(' · ') || 'Modelo não identificado com segurança'}{identificacaoIa.anos ? ` · ${identificacaoIa.anos}` : ''}</p></div><button type="button" onClick={aplicarIdentificacaoIa} className="shrink-0 rounded-lg border border-violet-300/40 bg-violet-300/10 px-2.5 py-1.5 text-[10px] font-semibold text-violet-100 transition hover:bg-violet-300/20">Aplicar dados</button></div><p className="mt-1 text-[10px] text-muted">Confiança: {identificacaoIa.confianca || 'baixa'}{identificacaoIa.observacao ? ` · ${identificacaoIa.observacao}` : ''}</p></div>}
+                </div>}
               </div>
 
               <div>
@@ -1132,6 +1584,7 @@ export default function ModalCadastroPeca({
                   name="condicao"
                   value={formData.condicao}
                   onChange={handleChange}
+                  disabled
                   className="w-full rounded-xl border p-3"
                 >
                   <option value="usado">Usado</option>
@@ -1149,22 +1602,9 @@ export default function ModalCadastroPeca({
                   name="garantia"
                   value={formData.garantia}
                   onChange={handleChange}
+                  readOnly
                   className="w-full rounded-xl border p-3"
                   placeholder="Ex: 90 dias"
-                />
-              </div>
-              <div className="sm:col-span-2 lg:col-span-3">
-                <label htmlFor="peca-oem" className="mb-1.5 block text-sm font-medium">
-                  Código OEM / referência
-                </label>
-                <input
-                  id="peca-oem"
-                  type="text"
-                  name="numero_oem"
-                  value={formData.numero_oem}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3 font-mono"
-                  placeholder="Ex: 52123456 ou 93328030"
                 />
               </div>
             </div>
@@ -1352,20 +1792,6 @@ export default function ModalCadastroPeca({
                 </select>
               </div>
 
-              <div>
-                <label htmlFor="peca-localizacao" className="mb-1.5 block text-sm font-medium">
-                  Localização do estoque
-                </label>
-                <input
-                  id="peca-localizacao"
-                  type="text"
-                  name="localizacao"
-                  value={formData.localizacao}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: Corredor B, prateleira 3"
-                />
-              </div>
             </div>
 
             <label

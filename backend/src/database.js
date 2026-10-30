@@ -131,12 +131,17 @@ export async function initDatabase() {
       peca_id INTEGER NOT NULL,
       caminho TEXT NOT NULL,
       nome_arquivo TEXT,
+      grupo TEXT DEFAULT 'produto',
       is_principal INTEGER DEFAULT 0,
       ordem INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (peca_id) REFERENCES pecas(id) ON DELETE CASCADE
     )
   `);
+  const colunasImagens = await db.all('PRAGMA table_info(peca_imagens)');
+  if (!colunasImagens.some((coluna) => coluna.name === 'grupo')) {
+    await db.exec("ALTER TABLE peca_imagens ADD COLUMN grupo TEXT DEFAULT 'produto'");
+  }
 
   // Perguntas do Mercado Livre
   await db.exec(`
