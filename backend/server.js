@@ -866,7 +866,9 @@ async function sincronizarAutomaticamente() {
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
-  console.log('📊 Banco: database.sqlite');
+  console.log(
+    `📊 Banco: ${process.env.DATABASE_URL ? 'Supabase Postgres' : 'database.sqlite'}`
+  );
 
   // Espera o servidor estabilizar antes da primeira varredura automática.
   setTimeout(() => {

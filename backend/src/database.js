@@ -5,6 +5,7 @@ import {
   normalizarCategoria,
   sugerirCategoriaMl
 } from './utils/categorias.js';
+import { criarBancoPostgres } from './postgresCompat.js';
 
 const DBSOURCE = './database.sqlite';
 
@@ -19,10 +20,13 @@ export function getDb() {
 }
 
 export async function initDatabase() {
-  const db = await open({
-    filename: DBSOURCE,
-    driver: sqlite3.Database
-  });
+  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  const db = databaseUrl
+    ? criarBancoPostgres(databaseUrl)
+    : await open({
+        filename: DBSOURCE,
+        driver: sqlite3.Database
+      });
 
   // Tabela de peças
   await db.exec(`
