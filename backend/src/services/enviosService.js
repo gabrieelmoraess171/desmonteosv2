@@ -374,12 +374,17 @@ function mapearEnvio(linha, agora) {
   const payBefore = paraIso(linha.pay_before);
   const prazo = prazoDespacho(payBefore, linha.logistic_type);
   const combinarComprador = Boolean(Number(linha.combinar_comprador));
-  const abaMl = classificarAba(
-    status,
-    substatus,
-    payBefore,
-    combinarComprador
-  );
+  const dateShipped = paraIso(linha.date_shipped);
+  const despachoRealizado = Boolean(dateShipped) ||
+    STATUS_EM_TRANSITO.has(status) ||
+    STATUS_FINALIZADOS.has(status) ||
+    SUBSTATUS_JA_DESPACHADOS.has(substatus);
+  const abaMl =
+    STATUS_CANCELADOS.has(status) || STATUS_FINALIZADOS.has(status)
+      ? classificarAba(status, substatus, payBefore, combinarComprador)
+      : despachoRealizado
+      ? 'transito'
+      : classificarAba(status, substatus, payBefore, combinarComprador);
   const despachoInformadoEm = paraIso(linha.despacho_informado_em);
   const confirmadoPeloOperador = Boolean(despachoInformadoEm) && ['hoje', 'proximos'].includes(abaMl);
   const aba = confirmadoPeloOperador ? 'transito' : abaMl;
@@ -400,7 +405,7 @@ function mapearEnvio(linha, agora) {
     pay_before: payBefore,
     estimated_delivery: paraIso(linha.estimated_delivery),
     date_created: paraIso(linha.date_created),
-    date_shipped: paraIso(linha.date_shipped) || (confirmadoPeloOperador ? despachoInformadoEm : null),
+    date_shipped: dateShipped || (confirmadoPeloOperador ? despachoInformadoEm : null),
     date_delivered: paraIso(linha.date_delivered),
     date_cancelled: paraIso(linha.date_cancelled)
   });
@@ -418,6 +423,8 @@ function mapearEnvio(linha, agora) {
       ? 'Em trânsito · despacho confirmado pelo operador'
       : aba === 'transito' && SUBSTATUS_JA_DESPACHADOS.has(substatus)
       ? substatus === 'picked_up' ? 'Coletado pela transportadora' : 'Recebido pelo Mercado Livre'
+      : despachoRealizado
+      ? 'Em trânsito · despacho confirmado pelo Mercado Livre'
       : aba === 'combinar'
         ? 'A combinar com o comprador'
       : statusLabel(status, substatus),
@@ -481,7 +488,7 @@ function mapearEnvio(linha, agora) {
     etiqueta_emitida_em: etiquetaEmitidaEm,
     atrasado:
       aba === 'hoje' &&
-      !SUBSTATUS_JA_DESPACHADOS.has(substatus) &&
+      !despachoRealizado &&
       !liberadoHoje &&
       prazoVencido(prazo, agora),
     sincronizado_em: paraIso(linha.sincronizado_em)

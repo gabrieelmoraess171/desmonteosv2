@@ -369,10 +369,15 @@ function App() {
   useEffect(() => {
     let ativo = true;
     let verificando = false;
-    let inicializado =
-      Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0) > 0 ||
-      Number(readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0) > 0 ||
-      Number(readStored(STORAGE_KEYS.lastSeenPerguntaId) || 0) > 0;
+    // Cada tipo tem seu próprio marco inicial. Se apenas uma categoria já
+    // tiver sido lida, as outras não podem despejar registros antigos como
+    // se fossem novas.
+    let vendasInicializadas =
+      readStored(STORAGE_KEYS.lastSeenVendaId) !== '';
+    let reclamacoesInicializadas =
+      readStored(STORAGE_KEYS.lastSeenReclamacaoId) !== '';
+    let perguntasInicializadas =
+      readStored(STORAGE_KEYS.lastSeenPerguntaId) !== '';
 
     const avisarNavegador = (titulo: string, corpo: string) => {
       if (!('Notification' in window)) return;
@@ -428,19 +433,26 @@ function App() {
         const ultimoReclamacao = Number(data?.ultimos?.reclamacaoId) || 0;
         const ultimoPergunta = Number(data?.ultimos?.perguntaId) || 0;
 
-        if (!inicializado) {
+        if (!vendasInicializadas) {
           saveStored(STORAGE_KEYS.lastSeenVendaId, String(ultimoVenda));
+          vendasInicializadas = true;
+        }
+        if (!reclamacoesInicializadas) {
           saveStored(STORAGE_KEYS.lastSeenReclamacaoId, String(ultimoReclamacao));
+          reclamacoesInicializadas = true;
+        }
+        if (!perguntasInicializadas) {
           saveStored(STORAGE_KEYS.lastSeenPerguntaId, String(ultimoPergunta));
-          inicializado = true;
-          return;
+          perguntasInicializadas = true;
         }
 
-        const vendasNovas = Array.isArray(data?.vendas) ? data.vendas : [];
-        const reclamacoesNovas = Array.isArray(data?.reclamacoes)
+        const vendasNovas = vendasInicializadas && Number(depoisVenda) > 0 && Array.isArray(data?.vendas)
+          ? data.vendas
+          : [];
+        const reclamacoesNovas = reclamacoesInicializadas && Number(depoisReclamacao) > 0 && Array.isArray(data?.reclamacoes)
           ? data.reclamacoes
           : [];
-        const perguntasNovas = Array.isArray(data?.perguntas)
+        const perguntasNovas = perguntasInicializadas && Number(depoisPergunta) > 0 && Array.isArray(data?.perguntas)
           ? data.perguntas
           : [];
         const itens: NotificacaoItem[] = [
