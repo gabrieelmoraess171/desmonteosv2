@@ -6,9 +6,10 @@ import App from './App'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider } from './hooks/useAuth'
+import { API_URL } from './config/api'
 import './index.css'
 
-axios.defaults.baseURL = 'https://desmonteos-backend.onrender.com'
+axios.defaults.baseURL = API_URL
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
