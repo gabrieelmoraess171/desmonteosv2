@@ -63,6 +63,9 @@ await db
 app.use(cors());
 app.use(express.json({ limit: '30mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'online' });
+});
 app.use('/api/lotes', lotesRouter);
 app.use('/api/vendas', vendasRouter);
 app.use('/api/atendimento', atendimentoRouter);

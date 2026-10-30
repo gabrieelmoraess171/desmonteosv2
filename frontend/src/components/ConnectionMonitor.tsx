@@ -15,7 +15,9 @@ export default function ConnectionMonitor({ onStatusChange }: ConnectionMonitorP
     if (showChecking) setStatus('checking');
 
     try {
-      await axios.get('/api/dashboard', { timeout: 5000 });
+      // O Render pode levar alguns segundos para acordar o serviço.
+      // Use o endpoint leve de saúde para não carregar o dashboard só para testar a API.
+      await axios.get('/api/health', { timeout: 30000 });
       setStatus('online');
     } catch {
       setStatus('offline');
