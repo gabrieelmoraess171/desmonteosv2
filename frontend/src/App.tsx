@@ -302,6 +302,9 @@ function App() {
   const [statusInicialRelatorios, setStatusInicialRelatorios] = useState<
     'todas' | 'concluidas' | 'andamento' | 'canceladas' | null
   >(null);
+  const [statusInicialEstoque, setStatusInicialEstoque] = useState<
+    'revisar' | null
+  >(null);
   const [vendaFocoId, setVendaFocoId] = useState<number | null>(null);
   const [vendaAba, setVendaAba] = useState<VendaAba>('hoje');
   const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
@@ -607,10 +610,16 @@ function App() {
   const handleNavigate = (key: SidebarKey) => {
     setFocoAtendimento(null);
     setStatusInicialRelatorios(null);
+    if (key !== 'lotes') setStatusInicialEstoque(null);
     if (key !== 'vendas') setVendaFocoId(null);
     setActiveView(key);
     setMobileMenuOpen(false);
     window.scrollTo(0, 0);
+  };
+
+  const handleOpenReviewStock = () => {
+    setStatusInicialEstoque('revisar');
+    handleNavigate('lotes');
   };
 
   const handleNavigateVendaAba = (aba: VendaAba) => {
@@ -629,6 +638,7 @@ function App() {
       : 'lotes';
     setFocoAtendimento(null);
     setStatusInicialRelatorios(null);
+    setStatusInicialEstoque(null);
     setActiveView(chave);
     window.scrollTo(0, 0);
   };
@@ -918,6 +928,7 @@ function App() {
                   <StockHealth
                     estoque={analytics.estoque}
                     vendasHojeML={stats.vendasHojeML}
+                    onOpenReview={handleOpenReviewStock}
                   />
                 </div>
 
@@ -953,7 +964,10 @@ function App() {
             {activeView === 'importar' && <ImportLotPage />}
 
             {activeView === 'lotes' && (
-              <PecasTable onChange={handlePecasChanged} />
+              <PecasTable
+                onChange={handlePecasChanged}
+                initialStatusFiltro={statusInicialEstoque || undefined}
+              />
             )}
 
             {activeView === 'vendas' && (

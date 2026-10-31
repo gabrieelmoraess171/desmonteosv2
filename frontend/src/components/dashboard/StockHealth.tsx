@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRight,
   BadgeCheck,
   Megaphone,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ export interface EstoqueResumo {
 interface StockHealthProps {
   estoque: EstoqueResumo;
   vendasHojeML: number;
+  onOpenReview?: () => void;
 }
 
 const RAIO = 52;
@@ -28,6 +30,7 @@ const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
 export default function StockHealth({
   estoque,
   vendasHojeML,
+  onOpenReview,
 }: StockHealthProps) {
   const total = Math.max(estoque.pecas, 0);
   const disponiveis = Math.min(Math.max(estoque.disponiveis, 0), total);
@@ -154,10 +157,16 @@ export default function StockHealth({
       </div>
 
       {revisar > 0 && (
-        <div className="mt-3 flex items-center gap-2 rounded-xl border border-warning/20 bg-warningSoft px-3 py-2 text-xs text-warning">
+        <button
+          type="button"
+          onClick={onOpenReview}
+          className="group mt-3 flex w-full items-center gap-2 rounded-xl border border-warning/20 bg-warningSoft px-3 py-2 text-left text-xs text-warning transition-all hover:-translate-y-0.5 hover:border-warning/40 hover:bg-warningSoft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/60"
+          aria-label={`Ver ${revisar} anúncio(s) com pendências para revisar`}
+        >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          {revisar} anúncio(s) com pendências para revisar
-        </div>
+          <span className="flex-1">{revisar} anúncio(s) com pendências para revisar</span>
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+        </button>
       )}
     </section>
   );

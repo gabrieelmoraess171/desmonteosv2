@@ -34,12 +34,6 @@ interface Peca extends PecaCompleta {
   motivos?: string[];
 }
 
-interface PecasTableProps {
-  limit?: number;
-  onChange?: () => void;
-  onViewAll?: () => void;
-}
-
 type StatusFiltro =
   | 'todos'
   | 'ativos'
@@ -47,6 +41,13 @@ type StatusFiltro =
   | 'revisar'
   | 'inativo'
   | 'sem-estoque';
+
+interface PecasTableProps {
+  limit?: number;
+  onChange?: () => void;
+  onViewAll?: () => void;
+  initialStatusFiltro?: StatusFiltro;
+}
 
 const STATUS_CONFIG: Record<
   string,
@@ -138,11 +139,14 @@ export default function PecasTable({
   limit,
   onChange,
   onViewAll,
+  initialStatusFiltro,
 }: PecasTableProps) {
   const [pecas, setPecas] = useState<Peca[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
-  const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>('todos');
+  const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>(
+    initialStatusFiltro || 'todos'
+  );
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
   const [showCadastroModal, setShowCadastroModal] = useState(false);
   const [pecaEmEdicao, setPecaEmEdicao] = useState<Peca | null>(null);

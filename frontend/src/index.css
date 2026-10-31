@@ -621,12 +621,17 @@
 
 .dashboard-revenue-chart .chart-point-in:hover { filter: drop-shadow(0 0 7px rgba(100, 210, 255, 0.8)); }
 .stock-ring-in,
-.reputation-ring-in { animation: ring-in 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.reputation-ring-in { animation: ring-in 2.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .stock-bar-in,
 .ranking-bar-in { transform-origin: left; animation: bar-in 0.85s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .ranking-row-in { animation: row-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) var(--ranking-delay, 0ms) both; }
 
 .dashboard-revenue-chart rect[fill='transparent'] { cursor: crosshair; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stock-ring-in,
+  .reputation-ring-in { animation-duration: 1ms; }
+}
 
 @keyframes modal-backdrop-in {
   from {
