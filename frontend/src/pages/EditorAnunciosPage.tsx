@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import PecaFotosEditor from '../components/PecaFotosEditor';
+import MercadoLivreDetalhes from '../components/MercadoLivreDetalhes';
 import {
   CAMPOS_CATEGORIA,
   CATEGORIAS_PECA,
@@ -186,6 +187,13 @@ function textoPreenchido(valor: unknown, atual: string): string {
   return texto || atual;
 }
 
+function normalizarTipoAnuncio(valor?: string | null): string {
+  const tipo = String(valor || '').toLowerCase().replace(/[-\s]+/g, '_');
+  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'premium';
+  if (['free', 'gratis', 'grátis'].includes(tipo)) return 'grátis';
+  return 'clássico';
+}
+
 function numeroPreenchido(valor: unknown, atual: string): string {
   const numero = Number(valor);
   return Number.isFinite(numero) && numero > 0 ? String(numero) : atual;
@@ -214,7 +222,7 @@ function formularioDaPeca(peca: Peca): FormAnuncio {
     comprimentoCm: textoNumero(peca.comprimento_cm),
     larguraCm: textoNumero(peca.largura_cm),
     alturaCm: textoNumero(peca.altura_cm),
-    tipoAnuncio: peca.tipo_anuncio || 'clássico',
+    tipoAnuncio: normalizarTipoAnuncio(peca.tipo_anuncio),
     gtin: peca.gtin || '',
     localizacao: peca.localizacao || '',
     videoUrl: peca.video_url || '',
@@ -1107,6 +1115,12 @@ export default function EditorAnunciosPage({
                       </p>
                     </div>
                   )}
+
+                {pecaSelecionada.ml_item_id && (
+                  <div className="mt-4">
+                    <MercadoLivreDetalhes pecaId={pecaSelecionada.id} compact />
+                  </div>
+                )}
 
                 <form
                   onSubmit={(event) => void enviarParaAprovacao(event)}

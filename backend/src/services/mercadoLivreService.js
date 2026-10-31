@@ -930,6 +930,53 @@ function atributoItem(item, ids) {
   return '';
 }
 
+export function normalizarTipoAnuncioMl(valor) {
+  const tipo = texto(valor, 60)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+
+  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'premium';
+  if (['free', 'gratis'].includes(tipo)) return 'grátis';
+  if (['gold_special', 'classico', 'classic'].includes(tipo)) return 'clássico';
+  return texto(valor, 60) || 'clássico';
+}
+
+function dadosAnuncioMl(item, descricao = '') {
+  const dados = {
+    id: texto(item?.id, 100),
+    title: texto(item?.title, 200),
+    listing_type_id: texto(item?.listing_type_id, 60),
+    tipo_anuncio: normalizarTipoAnuncioMl(item?.listing_type_id),
+    category_id: texto(item?.category_id, 80),
+    price: numero(item?.price),
+    original_price: numero(item?.original_price),
+    base_price: numero(item?.base_price),
+    available_quantity: numero(item?.available_quantity),
+    sold_quantity: numero(item?.sold_quantity),
+    condition: texto(item?.condition, 40),
+    status: texto(item?.status, 40),
+    buying_mode: texto(item?.buying_mode, 40),
+    permalink: texto(item?.permalink, 500),
+    catalog_listing: Boolean(item?.catalog_listing),
+    catalog_product_id: texto(item?.catalog_product_id, 100),
+    family_name: texto(item?.family_name, 200),
+    tags: Array.isArray(item?.tags) ? item.tags.slice(0, 100) : [],
+    sale_terms: Array.isArray(item?.sale_terms) ? item.sale_terms : [],
+    shipping: item?.shipping && typeof item.shipping === 'object' ? item.shipping : {},
+    attributes: Array.isArray(item?.attributes) ? item.attributes : [],
+    pictures: Array.isArray(item?.pictures) ? item.pictures : [],
+    variations: Array.isArray(item?.variations) ? item.variations : [],
+    descricao: texto(descricao, 12000),
+    sincronizado_em: new Date().toISOString()
+  };
+
+  // Mantém o JSON íntegro para que atributos, fotos e variações possam ser
+  // reutilizados sem perder dados por um corte no meio da estrutura.
+  return JSON.stringify(dados);
+}
+
 function converterMedida(valor, unidadeFinal) {
   const bruto = texto(valor, 40);
   const numero = Number(
@@ -1047,10 +1094,20 @@ async function upsertPecaMl(item) {
   const health = Number(item.health);
   const mlHealth = Number.isFinite(health) && health > 0 ? health : null;
   const condicao = item.condition === 'new' ? 'novo' : 'usado';
+  const tipoAnuncio = normalizarTipoAnuncioMl(item.listing_type_id);
+  const atributos = montarAtributos(item);
+  const marca = atributoItem(item, ['BRAND', 'BRAND_NAME', 'MARCA']);
+  const modelo = atributoItem(item, ['MODEL', 'CAR_AND_VAN_MODEL', 'MODELO']);
+  const ano = atributoItem(item, ['VEHICLE_YEAR', 'YEAR', 'ANO']);
+  const numeroOem = atributoItem(item, ['PART_NUMBER', 'OEM', 'GTIN']);
+  const descricaoMl = !peca || !String(peca.descricao || '').trim()
+    ? await obterDescricaoItem(mlItemId)
+    : '';
+  const mlDados = dadosAnuncioMl(item, descricaoMl);
   const agora = new Date().toISOString();
 
   if (!peca) {
-    let descricao = await obterDescricaoItem(mlItemId);
+    let descricao = descricaoMl;
 
     if (!descricao) descricao = titulo;
 
@@ -1071,19 +1128,19 @@ async function upsertPecaMl(item) {
       descricao,
       categoria,
       categoriaMl,
-      atributoItem(item, ['BRAND', 'MARCA']),
-      atributoItem(item, ['MODEL', 'MODELO']),
-      atributoItem(item, ['VEHICLE_YEAR', 'YEAR', 'ANO']),
+      marca,
+      modelo,
+      ano,
       condicao,
-      atributoItem(item, ['PART_NUMBER', 'OEM', 'GTIN']),
+      numeroOem,
       '',
       dimensoes.pesoKg,
       dimensoes.comprimentoCm,
       dimensoes.larguraCm,
       dimensoes.alturaCm,
-      montarAtributos(item),
+      atributos,
       titulo.slice(0, 60),
-      texto(item.listing_type_id, 40) || 'clássico',
+      tipoAnuncio,
       quantidade,
       preco,
       ativo,
@@ -1093,6 +1150,7 @@ async function upsertPecaMl(item) {
       categoryId,
       thumbnail,
       mlHealth,
+      mlDados,
       agora
     ];
     const inserir = () =>
@@ -1102,8 +1160,8 @@ async function upsertPecaMl(item) {
            ano, condicao, numero_oem, garantia, peso_kg, comprimento_cm,
            largura_cm, altura_cm, atributos, ml_titulo, tipo_anuncio,
            quantidade, preco, ml_ativo, ml_item_id, ml_permalink, ml_status,
-           ml_category_id, ml_thumbnail, ml_health, ml_sincronizado_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ml_category_id, ml_thumbnail, ml_health, ml_dados, ml_sincronizado_em
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         valores
       );
 
@@ -1138,6 +1196,14 @@ async function upsertPecaMl(item) {
        ml_category_id = ?,
        ml_thumbnail = ?,
        ml_health = COALESCE(?, ml_health),
+       ml_dados = ?,
+       tipo_anuncio = ?,
+       atributos = ?,
+       marca = CASE WHEN TRIM(?) <> '' THEN ? ELSE marca END,
+       modelo = CASE WHEN TRIM(?) <> '' THEN ? ELSE modelo END,
+       ano = CASE WHEN TRIM(?) <> '' THEN ? ELSE ano END,
+       numero_oem = CASE WHEN TRIM(?) <> '' THEN ? ELSE numero_oem END,
+       condicao = ?,
        ml_sincronizado_em = ?,
        peso_kg = CASE
          WHEN COALESCE(peso_kg, 0) <= 0 THEN ?
@@ -1174,6 +1240,18 @@ async function upsertPecaMl(item) {
       categoryId,
       thumbnail,
       mlHealth,
+      mlDados,
+      tipoAnuncio,
+      atributos,
+      marca,
+      marca,
+      modelo,
+      modelo,
+      ano,
+      ano,
+      numeroOem,
+      numeroOem,
+      condicao,
       agora,
       dimensoes.pesoKg,
       dimensoes.comprimentoCm,
@@ -2492,6 +2570,24 @@ export async function obterImagensAnuncioMl(itemId) {
     : [];
 
   return { itemId: id, imagens: [...new Set(urls)] };
+}
+
+export async function obterDetalhesAnuncioMl(itemId) {
+  const id = texto(itemId, 100);
+  if (!id) throw new MercadoLivreError('Anúncio do Mercado Livre inválido.', 400);
+
+  const anuncio = await mlFetch(`/items/${encodeURIComponent(id)}`);
+  const [descricao, compatibilidades] = await Promise.all([
+    mlFetch(`/items/${encodeURIComponent(id)}/description`).catch(() => null),
+    mlFetch(`/items/${encodeURIComponent(id)}/compatibilities`).catch(() => null)
+  ]);
+
+  return {
+    ...anuncio,
+    tipo_anuncio: normalizarTipoAnuncioMl(anuncio?.listing_type_id),
+    descricao_ml: texto(descricao?.plain_text || descricao?.text, 12000),
+    compatibilidades: compatibilidades?.products_families || compatibilidades?.compatibilities || []
+  };
 }
 
 export async function obterEnvioMl(shipmentId) {

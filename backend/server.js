@@ -269,7 +269,7 @@ app.get('/api/pecas', async (req, res) => {
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
          p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia,
          p.quantidade, p.preco, p.ml_ativo,
-         p.ml_titulo, p.ml_item_id, p.ml_permalink, p.ml_status,
+         p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
          (
            SELECT COUNT(*)

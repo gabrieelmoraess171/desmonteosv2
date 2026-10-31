@@ -75,7 +75,8 @@ export async function initDatabase() {
     ml_category_id: "TEXT DEFAULT ''",
     ml_thumbnail: 'TEXT',
     ml_health: 'REAL',
-    ml_sincronizado_em: 'TEXT'
+    ml_sincronizado_em: 'TEXT',
+    ml_dados: "TEXT DEFAULT '{}'"
   };
 
   for (const [nome, definicao] of Object.entries(novasColunasPecas)) {

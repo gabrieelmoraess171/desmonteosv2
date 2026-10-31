@@ -12,6 +12,7 @@ import {
   obterReputacaoMl,
   obterStatusMl,
   obterImagensAnuncioMl,
+  obterDetalhesAnuncioMl,
   processarCallback,
   processarWebhook,
   salvarConfiguracaoMl,
@@ -246,6 +247,26 @@ router.get('/pecas/:id/imagens', async (req, res) => {
     if (!peca.ml_item_id) return res.json({ imagens: [] });
 
     res.json(await obterImagensAnuncioMl(peca.ml_item_id));
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: mensagemErro(error) });
+  }
+});
+
+router.get('/pecas/:id/detalhes', async (req, res) => {
+  try {
+    const pecaId = Number(req.params.id);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) {
+      return res.status(400).json({ error: 'ID da peça inválido' });
+    }
+
+    const peca = await getDb().get(
+      'SELECT ml_item_id FROM pecas WHERE id = ?',
+      [pecaId]
+    );
+    if (!peca) return res.status(404).json({ error: 'Peça não encontrada' });
+    if (!peca.ml_item_id) return res.json({ mercado_livre: null });
+
+    res.json({ mercado_livre: await obterDetalhesAnuncioMl(peca.ml_item_id) });
   } catch (error) {
     res.status(statusErro(error)).json({ error: mensagemErro(error) });
   }

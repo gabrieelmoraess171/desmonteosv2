@@ -25,6 +25,7 @@ interface Peca extends PecaCompleta {
   preco: number;
   ml_ativo: number;
   ml_status?: string | null;
+  tipo_anuncio?: string | null;
   imagem_principal?: string | null;
   imagens_count?: number;
   ml_thumbnail?: string | null;
@@ -103,6 +104,13 @@ function formatarMoeda(valor: number): string {
     style: 'currency',
     currency: 'BRL',
   }).format(Number(valor) || 0);
+}
+
+function formatarTipoAnuncio(valor?: string | null): string {
+  const tipo = String(valor || '').trim().toLowerCase();
+  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'Premium';
+  if (['free', 'gratis', 'grátis'].includes(tipo)) return 'Grátis';
+  return 'Clássico';
 }
 
 function urlAnuncio(peca: Peca): string | null {
@@ -614,9 +622,16 @@ export default function PecasTable({
                       </div>
                     </td>
                     <td className="px-3 py-3.5">
-                      <span className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs">
-                        {peca.categoria || 'Sem categoria'}
-                      </span>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs">
+                          {peca.categoria || 'Sem categoria'}
+                        </span>
+                        {peca.ml_item_id && (
+                          <span className="inline-flex rounded-md border border-accent/20 bg-accentSoft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                            ML {formatarTipoAnuncio(peca.tipo_anuncio)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3.5">
                       <p className="max-w-[160px] truncate">
@@ -831,6 +846,11 @@ export default function PecasTable({
                         <span className="rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5">
                           {peca.categoria || 'Sem categoria'}
                         </span>
+                        {peca.ml_item_id && (
+                          <span className="rounded-md border border-accent/20 bg-accentSoft px-1.5 py-0.5 font-semibold text-accent">
+                            ML {formatarTipoAnuncio(peca.tipo_anuncio)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
