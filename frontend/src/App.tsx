@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  AlertTriangle,
   DollarSign,
   ExternalLink,
   ImagePlus,
@@ -9,6 +8,7 @@ import {
   MessageSquare,
   Package,
   RefreshCw,
+  Search,
   ShoppingBag,
   Sparkles,
   Store,
@@ -293,6 +293,7 @@ function App() {
     readStored(STORAGE_KEYS.financeWhatsApp)
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarKey>('dashboard');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -708,6 +709,20 @@ function App() {
     void fetchDashboard();
   };
 
+  const handleGlobalSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const termo = globalSearch.trim().toLocaleLowerCase('pt-BR');
+    if (!termo) return;
+
+    const destino = NAV_ITEMS.find((item) =>
+      item.label.toLocaleLowerCase('pt-BR').includes(termo)
+    );
+    if (destino) {
+      handleNavigate(destino.key);
+      setGlobalSearch('');
+    }
+  };
+
   return (
     <div className="app-shell relative isolate flex min-h-screen">
       <div
@@ -765,6 +780,9 @@ function App() {
                   <ActiveIcon className="h-6 w-6 text-accent" />
                 </div>
                 <div className="min-w-0">
+                  <p className="app-breadcrumb">
+                    Desmonte OS <span>/</span> {activeItem.label}
+                  </p>
                   <h1 className="truncate text-2xl font-bold text-ink">
                     {headerInfo?.titulo || activeItem.label}
                   </h1>
@@ -778,6 +796,19 @@ function App() {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <form
+                  className="global-search hidden xl:flex"
+                  onSubmit={handleGlobalSearch}
+                  role="search"
+                >
+                  <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <input
+                    value={globalSearch}
+                    onChange={(event) => setGlobalSearch(event.target.value)}
+                    placeholder="Buscar módulo..."
+                    aria-label="Buscar módulo"
+                  />
+                </form>
                 <NotificacoesBell
                   itens={notificacoes}
                   naoLidas={naoLidas}
@@ -816,7 +847,12 @@ function App() {
           <div key={activeView} className="view-enter">
             {activeView === 'dashboard' && (
               <div className="dashboard-stack space-y-6">
-                <section className="glass-panel relative overflow-hidden rounded-3xl p-6 sm:p-8">
+                <div className="dashboard-section-heading">
+                  <p>Desmonte OS</p>
+                  <h2>Visão geral</h2>
+                </div>
+
+                <section className="dashboard-welcome-panel glass-panel relative overflow-hidden rounded-3xl p-6 sm:p-8">
                   <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
                   <div className="pointer-events-none absolute -bottom-24 right-1/3 h-56 w-56 rounded-full bg-cyan/10 blur-3xl" />
 
@@ -880,43 +916,41 @@ function App() {
                   </div>
                 </section>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="dashboard-stat-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <DashboardCard
-                    title="Vendas do dia"
-                    value={stats.vendasHoje}
+                    title="Faturamento"
+                    value={formatCurrency(analytics.totais.faturamentoPeriodo)}
                     icon={<DollarSign className="h-5 w-5 text-success" />}
-                    subtitle={`${formatCurrency(
-                      stats.faturamentoHoje
-                    )} faturados hoje`}
+                    subtitle={`${analytics.totais.vendasPeriodo} venda(s) nos últimos ${analytics.periodoDias} dias`}
+                    onClick={() => handleNavigate('relatorios')}
+                  />
+
+                  <DashboardCard
+                    title="Vendas hoje"
+                    value={stats.vendasHoje}
+                    icon={<ShoppingBag className="h-5 w-5 text-accent" />}
+                    subtitle={`${formatCurrency(stats.faturamentoHoje)} faturados hoje`}
                     onClick={() => handleNavigate('vendas')}
                   />
 
                   <DashboardCard
-                    title="Perguntas"
-                    value={stats.perguntasPendentes}
-                    icon={<MessageSquare className="h-5 w-5 text-accent" />}
-                    subtitle={`${stats.perguntasHoje} pergunta(s) hoje • responda rápido`}
-                    onClick={() => handleNavigate('atendimento')}
-                  />
-
-                  <DashboardCard
-                    title="Reclamações"
-                    value={stats.reclamacoesAbertas}
-                    icon={<AlertTriangle className="h-5 w-5 text-danger" />}
-                    subtitle={`${stats.reclamacoesHoje} aberta(s) hoje • proteja a reputação`}
-                    onClick={() => handleNavigate('atendimento')}
-                  />
-
-                  <DashboardCard
-                    title="Anúncios a revisar"
-                    value={stats.anunciosRevisar}
-                    icon={<ExternalLink className="h-5 w-5 text-warning" />}
-                    subtitle={`${stats.anunciosAtivos} anúncio(s) ML ativo(s)`}
+                    title="Anúncios ativos"
+                    value={stats.anunciosAtivos}
+                    icon={<ExternalLink className="h-5 w-5 text-cyan" />}
+                    subtitle={`${stats.anunciosRevisar} anúncio(s) aguardando revisão`}
                     onClick={() => handleNavigate('lotes')}
+                  />
+
+                  <DashboardCard
+                    title="Atendimento pendente"
+                    value={stats.perguntasPendentes + stats.reclamacoesAbertas}
+                    icon={<MessageSquare className="h-5 w-5 text-warning" />}
+                    subtitle={`${stats.perguntasPendentes} pergunta(s) • ${stats.reclamacoesAbertas} reclamação(ões)`}
+                    onClick={() => handleNavigate('atendimento')}
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <div className="dashboard-main-grid grid grid-cols-1 gap-6 xl:grid-cols-3">
                   <div className="xl:col-span-2">
                     <RevenueChart
                       serie={analytics.serie}
@@ -932,12 +966,14 @@ function App() {
                   />
                 </div>
 
-                <ReputacaoMl
-                  reputacao={analytics.reputacao}
-                  onMetricClick={handleReputacaoMetric}
-                />
+                <div className="dashboard-reputation-panel">
+                  <ReputacaoMl
+                    reputacao={analytics.reputacao}
+                    onMetricClick={handleReputacaoMetric}
+                  />
+                </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="dashboard-secondary-grid grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <TopTiposPeca
                     tipos={analytics.topTiposPeca}
                     periodoLabel={
@@ -953,11 +989,13 @@ function App() {
                   />
                 </div>
 
-                <PecasTable
-                  limit={5}
-                  onChange={handlePecasChanged}
-                  onViewAll={() => handleNavigate('lotes')}
-                />
+                <div className="dashboard-stock-panel">
+                  <PecasTable
+                    limit={5}
+                    onChange={handlePecasChanged}
+                    onViewAll={() => handleNavigate('lotes')}
+                  />
+                </div>
               </div>
             )}
 

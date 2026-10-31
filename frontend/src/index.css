@@ -633,6 +633,425 @@
   .reputation-ring-in { animation-duration: 1ms; }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Vision UI Dashboard language                                                */
+/* -------------------------------------------------------------------------- */
+
+:root {
+  --vision-bg: #060b26;
+  --vision-bg-deep: #04071c;
+  --vision-surface: rgba(14, 20, 56, 0.76);
+  --vision-surface-raised: rgba(21, 28, 72, 0.82);
+  --vision-surface-soft: rgba(25, 34, 82, 0.52);
+  --vision-primary: #0075ff;
+  --vision-primary-bright: #4da3ff;
+  --vision-cyan: #21d4fd;
+  --vision-violet: #7551ff;
+  --vision-border: rgba(148, 163, 255, 0.16);
+  --vision-border-strong: rgba(148, 163, 255, 0.26);
+  --vision-muted: #a0aec0;
+  --vision-radius: 18px;
+  --vision-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.9);
+}
+
+html,
+body {
+  background: var(--vision-bg);
+}
+
+body {
+  color: #f8faff;
+  background:
+    radial-gradient(900px 620px at 8% -12%, rgba(0, 117, 255, 0.22), transparent 62%),
+    radial-gradient(780px 540px at 100% 0%, rgba(117, 81, 255, 0.16), transparent 64%),
+    linear-gradient(155deg, #0b1233 0%, var(--vision-bg) 46%, var(--vision-bg-deep) 100%);
+}
+
+.app-shell {
+  background: linear-gradient(180deg, rgba(5, 9, 31, 0.08), rgba(4, 7, 28, 0.28));
+}
+
+.app-shell > .flex.min-w-0 {
+  min-width: 0;
+}
+
+.sidebar-shell {
+  width: 250px !important;
+  background:
+    linear-gradient(180deg, rgba(9, 15, 43, 0.96), rgba(5, 9, 30, 0.92)),
+    radial-gradient(420px 260px at 50% -8%, rgba(0, 117, 255, 0.12), transparent 70%);
+  border-right-color: rgba(148, 163, 255, 0.12);
+  box-shadow: 18px 0 60px -46px rgba(0, 0, 0, 0.85);
+}
+
+/* O estado recolhido continua sendo controlado pelo componente; este seletor
+   só ajusta a largura visual depois que o Tailwind aplica a classe responsiva. */
+.sidebar-shell[class~='lg:w-20'] {
+  width: 76px !important;
+}
+
+.sidebar-shell > div:first-child {
+  min-height: 86px;
+  padding: 22px 20px 18px;
+  border-bottom-color: rgba(148, 163, 255, 0.1);
+}
+
+.brand-mark {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(139, 195, 255, 0.36);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(0, 117, 255, 0.95), rgba(117, 81, 255, 0.9));
+  box-shadow: 0 12px 28px -15px rgba(0, 117, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.brand-mark::before,
+.brand-mark::after,
+.brand-mark span {
+  content: '';
+  display: block;
+  position: absolute;
+  width: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: white;
+  transform: rotate(-45deg);
+}
+
+.brand-mark {
+  position: relative;
+}
+
+.brand-mark::before { transform: translateY(-5px) rotate(-45deg); opacity: 0.95; }
+.brand-mark span { transform: translateY(0) rotate(-45deg); opacity: 0.72; }
+.brand-mark::after { transform: translateY(5px) rotate(-45deg); opacity: 0.48; }
+
+.sidebar-shell nav {
+  padding: 18px 14px;
+}
+
+.sidebar-section-label {
+  margin: 16px 10px 8px;
+  color: rgba(160, 174, 192, 0.52);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.sidebar-shell nav > div:first-child .sidebar-section-label {
+  margin-top: 0;
+}
+
+.sidebar-shell[class~='lg:w-20'] .sidebar-section-label {
+  display: none;
+}
+
+.sidebar-nav-item {
+  min-height: 46px;
+  border-radius: 12px;
+  border-color: transparent !important;
+  color: rgba(226, 232, 255, 0.64);
+}
+
+.sidebar-nav-item--active,
+.sidebar-nav-item[aria-current='page'] {
+  color: #ffffff !important;
+  background: linear-gradient(90deg, rgba(0, 117, 255, 0.28), rgba(0, 117, 255, 0.08)) !important;
+  box-shadow: inset 0 0 0 1px rgba(77, 163, 255, 0.18), 0 14px 28px -24px rgba(0, 117, 255, 0.8) !important;
+}
+
+.sidebar-nav-item--active .sidebar-nav-icon,
+.sidebar-nav-item[aria-current='page'] .sidebar-nav-icon {
+  color: var(--vision-primary-bright) !important;
+  filter: drop-shadow(0 0 8px rgba(0, 117, 255, 0.35));
+}
+
+.sidebar-nav-indicator {
+  left: -1px !important;
+  width: 3px !important;
+  background: linear-gradient(180deg, var(--vision-cyan), var(--vision-primary)) !important;
+}
+
+.sidebar-shell .border-t {
+  border-top-color: rgba(148, 163, 255, 0.1);
+}
+
+.sidebar-shell .border-t .rounded-xl {
+  border-radius: 12px;
+}
+
+.sidebar-shell .border-t .bg-gradient-to-br {
+  background: linear-gradient(145deg, var(--vision-primary), var(--vision-violet)) !important;
+}
+
+.app-breadcrumb {
+  margin: 0 0 4px;
+  color: rgba(160, 174, 192, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.app-breadcrumb span {
+  margin: 0 6px;
+  color: rgba(77, 163, 255, 0.7);
+}
+
+.app-shell header.sticky {
+  background: rgba(6, 11, 38, 0.78) !important;
+  border-bottom-color: rgba(148, 163, 255, 0.12) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(24px) saturate(145%);
+}
+
+.app-shell header.sticky h1 {
+  letter-spacing: -0.035em;
+}
+
+.global-search {
+  width: 220px;
+  height: 38px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 255, 0.14);
+  border-radius: 12px;
+  color: rgba(160, 174, 192, 0.75);
+  background: rgba(7, 13, 42, 0.5);
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.global-search:focus-within {
+  border-color: rgba(77, 163, 255, 0.58);
+  background: rgba(12, 21, 61, 0.76);
+  box-shadow: 0 0 0 3px rgba(0, 117, 255, 0.12);
+}
+
+.global-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #f8faff;
+  font-size: 12px;
+}
+
+.global-search input::placeholder {
+  color: rgba(160, 174, 192, 0.65);
+}
+
+.app-shell main {
+  max-width: 1480px;
+  padding: 30px 34px 48px;
+}
+
+.glass-panel,
+.bg-card,
+.liquid-chart-shell {
+  border-color: var(--vision-border) !important;
+  border-radius: var(--vision-radius) !important;
+  background-color: var(--vision-surface) !important;
+  background-image:
+    radial-gradient(120% 100% at 8% -22%, rgba(0, 117, 255, 0.15), transparent 44%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.008) 58%, rgba(117, 81, 255, 0.035));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), var(--vision-shadow) !important;
+}
+
+.glass-panel {
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.dashboard-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-section-heading {
+  order: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px 0;
+}
+
+.dashboard-section-heading p {
+  margin: 0 0 5px;
+  color: rgba(160, 174, 192, 0.74);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.dashboard-section-heading h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.dashboard-stat-grid {
+  order: 1;
+}
+
+.dashboard-welcome-panel {
+  order: 2;
+}
+
+.dashboard-main-grid {
+  order: 3;
+}
+
+.dashboard-reputation-panel {
+  order: 4;
+}
+
+.dashboard-secondary-grid {
+  order: 5;
+}
+
+.dashboard-stock-panel {
+  order: 6;
+}
+
+.dashboard-stack > .dashboard-welcome-panel {
+  min-height: 242px;
+  background:
+    radial-gradient(520px 240px at 80% 8%, rgba(0, 117, 255, 0.24), transparent 72%),
+    radial-gradient(420px 250px at 10% 100%, rgba(117, 81, 255, 0.14), transparent 72%),
+    var(--vision-surface);
+}
+
+.dashboard-card {
+  min-height: 148px;
+  border-color: var(--vision-border) !important;
+  border-radius: var(--vision-radius) !important;
+  background-color: var(--vision-surface) !important;
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.006));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--vision-shadow) !important;
+}
+
+.dashboard-card:hover {
+  border-color: var(--vision-border-strong) !important;
+  background-color: var(--vision-surface-raised) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 24px 50px -30px rgba(0, 117, 255, 0.3) !important;
+}
+
+.dashboard-card > .absolute.inset-x-0 {
+  height: 2px;
+  background: linear-gradient(90deg, var(--vision-primary), var(--vision-cyan), transparent);
+  opacity: 0.85;
+}
+
+.dashboard-card p.text-3xl {
+  font-size: 32px;
+  letter-spacing: -0.045em;
+}
+
+.dashboard-card .bg-secondary\/80,
+.app-shell .bg-secondary {
+  border-color: rgba(148, 163, 255, 0.14);
+  background-color: rgba(34, 45, 100, 0.48);
+}
+
+.app-shell button.bg-accent,
+.app-shell .bg-accent {
+  background-color: var(--vision-primary) !important;
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(0,0,0,0.04));
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell select {
+  border-color: rgba(148, 163, 255, 0.2);
+  background-color: rgba(7, 13, 42, 0.58);
+}
+
+.app-shell input:focus,
+.app-shell textarea:focus,
+.app-shell select:focus {
+  border-color: rgba(77, 163, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(0, 117, 255, 0.14);
+}
+
+.app-shell table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.app-shell table thead th {
+  color: rgba(160, 174, 192, 0.88);
+  background: rgba(7, 13, 42, 0.52);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-shell table tbody tr {
+  transition: background-color 180ms ease;
+}
+
+.app-shell table tbody tr:hover {
+  background: rgba(0, 117, 255, 0.07);
+}
+
+.app-shell footer {
+  background: rgba(4, 7, 28, 0.34);
+  border-top-color: rgba(148, 163, 255, 0.1);
+}
+
+.login-screen,
+body:has(.login-screen) {
+  background:
+    radial-gradient(860px 620px at 12% 12%, rgba(0, 117, 255, 0.2), transparent 65%),
+    radial-gradient(760px 520px at 90% 86%, rgba(117, 81, 255, 0.18), transparent 65%),
+    var(--vision-bg);
+}
+
+@media (max-width: 1023px) {
+  .sidebar-shell {
+    width: 280px !important;
+  }
+
+  .app-shell main {
+    padding: 24px 22px 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell main {
+    padding: 20px 14px 34px;
+  }
+
+  .app-shell header.sticky > div {
+    padding: 14px;
+  }
+
+  .app-shell header.sticky h1 {
+    font-size: 20px;
+  }
+
+  .dashboard-stack > .dashboard-welcome-panel {
+    min-height: auto;
+  }
+}
+
 @keyframes modal-backdrop-in {
   from {
     opacity: 0;
