@@ -87,6 +87,7 @@ interface SidebarProps {
   userName?: string;
   companyName?: string;
   badges?: Partial<Record<SidebarKey, number>>;
+  alerts?: Partial<Record<SidebarKey, 'warning' | 'danger'>>;
   vendaAba?: VendaAba;
   onNavigateVendaAba?: (aba: VendaAba) => void;
 }
@@ -102,6 +103,7 @@ export default function Sidebar({
   userName = '',
   companyName = '',
   badges = {},
+  alerts = {},
   vendaAba = 'hoje',
   onNavigateVendaAba,
 }: SidebarProps) {
@@ -171,6 +173,11 @@ export default function Sidebar({
         {NAV_ITEMS.map((item, index) => {
           const active = item.key === activeKey;
           const badge = Number(badges[item.key] || 0);
+          const alertClass = alerts[item.key] === 'danger'
+            ? 'sidebar-nav-icon-wrap--danger'
+            : alerts[item.key] === 'warning'
+              ? 'sidebar-nav-icon-wrap--warning'
+              : '';
           const sectionLabel =
             index === 0
               ? 'Operação'
@@ -219,7 +226,7 @@ export default function Sidebar({
                 {active && (
                   <span className="sidebar-nav-indicator absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan to-accent shadow-[0_0_14px_rgba(76,157,255,0.8)]" />
                 )}
-                <span className="sidebar-nav-icon-wrap relative flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg">
+                <span className={`sidebar-nav-icon-wrap relative flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${alertClass}`}>
                   <item.icon
                     className={`sidebar-nav-icon h-4 w-4 transition-transform duration-300 ${
                       active ? 'text-accent' : 'group-hover:scale-105'

@@ -344,6 +344,11 @@ function App() {
 
   const activeItem =
     NAV_ITEMS.find((item) => item.key === activeView) ?? NAV_ITEMS[0];
+  const atendimentoTone = stats.reclamacoesAbertas > 0
+    ? 'danger'
+    : stats.perguntasPendentes > 0
+      ? 'warning'
+      : 'default';
   const ActiveIcon = activeItem.icon;
   const headerInfo = TITULOS[activeView];
 
@@ -748,6 +753,14 @@ function App() {
             contadoresAlerta.reclamacoesAbertas +
             contadoresAlerta.perguntasPendentes,
         }}
+        alerts={{
+          atendimento: contadoresAlerta.reclamacoesAbertas > 0
+            ? 'danger'
+            : contadoresAlerta.perguntasPendentes > 0
+              ? 'warning'
+              : undefined,
+          lotes: stats.anunciosRevisar > 0 ? 'warning' : undefined,
+        }}
         vendaAba={vendaAba}
         onNavigateVendaAba={handleNavigateVendaAba}
       />
@@ -849,6 +862,33 @@ function App() {
                   </span>
                 </div>
 
+                <section className="dashboard-welcome-panel glass-panel" aria-label="Resumo da operação">
+                  <div className="dashboard-welcome-art" aria-hidden="true">
+                    <img src="/assets/vision/welcome-jellyfish.jpg" alt="" />
+                    <span className="dashboard-welcome-glow" />
+                  </div>
+                  <div className="dashboard-welcome-copy">
+                    <DashboardGreeting userName={userName} />
+                    <div className="dashboard-welcome-summary">
+                      <span className="inline-flex items-center gap-2 text-success">
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        {stats.vendasHoje} venda(s) hoje
+                      </span>
+                      <span>{formatCurrency(stats.faturamentoHoje)} em vendas</span>
+                    </div>
+                  </div>
+                  <div className="dashboard-welcome-actions">
+                    <button type="button" onClick={() => handleNavigate('nova')} className="vision-primary-action">
+                      <Package className="h-4 w-4" aria-hidden="true" />
+                      Cadastrar peça
+                    </button>
+                    <button type="button" onClick={() => handleNavigate('importar')} className="vision-text-action">
+                      Importar lote
+                      <img src="/assets/vision/arrow-forward.svg" alt="" width="13" height="13" />
+                    </button>
+                  </div>
+                </section>
+
                 <div className="dashboard-stat-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <DashboardCard
                     title="Faturamento"
@@ -868,6 +908,8 @@ function App() {
 
                   <DashboardCard
                     title="Anúncios ativos"
+                    tone={stats.anunciosRevisar > 0 ? 'warning' : 'default'}
+                    statusLabel={stats.anunciosRevisar > 0 ? 'Revisar' : undefined}
                     value={stats.anunciosAtivos}
                     icon={<ExternalLink className="h-5 w-5 text-cyan" />}
                     subtitle={`${stats.anunciosRevisar} anúncio(s) aguardando revisão`}
@@ -876,43 +918,12 @@ function App() {
 
                   <DashboardCard
                     title="Atendimento pendente"
+                    tone={atendimentoTone}
+                    statusLabel={atendimentoTone === 'danger' ? 'Urgente' : atendimentoTone === 'warning' ? 'Responder' : undefined}
                     value={stats.perguntasPendentes + stats.reclamacoesAbertas}
                     icon={<MessageSquare className="h-5 w-5 text-warning" />}
                     subtitle={`${stats.perguntasPendentes} pergunta(s) • ${stats.reclamacoesAbertas} reclamação(ões)`}
                     onClick={() => handleNavigate('atendimento')}
-                  />
-                </div>
-
-                <div className="dashboard-overview-grid">
-                  <section className="dashboard-welcome-panel glass-panel" aria-label="Resumo da operação">
-                    <div className="dashboard-welcome-art" aria-hidden="true">
-                      <img src="/assets/vision/welcome-jellyfish.jpg" alt="" />
-                    </div>
-                    <div className="dashboard-welcome-copy">
-                      <DashboardGreeting userName={userName} />
-                      <div className="dashboard-welcome-summary">
-                        <span className="inline-flex items-center gap-2 text-success">
-                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                          {stats.vendasHoje} venda(s) hoje
-                        </span>
-                        <span>{formatCurrency(stats.faturamentoHoje)} em vendas</span>
-                      </div>
-                    </div>
-                    <div className="dashboard-welcome-actions">
-                      <button type="button" onClick={() => handleNavigate('nova')} className="vision-primary-action">
-                        <Package className="h-4 w-4" aria-hidden="true" />
-                        Cadastrar peça
-                      </button>
-                      <button type="button" onClick={() => handleNavigate('importar')} className="vision-text-action">
-                        Importar lote
-                        <img src="/assets/vision/arrow-forward.svg" alt="" width="13" height="13" />
-                      </button>
-                    </div>
-                  </section>
-                  <StockHealth
-                    estoque={analytics.estoque}
-                    vendasHojeML={stats.vendasHojeML}
-                    onOpenReview={handleOpenReviewStock}
                   />
                 </div>
 
@@ -926,7 +937,7 @@ function App() {
                     <ShoppingBag className="h-4 w-4" aria-hidden="true" />
                     Fechar NF-e
                   </button>
-                  <button type="button" onClick={() => handleNavigate('atendimento')}>
+                  <button type="button" data-tone={atendimentoTone} onClick={() => handleNavigate('atendimento')}>
                     <MessageSquare className="h-4 w-4" aria-hidden="true" />
                     Atendimento
                   </button>
@@ -941,10 +952,10 @@ function App() {
                       onPeriodChange={setPeriodo}
                     />
                   </div>
-                  <TopTiposPeca
-                    tipos={analytics.topTiposPeca}
-                    periodoLabel={periodo === 'hoje' ? 'Hoje' : `Últimos ${analytics.periodoDias} dias`}
-                    onViewAll={() => handleNavigate('lotes')}
+                  <StockHealth
+                    estoque={analytics.estoque}
+                    vendasHojeML={stats.vendasHojeML}
+                    onOpenReview={handleOpenReviewStock}
                   />
                 </div>
 
@@ -955,7 +966,12 @@ function App() {
                   />
                 </div>
 
-                <div className="dashboard-secondary-grid">
+                <div className="dashboard-secondary-grid grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <TopTiposPeca
+                    tipos={analytics.topTiposPeca}
+                    periodoLabel={periodo === 'hoje' ? 'Hoje' : `Últimos ${analytics.periodoDias} dias`}
+                    onViewAll={() => handleNavigate('lotes')}
+                  />
                   <InsightsPanel
                     insights={analytics.insights}
                     onNavigate={handleInsightNavigate}

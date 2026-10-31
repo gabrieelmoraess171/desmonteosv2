@@ -27,18 +27,16 @@ export default function DashboardGreeting({
       <p className="dashboard-greeting__date text-[11px] leading-relaxed text-muted">
         {todayLabel}
       </p>
-      <p className="mt-5 text-sm font-medium text-muted">
+      <h2 className="dashboard-greeting__title mt-4 font-heading text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
         {period.label}
+        {name ? `, ${name}` : ''}
         <span
-          className="ml-2 inline-block align-middle text-base"
+          className="ml-2 inline-block align-middle text-2xl sm:text-3xl"
           role="img"
           aria-label={period.emojiLabel}
         >
           {period.emoji}
         </span>
-      </p>
-      <h2 className="dashboard-greeting__title mt-1 font-heading text-[28px] font-bold leading-tight tracking-tight text-ink">
-        {name || 'Bem-vindo ao painel'}
       </h2>
 
       <div className="dashboard-greeting__phrase mt-3 flex items-start gap-2">
