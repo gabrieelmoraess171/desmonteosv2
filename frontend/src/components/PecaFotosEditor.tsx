@@ -21,10 +21,12 @@ interface PecaImagem {
   nome_arquivo?: string | null;
   is_principal: number;
   ordem: number;
+  origem?: 'local' | 'mercado_livre';
 }
 
 interface PecaFotosEditorProps {
   pecaId: number;
+  mlItemId?: string | null;
   onChange?: () => void;
 }
 
@@ -40,6 +42,7 @@ const IMAGE_TYPES = new Set([
 
 export default function PecaFotosEditor({
   pecaId,
+  mlItemId,
   onChange,
 }: PecaFotosEditorProps) {
   const [imagens, setImagens] = useState<PecaImagem[]>([]);
@@ -57,7 +60,32 @@ export default function PecaFotosEditor({
         `/api/pecas/${pecaId}/imagens`,
         { timeout: 10000 }
       );
-      setImagens(response.data);
+      const locais = response.data.map((imagem) => ({
+        ...imagem,
+        origem: 'local' as const,
+      }));
+      let remotas: PecaImagem[] = [];
+
+      if (mlItemId) {
+        try {
+          const mercadoLivre = await axios.get<{ imagens?: string[] }>(
+            `/api/mercadolivre/pecas/${pecaId}/imagens`,
+            { timeout: 20000 }
+          );
+          remotas = (mercadoLivre.data.imagens || []).map((caminho, indice) => ({
+            id: -(indice + 1),
+            caminho,
+            nome_arquivo: `Foto do Mercado Livre ${indice + 1}`,
+            is_principal: indice === 0 ? 1 : 0,
+            ordem: indice,
+            origem: 'mercado_livre' as const,
+          }));
+        } catch {
+          // As fotos locais continuam disponíveis mesmo se o ML estiver lento.
+        }
+      }
+
+      setImagens([...remotas, ...locais]);
     } catch (err) {
       if (axios.isAxiosError<{ error?: string }>(err)) {
         setError(err.response?.data?.error || 'Erro ao carregar as fotos');
@@ -67,7 +95,7 @@ export default function PecaFotosEditor({
     } finally {
       setLoading(false);
     }
-  }, [pecaId]);
+  }, [mlItemId, pecaId]);
 
   useEffect(() => {
     fetchImagens();
@@ -78,7 +106,10 @@ export default function PecaFotosEditor({
     event.target.value = '';
     if (files.length === 0 || uploading) return;
 
-    const disponiveis = MAX_FOTOS - imagens.length;
+    const fotosLocais = imagens.filter(
+      (imagem) => imagem.origem !== 'mercado_livre'
+    );
+    const disponiveis = MAX_FOTOS - fotosLocais.length;
 
     if (disponiveis <= 0) {
       setError(`Limite de ${MAX_FOTOS} fotos atingido.`);
@@ -108,7 +139,7 @@ export default function PecaFotosEditor({
         imagens: PecaImagem[];
       }>(`/api/pecas/${pecaId}/imagens`, payload, { timeout: 60000 });
 
-      setImagens(response.data.imagens);
+      await fetchImagens();
       setError('');
       onChange?.();
     } catch (err) {
@@ -123,6 +154,8 @@ export default function PecaFotosEditor({
   };
 
   const handleSetPrincipal = async (imagemId: number) => {
+    const imagem = imagens.find((item) => item.id === imagemId);
+    if (imagem?.origem === 'mercado_livre') return;
     if (uploading) return;
     setUploading(true);
 
@@ -132,7 +165,7 @@ export default function PecaFotosEditor({
         imagens: PecaImagem[];
       }>(`/api/pecas/${pecaId}/imagens/${imagemId}/principal`);
 
-      setImagens(response.data.imagens);
+      await fetchImagens();
       setError('');
       onChange?.();
     } catch (err) {
@@ -149,6 +182,12 @@ export default function PecaFotosEditor({
   };
 
   const handleDelete = async (imagem: PecaImagem) => {
+    if (imagem.origem === 'mercado_livre') {
+      setError(
+        'As fotos do Mercado Livre são exibidas aqui e não podem ser removidas por este botão.'
+      );
+      return;
+    }
     if (uploading) return;
     if (!confirm('Remover esta foto da peça?')) return;
 
@@ -160,7 +199,7 @@ export default function PecaFotosEditor({
         imagens: PecaImagem[];
       }>(`/api/pecas/${pecaId}/imagens/${imagem.id}`);
 
-      setImagens(response.data.imagens);
+      await fetchImagens();
       setError('');
       onChange?.();
     } catch (err) {
@@ -174,7 +213,9 @@ export default function PecaFotosEditor({
     }
   };
 
-  const limiteAtingido = imagens.length >= MAX_FOTOS;
+  const limiteAtingido =
+    imagens.filter((imagem) => imagem.origem !== 'mercado_livre').length >=
+    MAX_FOTOS;
 
   return (
     <div className="border-t border-line pt-4 mt-4">
@@ -256,8 +297,14 @@ export default function PecaFotosEditor({
                 </span>
               )}
 
+              {imagem.origem === 'mercado_livre' && (
+                <span className="absolute right-1 top-1 rounded bg-cyan/90 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">
+                  ML
+                </span>
+              )}
+
               <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
-                {imagem.is_principal !== 1 && (
+                {imagem.origem !== 'mercado_livre' && imagem.is_principal !== 1 && (
                   <button
                     type="button"
                     onClick={() => handleSetPrincipal(imagem.id)}
@@ -269,16 +316,18 @@ export default function PecaFotosEditor({
                     <Star className="h-3 w-3" />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(imagem)}
-                  disabled={uploading}
-                  title="Remover foto"
-                  aria-label="Remover foto"
-                  className="rounded-full bg-card/90 p-1.5 text-danger hover:bg-card disabled:opacity-50"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                {imagem.origem !== 'mercado_livre' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(imagem)}
+                    disabled={uploading}
+                    title="Remover foto"
+                    aria-label="Remover foto"
+                    className="rounded-full bg-card/90 p-1.5 text-danger hover:bg-card disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

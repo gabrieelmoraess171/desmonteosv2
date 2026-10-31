@@ -17,12 +17,16 @@ interface MercadoLivreCompatibilidade {
 
 interface MercadoLivreDetalhesData {
   id?: string;
+  site_id?: string;
   title?: string;
   listing_type_id?: string;
   tipo_anuncio?: string;
   category_id?: string;
   price?: number;
   original_price?: number | null;
+  base_price?: number | null;
+  currency_id?: string;
+  initial_quantity?: number;
   available_quantity?: number;
   sold_quantity?: number;
   condition?: string;
@@ -32,11 +36,15 @@ interface MercadoLivreDetalhesData {
   catalog_listing?: boolean;
   catalog_product_id?: string;
   family_name?: string;
+  family_id?: number | string;
+  user_product_id?: string;
+  expiration_time?: string;
   tags?: string[];
   sale_terms?: Array<{ id?: string; name?: string; value_name?: string }>;
   shipping?: Record<string, unknown>;
   attributes?: MercadoLivreAtributo[];
   pictures?: unknown[];
+  variations?: unknown[];
   descricao_ml?: string;
   compatibilidades?: MercadoLivreCompatibilidade[];
 }
@@ -160,14 +168,19 @@ export default function MercadoLivreDetalhes({
 
       <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
         {[
+          ['ID do anúncio', dados.id],
           ['Status', dados.status],
           ['Preço ML', dados.price ? `R$ ${Number(dados.price).toFixed(2).replace('.', ',')}` : '—'],
+          ['Preço original', dados.original_price ? `R$ ${Number(dados.original_price).toFixed(2).replace('.', ',')}` : '—'],
           ['Disponível', dados.available_quantity],
           ['Vendidos', dados.sold_quantity],
+          ['Estoque inicial', dados.initial_quantity],
           ['Categoria', dados.category_id],
           ['Modo de compra', dados.buying_mode],
+          ['Moeda', dados.currency_id],
           ['Catálogo', dados.catalog_listing ? 'Sim' : 'Não'],
           ['Fotos no ML', dados.pictures?.length || 0],
+          ['Variações', dados.variations?.length || 0],
         ].map(([label, valor]) => (
           <div key={label}>
             <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">{label}</p>
@@ -231,8 +244,8 @@ export default function MercadoLivreDetalhes({
           <p>Produto catálogo: {valorGenerico(dados.catalog_product_id)}</p>
           <p>Família: {valorGenerico(dados.family_name)}</p>
         </div>
-        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/20 p-2 text-[10px] leading-relaxed text-muted">
-          {JSON.stringify({ sale_terms: dados.sale_terms, shipping: dados.shipping, tags: dados.tags }, null, 2)}
+        <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/20 p-2 text-[10px] leading-relaxed text-muted">
+          {JSON.stringify(dados, null, 2)}
         </pre>
       </details>
     </section>

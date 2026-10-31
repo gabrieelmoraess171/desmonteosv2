@@ -4,7 +4,13 @@ export { redirectUriLocal } from './urlsPublicas.js';
 import { getDb } from '../database.js';
 import { upsertVenda } from './vendasService.js';
 import { upsertEnvio } from './enviosService.js';
-import { completarPublicacao, obterFichaCategoria, lerConfigMl, montarCompatibilidades } from './mlCadastroService.js';
+import {
+  completarPublicacao,
+  obterFichaCategoria,
+  lerConfigMl,
+  montarCompatibilidades,
+  valoresMl
+} from './mlCadastroService.js';
 import { mapearReputacaoMl } from './mlReputacao.js';
 import {
   classificarCategoria,
@@ -3234,6 +3240,52 @@ function atributosParaPublicacao(peca) {
   return [...atributos.values()];
 }
 
+function chaveAtributo(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function atributosEditaveisMl(peca, categoryId) {
+  const informados = atributosParaPublicacao(peca);
+  if (!categoryId) return informados;
+
+  try {
+    const ficha = await obterFichaCategoria(categoryId, mlFetch);
+    const definicoes = Array.isArray(ficha?.atributos) ? ficha.atributos : [];
+    const mapeados = {};
+
+    for (const atributo of informados) {
+      const chave = chaveAtributo(atributo.id);
+      const definicao = definicoes.find((item) => {
+        const id = chaveAtributo(item.id);
+        const nome = chaveAtributo(item.name);
+        return id === chave || nome === chave || id.includes(chave) || chave.includes(id);
+      });
+      if (!definicao || definicao.tags?.read_only) continue;
+      mapeados[definicao.id] = atributo.value_name;
+    }
+
+    return valoresMl(mapeados, definicoes).filter(
+      (atributo) => !definicoes.find((item) => item.id === atributo.id)?.tags?.read_only
+    );
+  } catch {
+    // Se a ficha estiver indisponível, não bloqueia o salvamento do anúncio.
+    return informados.filter(
+      (atributo) =>
+        ![
+          'SYI_PYMES_ID',
+          'CATALOG_TITLE',
+          'HAS_COMPATIBILITIES',
+          'ITEM_CONDITION'
+        ].includes(atributo.id)
+    );
+  }
+}
+
 function urlImagemPublica(caminho, origem) {
   let url;
 
@@ -3590,6 +3642,10 @@ export async function atualizarAnuncioPeca(pecaId, dados = {}) {
 
   const corpo = {};
   let descricaoAtualizada = null;
+  const ficha =
+    dados.ficha && typeof dados.ficha === 'object' && !Array.isArray(dados.ficha)
+      ? dados.ficha
+      : {};
 
   if (dados.descricao !== undefined) {
     const descricao = texto(dados.descricao, 50000);
@@ -3647,6 +3703,82 @@ export async function atualizarAnuncioPeca(pecaId, dados = {}) {
     corpo.status = status;
   }
 
+  const fichaParaMl = {
+    ...peca,
+    ...ficha,
+    atributos: ficha.atributos ?? peca.atributos,
+    marca: ficha.marca ?? peca.marca,
+    modelo: ficha.modelo ?? peca.modelo,
+    ano: ficha.ano ?? peca.ano,
+    numero_oem: ficha.numero_oem ?? peca.numero_oem,
+    sku: ficha.sku ?? peca.sku,
+    gtin: ficha.gtin ?? peca.gtin
+  };
+
+  if (
+    ficha.atributos !== undefined ||
+    ficha.marca !== undefined ||
+    ficha.modelo !== undefined ||
+    ficha.ano !== undefined ||
+    ficha.numero_oem !== undefined ||
+    ficha.sku !== undefined ||
+    ficha.gtin !== undefined
+  ) {
+    const atributos = await atributosEditaveisMl(
+      fichaParaMl,
+      ficha.ml_category_id || peca.ml_category_id
+    );
+    if (atributos.length > 0) corpo.attributes = atributos;
+  }
+
+  if (ficha.ml_category_id) {
+    corpo.category_id = texto(ficha.ml_category_id, 80);
+  }
+
+  if (ficha.condicao) {
+    const condicao = texto(ficha.condicao, 40).toLowerCase();
+    if (['novo', 'new'].includes(condicao)) corpo.condition = 'new';
+    if (['usado', 'used'].includes(condicao)) corpo.condition = 'used';
+    if (['recondicionado', 'refurbished'].includes(condicao)) {
+      corpo.condition = 'refurbished';
+    }
+  }
+
+  if (ficha.modo_compra) {
+    const modo = texto(ficha.modo_compra, 40).toLowerCase();
+    if (['buy_it_now', 'auction'].includes(modo)) corpo.buying_mode = modo;
+  }
+
+  if (dados.sincronizarFotos) {
+    const imagensLocais = await db.all(
+      `SELECT caminho
+         FROM peca_imagens
+        WHERE peca_id = ?
+        ORDER BY is_principal DESC, ordem ASC, id ASC
+        LIMIT 20`,
+      [peca.id]
+    );
+    const anuncioAtual = await mlFetch(
+      `/items/${encodeURIComponent(peca.ml_item_id)}`
+    );
+    const urlsAtuais = Array.isArray(anuncioAtual?.pictures)
+      ? anuncioAtual.pictures
+          .map((imagem) => normalizarImagemMl(imagem?.secure_url || imagem?.url))
+          .filter(Boolean)
+      : [];
+    const origem = texto(
+      dados.publicBaseUrl ||
+        process.env.BACKEND_PUBLIC_URL ||
+        process.env.API_PUBLIC_URL,
+      1000
+    ).replace(/\/+$/, '');
+    const urlsLocais = imagensLocais.map((imagem) =>
+      urlImagemPublica(imagem.caminho, origem)
+    );
+    const urls = [...new Set([...urlsAtuais, ...urlsLocais])].slice(0, 20);
+    if (urls.length > 0) corpo.pictures = urls.map((source) => ({ source }));
+  }
+
   if (Object.keys(corpo).length === 0 && !descricaoAtualizada) {
     throw new MercadoLivreError(
       'Informe quantidade, preço, título ou descrição para atualizar o anúncio.',
@@ -3655,17 +3787,46 @@ export async function atualizarAnuncioPeca(pecaId, dados = {}) {
   }
 
   let status = '';
+  const avisos = [];
+  const camposPrincipais = [
+    'available_quantity',
+    'price',
+    'title',
+    'status'
+  ];
+  const corpoPrincipal = Object.fromEntries(
+    camposPrincipais
+      .filter((campo) => corpo[campo] !== undefined)
+      .map((campo) => [campo, corpo[campo]])
+  );
+  const corpoFicha = Object.fromEntries(
+    Object.entries(corpo).filter(([campo]) => !camposPrincipais.includes(campo))
+  );
 
-  if (Object.keys(corpo).length > 0) {
+  if (Object.keys(corpoPrincipal).length > 0) {
     const resposta = await mlFetch(
       `/items/${encodeURIComponent(peca.ml_item_id)}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(corpo)
+        body: JSON.stringify(corpoPrincipal)
       }
     );
     status = texto(resposta?.status, 40);
+  }
+
+  if (Object.keys(corpoFicha).length > 0) {
+    try {
+      await mlFetch(`/items/${encodeURIComponent(peca.ml_item_id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpoFicha)
+      });
+    } catch (error) {
+      avisos.push(
+        `O Mercado Livre não aceitou parte da ficha técnica: ${error.message}`
+      );
+    }
   }
 
   if (descricaoAtualizada) {
@@ -3710,8 +3871,132 @@ export async function atualizarAnuncioPeca(pecaId, dados = {}) {
     ok: true,
     item_id: peca.ml_item_id,
     ...corpo,
-    descricao_atualizada: Boolean(descricaoAtualizada)
+    descricao_atualizada: Boolean(descricaoAtualizada),
+    avisos
   };
+}
+
+export async function salvarAnuncioPeca(pecaId, dados = {}) {
+  const db = getDb();
+  const id = Number(pecaId);
+  const peca = Number.isInteger(id)
+    ? await db.get('SELECT * FROM pecas WHERE id = ?', [id])
+    : null;
+
+  if (!peca) throw new MercadoLivreError('Peça não encontrada.', 404);
+  if (!peca.ml_item_id) {
+    throw new MercadoLivreError(
+      'Esta peça ainda não possui anúncio no Mercado Livre. Envie-a para aprovação para publicar.',
+      400
+    );
+  }
+
+  const ficha =
+    dados.ficha && typeof dados.ficha === 'object' && !Array.isArray(dados.ficha)
+      ? dados.ficha
+      : {};
+  const resultado = await atualizarAnuncioPeca(id, {
+    ...dados,
+    ficha,
+    sincronizarFotos: true
+  });
+
+  const campos = [];
+  const valores = [];
+  const colunas = {
+    nome: 'nome',
+    sku: 'sku',
+    carro: 'carro',
+    categoria: 'categoria',
+    categoria_ml: 'categoria_ml',
+    ml_category_id: 'ml_category_id',
+    ml_config: 'ml_config',
+    marca: 'marca',
+    modelo: 'modelo',
+    ano: 'ano',
+    condicao: 'condicao',
+    numero_oem: 'numero_oem',
+    garantia: 'garantia',
+    peso_kg: 'peso_kg',
+    comprimento_cm: 'comprimento_cm',
+    largura_cm: 'largura_cm',
+    altura_cm: 'altura_cm',
+    atributos: 'atributos',
+    tipo_anuncio: 'tipo_anuncio',
+    gtin: 'gtin',
+    localizacao: 'localizacao',
+    video_url: 'video_url',
+    modo_compra: 'modo_compra'
+  };
+
+  for (const [chave, coluna] of Object.entries(colunas)) {
+    if (ficha[chave] === undefined) continue;
+    campos.push(`${coluna} = ?`);
+    valores.push(
+      chave === 'atributos' || chave === 'ml_config'
+        ? JSON.stringify(ficha[chave] || {})
+        : ficha[chave]
+    );
+  }
+
+  if (campos.length > 0) {
+    await db.run(`UPDATE pecas SET ${campos.join(', ')} WHERE id = ?`, [
+      ...valores,
+      id
+    ]);
+  }
+
+  // Reconsulta o anúncio após a gravação para que a próxima abertura do
+  // editor reflita exatamente o estado confirmado pelo Mercado Livre.
+  try {
+    const atual = await obterDetalhesAnuncioMl(peca.ml_item_id);
+    const atributos = Array.isArray(atual.attributes)
+      ? Object.fromEntries(
+          atual.attributes
+            .filter((atributo) => atributo?.id)
+            .map((atributo) => [
+              atributo.id,
+              atributo.value_name ?? atributo.value_id ?? ''
+            ])
+        )
+      : {};
+    await db.run(
+      `UPDATE pecas SET
+         ml_dados = ?,
+         ml_titulo = COALESCE(?, ml_titulo),
+         preco = COALESCE(?, preco),
+         quantidade = COALESCE(?, quantidade),
+         ml_status = COALESCE(?, ml_status),
+         ml_ativo = CASE WHEN ? = 'active' THEN 1 WHEN ? <> '' THEN 0 ELSE ml_ativo END,
+         ml_permalink = COALESCE(?, ml_permalink),
+         ml_thumbnail = COALESCE(?, ml_thumbnail),
+         ml_category_id = COALESCE(?, ml_category_id),
+         atributos = ?,
+         tipo_anuncio = ?,
+         ml_sincronizado_em = ?
+       WHERE id = ?`,
+      [
+        dadosAnuncioMl(atual, atual.descricao_ml),
+        atual.title || null,
+        atual.price ?? null,
+        atual.available_quantity ?? null,
+        atual.status || null,
+        atual.status || '',
+        atual.status || '',
+        atual.permalink || null,
+        normalizarImagemMl(atual.thumbnail) || null,
+        atual.category_id || null,
+        JSON.stringify(atributos),
+        normalizarTipoAnuncioMl(atual.listing_type_id),
+        new Date().toISOString(),
+        id
+      ]
+    );
+  } catch (error) {
+    console.warn('Não foi possível atualizar o cache do anúncio salvo:', error.message);
+  }
+
+  return resultado;
 }
 
 export async function encerrarAnuncioPeca(pecaId) {

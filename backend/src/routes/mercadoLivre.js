@@ -13,6 +13,7 @@ import {
   obterStatusMl,
   obterImagensAnuncioMl,
   obterDetalhesAnuncioMl,
+  salvarAnuncioPeca,
   processarCallback,
   processarWebhook,
   salvarConfiguracaoMl,
@@ -57,6 +58,25 @@ function mensagemErro(error) {
   return error instanceof Error
     ? error.message
     : 'Erro inesperado na integração com o Mercado Livre';
+}
+
+function lerCacheMl(valor) {
+  if (!valor || typeof valor !== 'string') return null;
+  try {
+    const dados = JSON.parse(valor);
+    return dados && typeof dados === 'object' ? dados : null;
+  } catch {
+    return null;
+  }
+}
+
+function imagensDoCacheMl(valor) {
+  const dados = lerCacheMl(valor);
+  if (!Array.isArray(dados?.pictures)) return [];
+
+  return dados.pictures
+    .map((imagem) => imagem?.secure_url || imagem?.url)
+    .filter((url) => /^https?:\/\//i.test(String(url || '')));
 }
 
 function urlFrontend() {
@@ -240,13 +260,24 @@ router.get('/pecas/:id/imagens', async (req, res) => {
     }
 
     const peca = await getDb().get(
-      'SELECT ml_item_id FROM pecas WHERE id = ?',
+      'SELECT ml_item_id, ml_dados FROM pecas WHERE id = ?',
       [pecaId]
     );
     if (!peca) return res.status(404).json({ error: 'Peça não encontrada' });
     if (!peca.ml_item_id) return res.json({ imagens: [] });
 
-    res.json(await obterImagensAnuncioMl(peca.ml_item_id));
+    try {
+      res.json(await obterImagensAnuncioMl(peca.ml_item_id));
+    } catch (error) {
+      const imagens = imagensDoCacheMl(peca.ml_dados);
+      if (imagens.length === 0) throw error;
+      res.json({
+        itemId: peca.ml_item_id,
+        imagens,
+        fonte: 'cache',
+        aviso: 'As fotos exibidas vieram da última sincronização disponível.'
+      });
+    }
   } catch (error) {
     res.status(statusErro(error)).json({ error: mensagemErro(error) });
   }
@@ -260,13 +291,28 @@ router.get('/pecas/:id/detalhes', async (req, res) => {
     }
 
     const peca = await getDb().get(
-      'SELECT ml_item_id FROM pecas WHERE id = ?',
+      'SELECT ml_item_id, ml_dados FROM pecas WHERE id = ?',
       [pecaId]
     );
     if (!peca) return res.status(404).json({ error: 'Peça não encontrada' });
     if (!peca.ml_item_id) return res.json({ mercado_livre: null });
 
-    res.json({ mercado_livre: await obterDetalhesAnuncioMl(peca.ml_item_id) });
+    try {
+      res.json({ mercado_livre: await obterDetalhesAnuncioMl(peca.ml_item_id) });
+    } catch (error) {
+      const cache = lerCacheMl(peca.ml_dados);
+      if (!cache?.id) throw error;
+      res.json({
+        mercado_livre: {
+          ...cache,
+          tipo_anuncio: cache.tipo_anuncio || 'clássico',
+          descricao_ml: cache.descricao || '',
+          compatibilidades: []
+        },
+        fonte: 'cache',
+        aviso: 'Os dados exibidos vieram da última sincronização disponível.'
+      });
+    }
   } catch (error) {
     res.status(statusErro(error)).json({ error: mensagemErro(error) });
   }
@@ -294,6 +340,41 @@ router.post('/pecas/:id/atualizar-anuncio', async (req, res) => {
     });
 
     res.json(resultado);
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: mensagemErro(error) });
+  }
+});
+
+router.post('/pecas/:id/salvar', async (req, res) => {
+  try {
+    const protocolo = String(
+      req.headers['x-forwarded-proto'] || req.protocol
+    )
+      .split(',')[0]
+      .trim();
+    const publicBaseUrl =
+      process.env.BACKEND_PUBLIC_URL ||
+      process.env.API_PUBLIC_URL ||
+      `${protocolo}://${req.get('host')}`;
+    const resultado = await salvarAnuncioPeca(req.params.id, {
+      titulo: req.body?.titulo,
+      descricao: req.body?.descricao,
+      preco: req.body?.preco,
+      quantidade: req.body?.quantidade,
+      status:
+        req.body?.mlAtivo === undefined
+          ? undefined
+          : Number(req.body.mlAtivo)
+            ? 'active'
+            : 'paused',
+      ficha: req.body?.dados,
+      publicBaseUrl
+    });
+
+    res.json({
+      ...resultado,
+      mensagem: 'Alterações salvas no estoque e sincronizadas com o Mercado Livre.'
+    });
   } catch (error) {
     res.status(statusErro(error)).json({ error: mensagemErro(error) });
   }

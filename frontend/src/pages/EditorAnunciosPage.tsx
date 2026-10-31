@@ -742,47 +742,64 @@ export default function EditorAnunciosPage({
     setAviso('');
 
     try {
+      const dados = {
+        nome: formulario.nome.trim(),
+        sku: formulario.sku.trim().toUpperCase(),
+        carro: formulario.carro.trim(),
+        categoria: formulario.categoria,
+        categoria_ml:
+          formulario.categoriaMl.trim() || categoriaMlDe(formulario.categoria),
+        marca: formulario.marca.trim(),
+        modelo: formulario.modelo.trim(),
+        ano: formulario.ano.trim(),
+        condicao: formulario.condicao,
+        numero_oem: formulario.numeroOem.trim(),
+        garantia: formulario.garantia.trim(),
+        peso_kg: Number(formulario.pesoKg) || 0,
+        comprimento_cm: Number(formulario.comprimentoCm) || 0,
+        largura_cm: Number(formulario.larguraCm) || 0,
+        altura_cm: Number(formulario.alturaCm) || 0,
+        atributos: formulario.atributos,
+        tipo_anuncio: formulario.tipoAnuncio,
+        gtin: formulario.gtin.trim(),
+        localizacao: formulario.localizacao.trim(),
+        video_url: formulario.videoUrl.trim(),
+        modo_compra: formulario.modoCompra,
+      };
+      const payload = {
+        pecaId: pecaSelecionada.id,
+        titulo,
+        descricao,
+        preco,
+        quantidade,
+        mlAtivo: formulario.mlAtivo ? 1 : 0,
+        observacao: formulario.observacao.trim(),
+        dados,
+      };
+
+      const existenteNoMl = Boolean(pecaSelecionada.ml_item_id);
       const { data } = await axios.post<{ mensagem?: string }>(
-        '/api/aprovacoes',
-        {
-          pecaId: pecaSelecionada.id,
-          titulo,
-          descricao,
-          preco,
-          quantidade,
-          mlAtivo: formulario.mlAtivo ? 1 : 0,
-          observacao: formulario.observacao.trim(),
-          dados: {
-            nome: formulario.nome.trim(),
-            sku: formulario.sku.trim().toUpperCase(),
-            carro: formulario.carro.trim(),
-            categoria: formulario.categoria,
-            categoria_ml:
-              formulario.categoriaMl.trim() ||
-              categoriaMlDe(formulario.categoria),
-            marca: formulario.marca.trim(),
-            modelo: formulario.modelo.trim(),
-            ano: formulario.ano.trim(),
-            condicao: formulario.condicao,
-            numero_oem: formulario.numeroOem.trim(),
-            garantia: formulario.garantia.trim(),
-            peso_kg: Number(formulario.pesoKg) || 0,
-            comprimento_cm: Number(formulario.comprimentoCm) || 0,
-            largura_cm: Number(formulario.larguraCm) || 0,
-            altura_cm: Number(formulario.alturaCm) || 0,
-            atributos: formulario.atributos,
-            tipo_anuncio: formulario.tipoAnuncio,
-            gtin: formulario.gtin.trim(),
-            localizacao: formulario.localizacao.trim(),
-            video_url: formulario.videoUrl.trim(),
-            modo_compra: formulario.modoCompra,
-          },
-        },
-        { timeout: 15000 }
+        existenteNoMl
+          ? `/api/mercadolivre/pecas/${pecaSelecionada.id}/salvar`
+          : '/api/aprovacoes',
+        payload,
+        { timeout: existenteNoMl ? 120000 : 15000 }
       );
 
+      if (existenteNoMl) {
+        await carregar(true);
+        const atualizada = await axios.get<Peca>(
+          `/api/pecas/${pecaSelecionada.id}`,
+          { timeout: 15000 }
+        );
+        setPecaDetalhe(atualizada.data);
+      }
+
       setAviso(
-        data.mensagem || 'Alterações enviadas para a fila de aprovação.'
+        data.mensagem ||
+          (existenteNoMl
+            ? 'Alterações salvas e sincronizadas com o Mercado Livre.'
+            : 'Alterações enviadas para a fila de aprovação.')
       );
       setFormulario((atual) =>
         atual ? { ...atual, observacao: '' } : atual
@@ -1603,7 +1620,10 @@ export default function EditorAnunciosPage({
                     </Campo>
 
                     <div className="mt-4">
-                      <PecaFotosEditor pecaId={pecaSelecionada.id} />
+                      <PecaFotosEditor
+                        pecaId={pecaSelecionada.id}
+                        mlItemId={pecaSelecionada.ml_item_id}
+                      />
                     </div>
                   </Bloco>
 
@@ -1621,7 +1641,9 @@ export default function EditorAnunciosPage({
                         Anúncio ativo no Mercado Livre
                       </span>
                       <span className="block text-[11px] text-muted">
-                        Ao aprovar, o status será alterado para ativo ou pausado.
+                        {pecaSelecionada.ml_item_id
+                          ? 'Ao salvar, o status será atualizado no Mercado Livre.'
+                          : 'Ao aprovar, o anúncio será publicado com esse status.'}
                       </span>
                     </span>
                   </label>
@@ -1641,9 +1663,9 @@ export default function EditorAnunciosPage({
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[11px] leading-relaxed text-muted">
                     <p className="flex items-start gap-2">
                       <Barcode className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                      Título, descrição, preço, quantidade e status são aplicados
-                      ao anúncio na aprovação. Os demais dados da ficha são
-                      salvos no estoque e usados nas próximas publicações.
+                      {pecaSelecionada.ml_item_id
+                        ? 'Título, descrição, preço, estoque, atributos, condição, ficha técnica e fotos são sincronizados com o anúncio ao salvar.'
+                        : 'Anúncios novos entram na fila de aprovação; depois da aprovação, os dados da ficha e as fotos são publicados no Mercado Livre.'}
                     </p>
                   </div>
 
@@ -1658,7 +1680,11 @@ export default function EditorAnunciosPage({
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      {enviando ? 'Enviando...' : 'Enviar para aprovação'}
+                      {enviando
+                        ? 'Salvando...'
+                        : pecaSelecionada.ml_item_id
+                          ? 'Salvar e aplicar no Mercado Livre'
+                          : 'Enviar para aprovação'}
                     </button>
 
                     {pecaSelecionada.ml_item_id && (
@@ -1678,8 +1704,9 @@ export default function EditorAnunciosPage({
                     )}
 
                     <p className="text-[11px] leading-relaxed text-muted">
-                      Salvar aqui não publica diretamente. A aprovação aplica
-                      as alterações ou publica o anúncio novo no Mercado Livre.
+                      {pecaSelecionada.ml_item_id
+                        ? 'As alterações são aplicadas imediatamente no anúncio existente.'
+                        : 'O anúncio novo será publicado após a aprovação na fila.'}
                     </p>
                   </div>
                 </form>

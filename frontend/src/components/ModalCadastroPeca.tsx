@@ -1321,7 +1321,7 @@ export default function ModalCadastroPeca({
             </div>
 
             <div className="cadastro-fotos space-y-4">
-            {editando && peca ? <PecaFotosEditor pecaId={peca.id} onChange={() => onSuccess()} /> : <>
+            {editando && peca ? <PecaFotosEditor pecaId={peca.id} mlItemId={peca.ml_item_id} onChange={() => onSuccess()} /> : <>
               <ProductPhotoPicker
                 photos={fotos.filter((foto) => foto.grupo === 'sku')}
                 onAddFiles={(arquivos) => handleAddFotos(arquivos, 'sku')}

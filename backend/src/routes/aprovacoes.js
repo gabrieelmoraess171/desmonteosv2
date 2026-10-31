@@ -257,21 +257,20 @@ router.post('/:id/aprovar', async (req, res) => {
     }
 
     let anuncioPublicado = null;
+    const protocolo = String(
+      req.headers['x-forwarded-proto'] || req.protocol
+    )
+      .split(',')[0]
+      .trim();
+    const publicBaseUrl =
+      process.env.BACKEND_PUBLIC_URL ||
+      process.env.API_PUBLIC_URL ||
+      `${protocolo}://${req.get('host')}`;
 
     if (
       !aprovacao.ml_item_id &&
       Number(aprovacao.ml_ativo ?? aprovacao.ml_ativo_atual) === 1
     ) {
-      const protocolo = String(
-        req.headers['x-forwarded-proto'] || req.protocol
-      )
-        .split(',')[0]
-        .trim();
-      const publicBaseUrl =
-        process.env.BACKEND_PUBLIC_URL ||
-        process.env.API_PUBLIC_URL ||
-        `${protocolo}://${req.get('host')}`;
-
       anuncioPublicado = await publicarAnuncioPeca(aprovacao.peca_id, {
         publicBaseUrl,
         titulo: aprovacao.titulo || dadosExtras?.ml_titulo,
@@ -322,8 +321,16 @@ router.post('/:id/aprovar', async (req, res) => {
       dadosMl.status = Number(aprovacao.ml_ativo) ? 'active' : 'paused';
     }
 
-    if (aprovacao.ml_item_id && Object.keys(dadosMl).length > 0) {
-      await atualizarAnuncioPeca(aprovacao.peca_id, dadosMl);
+    if (
+      aprovacao.ml_item_id &&
+      (Object.keys(dadosMl).length > 0 || dadosExtras)
+    ) {
+      await atualizarAnuncioPeca(aprovacao.peca_id, {
+        ...dadosMl,
+        ficha: dadosExtras,
+        publicBaseUrl,
+        sincronizarFotos: true
+      });
     }
 
     const campos = [];
