@@ -130,9 +130,14 @@ export default function Sidebar({
           }`}
         >
           <div className={`min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
-            <h1 className="bg-gradient-to-r from-white via-[#dcecff] to-[#8ec6ff] bg-clip-text text-2xl font-bold leading-none tracking-tight text-transparent">
-              DESMONTE OS
-            </h1>
+            <div className="flex items-center gap-3">
+              <span className="brand-mark" aria-hidden="true">
+                <span />
+              </span>
+              <h1 className="bg-gradient-to-r from-white via-[#dcecff] to-[#8ec6ff] bg-clip-text text-xl font-bold leading-none tracking-tight text-transparent">
+                DESMONTE OS
+              </h1>
+            </div>
             <p className="mt-1.5 line-clamp-2 text-[10px] font-medium uppercase leading-relaxed tracking-[0.16em] text-muted">
               {companyName.trim() || DEFAULT_COMPANY_NAME}
             </p>
@@ -163,12 +168,23 @@ export default function Sidebar({
 
       {/* Menu Principal */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.map((item, index) => {
           const active = item.key === activeKey;
           const badge = Number(badges[item.key] || 0);
+          const sectionLabel =
+            index === 0
+              ? 'Operação'
+              : item.key === 'ia'
+                ? 'Catálogo e inteligência'
+                : item.key === 'marketplaces'
+                  ? 'Canais e gestão'
+                  : null;
 
           return (
             <div key={item.key}>
+              {sectionLabel ? (
+                <p className="sidebar-section-label">{sectionLabel}</p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {

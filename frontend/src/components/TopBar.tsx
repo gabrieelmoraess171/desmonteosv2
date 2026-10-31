@@ -13,7 +13,10 @@ export default function TopBar({ title }: TopBarProps) {
       
       {/* Left - Page Title */}
       <div>
-        <h1 className="text-2xl font-bold text-ink">{title}</h1>
+        <div>
+          <p className="app-breadcrumb">Desmonte OS <span>/</span> {title}</p>
+          <h1 className="text-2xl font-bold text-ink">{title}</h1>
+        </div>
       </div>
 
       {/* Right - Actions */}

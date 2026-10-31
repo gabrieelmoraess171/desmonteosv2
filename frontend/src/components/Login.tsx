@@ -49,7 +49,7 @@ export default function Login() {
   };
 
   return (
-    <main className="flex min-h-screen min-h-[100svh] items-center justify-center px-4 py-10 sm:px-6">
+    <main className="login-screen relative flex min-h-screen min-h-[100svh] items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
       <div className="w-full max-w-md">
         <div className="mb-8 flex items-center justify-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent/30 bg-accentSoft text-accent">
