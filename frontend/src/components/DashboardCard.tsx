@@ -41,22 +41,19 @@ export default function DashboardCard({
           : ''
       }`}
     >
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-cyan to-transparent opacity-50 transition-opacity group-hover:opacity-100" />
-      <div className="dashboard-card__sheen pointer-events-none absolute -inset-y-20 -left-1/2 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
-
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+          <p className="dashboard-card__label text-xs font-medium text-muted">
             {title}
           </p>
-          <p className="mt-2 font-heading text-3xl font-bold leading-none tracking-wide text-ink">
+          <p className="dashboard-card__value mt-1 font-heading text-2xl font-bold leading-tight tracking-tight text-ink">
             {value}
           </p>
           {subtitle && (
-            <p className="mt-2 text-xs text-muted leading-relaxed">{subtitle}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">{subtitle}</p>
           )}
         </div>
-        <div className="shrink-0 rounded-xl border border-line bg-secondary/80 p-2.5 transition-colors group-hover:border-accent/40">
+        <div className="dashboard-card__icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white" aria-hidden="true">
           {icon}
         </div>
       </div>

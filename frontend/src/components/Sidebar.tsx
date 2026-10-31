@@ -134,7 +134,7 @@ export default function Sidebar({
               <span className="brand-mark" aria-hidden="true">
                 <span />
               </span>
-              <h1 className="bg-gradient-to-r from-white via-[#dcecff] to-[#8ec6ff] bg-clip-text text-xl font-bold leading-none tracking-tight text-transparent">
+              <h1 className="text-base font-bold leading-none tracking-wide text-ink">
                 DESMONTE OS
               </h1>
             </div>
@@ -167,7 +167,7 @@ export default function Sidebar({
       </div>
 
       {/* Menu Principal */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav aria-label="Menu principal" className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item, index) => {
           const active = item.key === activeKey;
           const badge = Number(badges[item.key] || 0);
@@ -208,7 +208,7 @@ export default function Sidebar({
                   item.key === 'vendas' ? vendasAberto : undefined
                 }
                 title={item.label}
-                className={`sidebar-nav-item group relative flex w-full items-center gap-3 rounded-xl border p-3 transition-all duration-300 ${
+                className={`sidebar-nav-item group relative flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 transition-all duration-300 ${
                   collapsed ? 'lg:justify-center lg:gap-0' : ''
                 } ${
                   active
@@ -219,9 +219,9 @@ export default function Sidebar({
                 {active && (
                   <span className="sidebar-nav-indicator absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan to-accent shadow-[0_0_14px_rgba(76,157,255,0.8)]" />
                 )}
-                <span className="relative shrink-0">
+                <span className="sidebar-nav-icon-wrap relative flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg">
                   <item.icon
-                    className={`sidebar-nav-icon h-5 w-5 transition-transform duration-300 ${
+                    className={`sidebar-nav-icon h-4 w-4 transition-transform duration-300 ${
                       active ? 'text-accent' : 'group-hover:scale-105'
                     }`}
                   />
@@ -232,7 +232,7 @@ export default function Sidebar({
                   ) : null}
                 </span>
                 <span
-                  className={`min-w-0 flex-1 truncate text-left font-medium ${
+                  className={`min-w-0 flex-1 truncate text-left text-[13px] font-medium ${
                     collapsed ? 'lg:hidden' : ''
                   }`}
                 >

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import {
   DollarSign,
   ExternalLink,
-  ImagePlus,
   LogOut,
   Menu,
   MessageSquare,
@@ -10,7 +9,6 @@ import {
   RefreshCw,
   Search,
   ShoppingBag,
-  Sparkles,
   Store,
 } from 'lucide-react';
 import PecasTable from './components/PecasTable';
@@ -725,15 +723,6 @@ function App() {
 
   return (
     <div className="app-shell relative isolate flex min-h-screen">
-      <div
-        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-        aria-hidden="true"
-      >
-        <div className="ambient-blob ambient-blob--blue" />
-        <div className="ambient-blob ambient-blob--violet" />
-        <div className="ambient-blob ambient-blob--teal" />
-      </div>
-
       {mobileMenuOpen && (
         <button
           type="button"
@@ -764,7 +753,7 @@ function App() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-line bg-sidebar shadow-[0_1px_0_rgba(255,255,255,0.04),0_18px_50px_-30px_rgba(0,0,0,0.9)]">
+        <header className="app-header sticky top-0 z-30 border-b border-line bg-sidebar shadow-[0_1px_0_rgba(255,255,255,0.04),0_18px_50px_-30px_rgba(0,0,0,0.9)]">
           <div className="px-5 py-4 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex min-w-0 items-center space-x-3">
@@ -776,7 +765,7 @@ function App() {
                 >
                   <Menu className="h-6 w-6" />
                 </button>
-                <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.06] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                <div className="app-page-icon shrink-0 rounded-xl border border-white/10 bg-white/[0.06] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                   <ActiveIcon className="h-6 w-6 text-accent" />
                 </div>
                 <div className="min-w-0">
@@ -848,73 +837,17 @@ function App() {
             {activeView === 'dashboard' && (
               <div className="dashboard-stack space-y-6">
                 <div className="dashboard-section-heading">
-                  <p>Desmonte OS</p>
-                  <h2>Visão geral</h2>
-                </div>
-
-                <section className="dashboard-welcome-panel glass-panel relative overflow-hidden rounded-3xl p-6 sm:p-8">
-                  <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
-                  <div className="pointer-events-none absolute -bottom-24 right-1/3 h-56 w-56 rounded-full bg-cyan/10 blur-3xl" />
-
-                  <div className="relative flex flex-col justify-between gap-8 xl:flex-row xl:items-center">
-                    <div className="max-w-2xl">
-                      <DashboardGreeting userName={userName} />
-
-                      <div className="mt-6 flex flex-wrap gap-2 text-xs">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-successSoft px-3 py-1.5 font-medium text-success shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                          {stats.vendasHoje} venda(s) hoje •{' '}
-                          {formatCurrency(stats.faturamentoHoje)}
-                        </span>
-                        <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accentSoft px-3 py-1.5 font-medium text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          {analytics.estoque.anuncios} anúncio(s) ML ativo(s)
-                        </span>
-                        {companyName && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-muted">
-                            <Store className="h-3.5 w-3.5" />
-                            {companyName}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid w-full max-w-lg grid-cols-2 gap-3 xl:w-[420px] xl:shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('nova')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <Package className="h-4 w-4 text-accent transition-transform group-hover:scale-110" />
-                        Cadastrar peça
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('pedidos')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <ShoppingBag className="h-4 w-4 text-success transition-transform group-hover:scale-110" />
-                        Fechar NF-e
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('importar')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <ImagePlus className="h-4 w-4 text-cyan transition-transform group-hover:scale-110" />
-                        Importar lote
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('atendimento')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <MessageSquare className="h-4 w-4 text-warning transition-transform group-hover:scale-110" />
-                        Atendimento
-                      </button>
-                    </div>
+                  <div>
+                    <p>Painel operacional</p>
+                    <h2>Visão geral</h2>
                   </div>
-                </section>
+                  <span className="dashboard-updated" role="status">
+                    <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-success' : 'bg-muted'}`} />
+                    {lastUpdated
+                      ? `Atualizado às ${lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Aguardando atualização'}
+                  </span>
+                </div>
 
                 <div className="dashboard-stat-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <DashboardCard
@@ -950,8 +883,57 @@ function App() {
                   />
                 </div>
 
+                <div className="dashboard-overview-grid">
+                  <section className="dashboard-welcome-panel glass-panel" aria-label="Resumo da operação">
+                    <div className="dashboard-welcome-art" aria-hidden="true">
+                      <img src="/assets/vision/welcome-jellyfish.jpg" alt="" />
+                    </div>
+                    <div className="dashboard-welcome-copy">
+                      <DashboardGreeting userName={userName} />
+                      <div className="dashboard-welcome-summary">
+                        <span className="inline-flex items-center gap-2 text-success">
+                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                          {stats.vendasHoje} venda(s) hoje
+                        </span>
+                        <span>{formatCurrency(stats.faturamentoHoje)} em vendas</span>
+                      </div>
+                    </div>
+                    <div className="dashboard-welcome-actions">
+                      <button type="button" onClick={() => handleNavigate('nova')} className="vision-primary-action">
+                        <Package className="h-4 w-4" aria-hidden="true" />
+                        Cadastrar peça
+                      </button>
+                      <button type="button" onClick={() => handleNavigate('importar')} className="vision-text-action">
+                        Importar lote
+                        <img src="/assets/vision/arrow-forward.svg" alt="" width="13" height="13" />
+                      </button>
+                    </div>
+                  </section>
+                  <StockHealth
+                    estoque={analytics.estoque}
+                    vendasHojeML={stats.vendasHojeML}
+                    onOpenReview={handleOpenReviewStock}
+                  />
+                </div>
+
+                <div className="dashboard-quick-actions" aria-label="Atalhos da operação">
+                  <span className="dashboard-quick-actions__label">Sua operação</span>
+                  <button type="button" onClick={() => handleNavigate('lotes')}>
+                    <Store className="h-4 w-4" aria-hidden="true" />
+                    {analytics.estoque.anuncios} anúncio(s) ML
+                  </button>
+                  <button type="button" onClick={() => handleNavigate('pedidos')}>
+                    <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+                    Fechar NF-e
+                  </button>
+                  <button type="button" onClick={() => handleNavigate('atendimento')}>
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    Atendimento
+                  </button>
+                </div>
+
                 <div className="dashboard-main-grid grid grid-cols-1 gap-6 xl:grid-cols-3">
-                  <div className="xl:col-span-2">
+                  <div className="min-w-0 xl:col-span-2">
                     <RevenueChart
                       serie={analytics.serie}
                       periodoDias={analytics.periodoDias}
@@ -959,10 +941,10 @@ function App() {
                       onPeriodChange={setPeriodo}
                     />
                   </div>
-                  <StockHealth
-                    estoque={analytics.estoque}
-                    vendasHojeML={stats.vendasHojeML}
-                    onOpenReview={handleOpenReviewStock}
+                  <TopTiposPeca
+                    tipos={analytics.topTiposPeca}
+                    periodoLabel={periodo === 'hoje' ? 'Hoje' : `Últimos ${analytics.periodoDias} dias`}
+                    onViewAll={() => handleNavigate('lotes')}
                   />
                 </div>
 
@@ -973,16 +955,7 @@ function App() {
                   />
                 </div>
 
-                <div className="dashboard-secondary-grid grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <TopTiposPeca
-                    tipos={analytics.topTiposPeca}
-                    periodoLabel={
-                      periodo === 'hoje'
-                        ? 'Hoje'
-                        : `Últimos ${analytics.periodoDias} dias`
-                    }
-                    onViewAll={() => handleNavigate('lotes')}
-                  />
+                <div className="dashboard-secondary-grid">
                   <InsightsPanel
                     insights={analytics.insights}
                     onNavigate={handleInsightNavigate}

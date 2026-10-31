@@ -43,19 +43,19 @@ export default function StockHealth({
   const revisar = Number(estoque.anunciosRevisar || 0);
 
   return (
-    <section className="rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 sm:p-6">
-      <div className="mb-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+    <section className="stock-health-panel rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20">
+      <div className="mb-3">
+        <p className="text-[11px] font-medium text-muted">
           Estoque Mercado Livre
         </p>
-        <h2 className="mt-1 text-xl font-bold">Todos os anúncios</h2>
-        <p className="text-sm text-muted">
+        <h2 className="mt-1 text-lg font-bold">Todos os anúncios</h2>
+        <p className="text-xs leading-relaxed text-muted">
           Cada peça conta como um anúncio individual
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-6">
-        <div className="relative h-40 w-40 shrink-0">
+      <div className="stock-health-summary flex flex-wrap items-center justify-center gap-4">
+        <div className="relative h-32 w-32 shrink-0">
           <svg
             viewBox="0 0 140 140"
             className="h-full w-full"
@@ -78,7 +78,7 @@ export default function StockHealth({
                   r={RAIO}
                   fill="none"
                   className="stock-ring-in"
-                  stroke="#30D158"
+                  stroke="var(--success)"
                   strokeWidth="14"
                   strokeDasharray={`${comprimentoDisponivel} ${CIRCUNFERENCIA}`}
                   strokeLinecap="round"
@@ -89,7 +89,7 @@ export default function StockHealth({
                     cy="70"
                     r={RAIO}
                     fill="none"
-                    stroke="#FF453A"
+                    stroke="var(--danger)"
                     strokeWidth="14"
                     strokeDasharray={`${Math.max(comprimentoEsgotado - 4, 0)} ${CIRCUNFERENCIA}`}
                     strokeDashoffset={-comprimentoDisponivel}
@@ -101,14 +101,14 @@ export default function StockHealth({
           </svg>
 
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-bold leading-none">{total}</span>
+            <span className="text-2xl font-bold leading-none">{total}</span>
             <span className="mt-1 text-[11px] uppercase tracking-wider text-muted">
               itens
             </span>
           </div>
         </div>
 
-        <div className="space-y-3 text-sm">
+        <div className="space-y-2 text-xs">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-success" />
             <span className="text-muted">Disponíveis</span>
@@ -120,13 +120,13 @@ export default function StockHealth({
             <span className="font-semibold">{esgotadas}</span>
           </div>
           <div className="border-t border-line pt-2">
-            <p className="text-2xl font-bold">{anuncios}</p>
+            <p className="text-xl font-bold">{anuncios}</p>
             <p className="text-xs text-muted">anúncios ativos no ML</p>
           </div>
         </div>
       </div>
 
-      <div className="mt-5">
+      <div className="mt-3">
         <div className="mb-1.5 flex items-center justify-between text-xs">
           <span className="text-muted">Cobertura de anúncios ML</span>
           <span className="font-semibold">{coberturaAnuncios}%</span>
@@ -139,7 +139,7 @@ export default function StockHealth({
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="stock-health-metrics mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-xl bg-secondary/60 p-3">
           <div className="flex items-center gap-1.5 text-xs text-muted">
             <Megaphone className="h-3.5 w-3.5" />

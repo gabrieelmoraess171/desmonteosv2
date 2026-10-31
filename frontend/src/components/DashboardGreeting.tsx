@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import {
   getGreetingPeriod,
   pickMotivationalPhrase,
@@ -23,36 +23,27 @@ export default function DashboardGreeting({
   const todayLabel = today.charAt(0).toUpperCase() + today.slice(1);
 
   return (
-    <div className="max-w-3xl">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur-xl">
-          <Sparkles className="h-3.5 w-3.5" />
-          Painel operacional
-        </span>
-        <span className="text-white/25">•</span>
-        <span>{todayLabel}</span>
-      </div>
-
-      <h2 className="mt-5 font-heading text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-ink sm:text-5xl">
+    <div className="dashboard-greeting max-w-xl">
+      <p className="dashboard-greeting__date text-[11px] leading-relaxed text-muted">
+        {todayLabel}
+      </p>
+      <p className="mt-5 text-sm font-medium text-muted">
         {period.label}
-        {name ? ', ' : ''}
-        {name && (
-          <span className="bg-gradient-to-r from-white via-[#d7eaff] to-[#7fc0ff] bg-clip-text text-transparent">
-            {name}
-          </span>
-        )}
         <span
-          className="ml-2 inline-block align-middle text-3xl drop-shadow-[0_4px_18px_rgba(255,214,10,0.35)] sm:text-4xl"
+          className="ml-2 inline-block align-middle text-base"
           role="img"
           aria-label={period.emojiLabel}
         >
           {period.emoji}
         </span>
+      </p>
+      <h2 className="dashboard-greeting__title mt-1 font-heading text-[28px] font-bold leading-tight tracking-tight text-ink">
+        {name || 'Bem-vindo ao painel'}
       </h2>
 
-      <div className="mt-4 flex items-start gap-2.5">
+      <div className="dashboard-greeting__phrase mt-3 flex items-start gap-2">
         <p
-          className="max-w-2xl text-sm leading-relaxed text-muted sm:text-base"
+          className="max-w-md text-sm leading-relaxed text-muted"
           aria-live="polite"
         >
           {phrase}
