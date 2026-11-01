@@ -1103,14 +1103,14 @@ export default function EditorAnunciosPage({
               />
             </label>
 
-            <div className="mt-3 max-h-[640px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 space-y-2 pr-1">
               {pecasFiltradas.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted">
                   Nenhuma peça encontrada para esta busca.
                 </p>
               ) : (
                 <>
-                  {pecasFiltradas.slice(0, 100).map((peca) => {
+                  {pecasFiltradas.map((peca) => {
                     const badge = badgeAnuncio(peca);
                     const ativa = peca.id === pecaId;
 
@@ -1163,12 +1163,6 @@ export default function EditorAnunciosPage({
                     </button>
                   );
                 })}
-                  {pecasFiltradas.length > 100 && (
-                    <p className="rounded-xl border border-dashed border-line p-3 text-center text-[11px] leading-relaxed text-muted">
-                      Mostrando 100 de {pecasFiltradas.length} peças. Use a busca
-                      para encontrar as demais.
-                    </p>
-                  )}
                 </>
               )}
             </div>
