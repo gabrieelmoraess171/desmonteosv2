@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MODELO_PADRAO = 'gemini-3.5-flash';
-const MODELOS_RESERVA = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+const MODELO_PADRAO = 'gemini-3.8-flash';
+const MODELOS_RESERVA = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
 const TIMEOUT_MS = 15000;
 const TIMEOUT_RESERVA_MS = 10000;
 const TIMEOUT_FREELLMAPI_MS = 15000;
@@ -440,7 +440,6 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
               temperature: 0.7,
               maxOutputTokens: 320,
               topP: 0.9,
-              thinkingConfig: { thinkingBudget: 0 }
             },
             safetySettings: [
               {
@@ -533,7 +532,6 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
               temperature: opcoes.temperature ?? 0.5,
               maxOutputTokens: opcoes.maxTokens ?? 600,
               topP: 0.9,
-              thinkingConfig: { thinkingBudget: 0 }
             },
             safetySettings: [
               {
