@@ -312,24 +312,33 @@ export default function PecasTable({
         return true;
       })
       .sort((a, b) => {
-        // Prioriza peças com maior estoque e mantém anúncios zerados no fim.
+        if (ordenacao === 'nome') {
+          const porNome = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+          if (porNome !== 0) return porNome;
+        } else {
+          const da = dataPublicacao(a), db = dataPublicacao(b);
+          if (da !== null && db !== null) {
+            if (da !== db) return ordenacao === 'recentes' ? db - da : da - db;
+          } else if (da !== null) {
+            return -1;
+          } else if (db !== null) {
+            return 1;
+          }
+        }
+
+        // Desempates previsíveis: anúncios ativos e com estoque aparecem
+        // antes dos inativos/zerados, sem quebrar a ordenação escolhida.
+        const ativoA = Boolean(a.ml_ativo);
+        const ativoB = Boolean(b.ml_ativo);
+        if (ativoA !== ativoB) return ativoA ? -1 : 1;
         const quantidadeA = Math.max(0, Number(a.quantidade) || 0);
         const quantidadeB = Math.max(0, Number(b.quantidade) || 0);
         if (quantidadeA !== quantidadeB) return quantidadeB - quantidadeA;
         const vendidoA = anuncioVendido(a);
         const vendidoB = anuncioVendido(b);
         if (vendidoA !== vendidoB) return vendidoA ? 1 : -1;
-        if (ordenacao !== 'nome') {
-          const da = dataPublicacao(a), db = dataPublicacao(b);
-          if (da !== null && db !== null) {
-            if (da !== db) return ordenacao === 'recentes' ? db - da : da - db;
-            return b.id - a.id;
-          }
-          if (da !== null) return -1;
-          if (db !== null) return 1;
-          return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
-        }
-        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+        if (ordenacao === 'nome') return b.id - a.id;
+        return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
       });
   }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao]);
 
