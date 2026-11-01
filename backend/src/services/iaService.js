@@ -196,7 +196,6 @@ function fallback(pergunta, peca) {
   const aplicacao = aplicacaoDaPeca(peca);
   const garantia = peca?.garantia || '';
   const codigoOem = limparTexto(peca?.numero_oem || '', 40);
-  const descricao = limparTexto(peca?.descricao || '', 240);
   const citouAplicacao = perguntaCitaAplicacao(pergunta, peca);
   const citouVersao =
     /2\s*portas|4\s*portas|celebration|versao|motor|flex|diesel|turbo/.test(
@@ -272,14 +271,19 @@ function fallback(pergunta, peca) {
   }
 
   if (linhas.length === 0) {
-    linhas.push(
-      `Sobre ${nome}: ${
-        descricao || 'a peça está revisada, testada e pronta para envio.'
-      }`
-    );
-    linhas.push(
-      `A aplicação no anúncio é ${aplicacao}; se quiser, me diz o ano e o modelo do seu carro que eu confiro para você.`
-    );
+    if (
+      /\b(beleza|obrigad|valeu|entendi|ok|ta bom|tá bom|certo|perfeito|fechado|terça|terca)\b/.test(
+        textoPergunta
+      )
+    ) {
+      linhas.push(
+        'Perfeito! Qualquer dúvida sobre a peça ou a compatibilidade, pode me chamar por aqui.'
+      );
+    } else {
+      linhas.push(
+        `Claro! A peça anunciada é ${nome}. Se quiser confirmar a compatibilidade, me informe o modelo e o ano do veículo.`
+      );
+    }
   }
 
   linhas.push('Qualquer coisa, é só chamar por aqui.');
