@@ -45,6 +45,7 @@ import {
 
 import { montarPayloadPeca, origensAposEdicao } from './src/services/pecaPayload.js';
 import { comMetadadosPeca, revisarMetadadosLocais } from './src/services/pecaMetadados.js';
+import { consultarPlanParts } from './src/services/planPartsService.js';
 
 dotenv.config();
 
@@ -87,6 +88,7 @@ app.get('/api/health', (_req, res) => {
         process.env.GOOGLE_API_KEY ||
         process.env.GOOGLE_GEMINI_API_KEY
     ),
+    planPartsConfigured: Boolean(process.env.PLAN_PARTS_API_KEY),
     featureRelease: 'catalog-performance-v1',
     revision: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null
   });
@@ -487,7 +489,26 @@ app.get('/api/catalogo/part-number/:partNumber', async (req, res) => {
 
   const consulta = partNumber.replace(/[^a-zA-Z0-9]/g, '');
   const url = `https://7zap.com/api/parts-search/search-prefix?q=${encodeURIComponent(consulta)}&limit=24`;
+  let planParts = { status: process.env.PLAN_PARTS_API_KEY ? 'indisponivel' : 'nao_configurado', resultados: [] };
   try {
+    try {
+      planParts = await consultarPlanParts(partNumber);
+      if (planParts.resultados.length) {
+        const identificacaoIa = await identificarAplicacaoComGemini(partNumber, planParts.resultados);
+        return res.json({
+          partNumber,
+          fonte: 'plan.parts',
+          total: planParts.total || planParts.resultados.length,
+          resultados: planParts.resultados,
+          identificacaoIa,
+          fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: 'encontrado' }]
+        });
+      }
+    } catch (error) {
+      planParts = { status: 'indisponivel', resultados: [] };
+      console.warn('Consulta plan.parts indisponível:', error.message);
+    }
+
     const resposta = await fetch(url, {
       signal: AbortSignal.timeout(12000),
       headers: {
@@ -511,14 +532,14 @@ app.get('/api/catalogo/part-number/:partNumber', async (req, res) => {
       const identificacaoIa = await identificarAplicacaoComGemini(partNumber, resultados);
       return res.json({ partNumber, fonte: '7zap', total: Number(dados.total) || resultados.length, resultados,
         identificacaoIa,
-        fontes: [{ nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'encontrado' }] });
+        fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'encontrado' }] });
     }
     const resultadosMercadoLivre = await consultarMercadoLivrePorPartNumber(consulta, partNumber);
     const identificacaoIa = await identificarAplicacaoComGemini(partNumber, resultadosMercadoLivre);
     const resultadosFinais = resultadosMercadoLivre.length ? resultadosMercadoLivre : resultadoDaIdentificacaoIa(partNumber, identificacaoIa);
     return res.json({ partNumber, fonte: resultadosMercadoLivre.length ? 'Mercado Livre' : 'Gemini', total: resultadosFinais.length, resultados: resultadosFinais,
       identificacaoIa,
-      fontes: [{ nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'nenhum resultado' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
+      fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'nenhum resultado' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
   } catch (error) {
     try {
       const resultadosMercadoLivre = await consultarMercadoLivrePorPartNumber(consulta, partNumber);
@@ -526,7 +547,7 @@ app.get('/api/catalogo/part-number/:partNumber', async (req, res) => {
       const resultadosFinais = resultadosMercadoLivre.length ? resultadosMercadoLivre : resultadoDaIdentificacaoIa(partNumber, identificacaoIa);
       return res.json({ partNumber, fonte: resultadosMercadoLivre.length ? 'Mercado Livre' : 'Gemini', total: resultadosFinais.length, resultados: resultadosFinais,
         identificacaoIa,
-        fontes: [{ nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'indisponivel' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
+        fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'indisponivel' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
     } catch (mercadoLivreError) {
       const identificacaoIa = await identificarAplicacaoComGemini(partNumber, []);
       const resultadosIa = resultadoDaIdentificacaoIa(partNumber, identificacaoIa);

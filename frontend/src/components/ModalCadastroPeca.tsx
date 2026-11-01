@@ -1483,7 +1483,7 @@ export default function ModalCadastroPeca({
                     {consultandoOem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Consultar
                   </button>
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted">Consulta automática no catálogo OEM 7zap e preenche os dados encontrados nesta peça.</p>
+                <p className="mt-1.5 text-[11px] text-muted">Consulta automática no plan.parts, 7zap e Mercado Livre. Quando a chave do plan.parts estiver ativa, ele será priorizado para identificar o código OEM, marca e aplicação.</p>
                 {(referenciasOem.length > 0 || fontesOem.length > 0) && <div className="mt-2 rounded-xl border border-accent/20 bg-accentSoft p-3 text-xs">
                   <div className="flex items-center justify-between gap-2"><p className="font-semibold text-accent">Identificação automática</p><div className="flex flex-wrap justify-end gap-1">{fontesOem.map((fonte) => <span key={fonte.nome} className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${fonte.status === 'encontrado' ? 'border-success/40 text-success' : 'border-white/10 text-muted'}`}>{fonte.nome} · {fonte.status}</span>)}</div></div>
                   {!!referenciasOem.length && <div className="mt-2 space-y-2">{referenciasOem.slice(0, 8).map((referencia, indice) => <div key={`${referencia.numero || referencia.url}-${indice}`} className="rounded-lg border border-white/10 bg-black/10 p-2"><p className="font-semibold text-ink">{referencia.titulo}</p><p className="mt-0.5 text-muted">{referencia.numero || 'Código não informado'}{referencia.marca ? ` · ${referencia.marca}` : ''}{referencia.aplicacoes ? ` · ${referencia.aplicacoes}` : ''}</p></div>)}</div>}
