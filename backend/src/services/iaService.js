@@ -1,9 +1,10 @@
+
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MODELO_PADRAO = 'gemini-3.5-flash-lite';
-const MODELOS_RESERVA = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+const MODELO_PADRAO = 'gemini-2.5-flash';
+const MODELOS_RESERVA = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const TIMEOUT_MS = 15000;
 const TIMEOUT_RESERVA_MS = 10000;
 const TIMEOUT_FREELLMAPI_MS = 15000;
@@ -16,7 +17,7 @@ function chaveGemini() {
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_AI_KEY ||
       process.env.GOOGLE_API_KEY ||
-      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||a
       ''
   )
     .trim()
@@ -415,14 +416,14 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
     '- Leia o anúncio e a pergunta antes de escrever. A resposta precisa fazer sentido para o anúncio específico, citando a peça ou a aplicação quando ajudar.',
     '- Comece respondendo diretamente o que o comprador perguntou, sem repetir a pergunta.',
     '- Se ele citar carro, ano ou modelo, compare com a aplicação do anúncio e diga com clareza se serve, se não serve ou se falta informação. Use os anos da ficha/descrição para confirmar o ano citado.',
-    '- Quando o ano do comprador estiver dentro da aplicação, diga isso de forma direta ("o seu 2008 está na lista, então serve sim"). Quando não estiver, avise com educação e peça a versão/motorização antes de afirmar.',
+    '- Quando o ano do comprador estiver dentro da aplicação, diga isso de forma direta (por exemplo: "o seu [ano] está na lista, então serve sim"). Quando não estiver, avise com educação e peça a versão/motorização antes de afirmar.',
     '- Se não houver dado suficiente para confirmar, diga o que está confirmado no anúncio e peça só o que falta (ano, modelo e motorização).',
     '- Use de 2 a 4 frases curtas, em tom de conversa. Sem listas, sem markdown, sem emojis, sem assinatura.',
     '- Nunca invente prazos, descontos, estoque ou condições que não estejam na ficha.',
     '- Evite frases prontas como "Prezado cliente", "Informamos que" ou "Fico à disposição".',
     '',
     'Exemplo de resposta ruim: "Prezado cliente, informamos que a peça é compatível. Fico à disposição."',
-    'Exemplo de resposta boa: "Boa tarde! Pelo anúncio essa peça é do Onix 2012 a 2016, então serve sim no seu 2014. A garantia é de 90 dias e ela vai com nota fiscal. Precisa de mais alguma informação?"',
+    'Exemplo de resposta boa: "Boa tarde! Pelo anúncio, essa peça serve no veículo e nos anos informados na ficha, então pode seguir tranquilo. A garantia é a indicada no anúncio e ela vai com nota fiscal. Precisa de mais alguma informação?"',
     '',
     'Ficha da peça:',
     resumoPeca(peca),
@@ -478,11 +479,10 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
             generationConfig: {
               temperature: 0.7,
               maxOutputTokens: 320,
-              topP: 0.9,
+              topP: 0.9
             },
             safetySettings: [
               {
@@ -549,7 +549,7 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
 
   if (!chave) throw new Error('Gemini não configurado');
 
-  const modeloConfigurado = modeloGemini();
+  const modeloConfigurado = String(opcoes.modelo || modeloGemini()).trim();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice
@@ -571,10 +571,11 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
             generationConfig: {
               temperature: opcoes.temperature ?? 0.5,
               maxOutputTokens: opcoes.maxTokens ?? 600,
-              topP: 0.9,
+              topP: 0.9
             },
             safetySettings: [
               {
@@ -1114,8 +1115,6 @@ const PROMPT_PECA = [
   '- Para chamar algo de retrovisor, é obrigatório haver carcaça/espelho ou conjunto externo de retrovisão. Uma moldura, tampa, acabamento interno ou porta-objeto nunca deve receber esse nome.',
   '- Estas regras valem para qualquer fabricante: Chevrolet, Volkswagen, Fiat, Ford, Renault, Hyundai, Toyota, Honda, Nissan, Jeep, BMW, Mercedes-Benz, Audi, Volvo e demais marcas.',
   '- Não use "Universal" nem anos genéricos sem evidência visual ou código confirmado.',
-  '- Classifique primeiro o objeto visível pela forma e função. Uma peça de acabamento, console, difusor, moldura ou painel interno nunca pode virar retrovisor apenas porque uma busca encontrou esse termo.',
-  '- Não use "Universal" nem anos genéricos sem evidência visual ou código confirmado.',
   '- Quando não houver certeza, deixe o campo vazio (texto) ou 0 (números).',
   '- O título deve ter no máximo 60 caracteres e conter peça, lado/posição, veículo e ano quando visíveis.',
   '- Use apenas categorias da lista enviada no contexto.',
@@ -1173,9 +1172,6 @@ export async function analisarFotosPecaComIa({
     // contaminando a classificação visual. A pesquisa só é feita depois,
     // quando há um OEM legível para confirmar aplicação.
     googleSearch: false,
-    // A API agregadora está configurada com um modelo lite e estava gerando
-    // classificações visuais frágeis. Para a Nova peça, use diretamente o
-    // Gemini Flash com visão, deixando a pesquisa para a etapa seguinte.
     googleSearchOnly: true,
     temperature: 0.08,
     maxTokens: 2800,
@@ -1296,7 +1292,7 @@ const PROMPT_LOTE = [
   '- Não invente SKU. Se a etiqueta não estiver legível, use "DESCONHECIDO".',
   '- Agrupe pela peça, não pela ordem de envio.',
   '- Aponte em alertas quando a sequência estiver fora da ordem ou faltar a foto de SKU/medidas/peso.',
-  '- SKU interno e código OEM são campos diferentes. Nunca copie o SKU interno para numero_oem nem deduza aplicação pelo SKU.',
+  '- SKU interno e código OEM são campos diferentes. Nunca copie o SKU interno para numero_oem e nem deduza aplicação pelo SKU.',
   '- Só informe numero_oem quando estiver explicitamente legível na peça ou na etiqueta do fabricante. A última imagem pode ser uma foto de peso/medidas; não presuma que contenha OEM.',
   '- Não descarte fotos recebidas. Os nomes devem ser copiados exatamente, inclusive arquivos IMG_*.jpeg.'
 ].join('\n');
