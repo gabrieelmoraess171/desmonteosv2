@@ -286,7 +286,9 @@ function fallback(pergunta, peca) {
     }
   }
 
-  linhas.push('Qualquer coisa, é só chamar por aqui.');
+  if (!linhas.some((linha) => /pode me chamar por aqui/i.test(linha))) {
+    linhas.push('Qualquer coisa, é só chamar por aqui.');
+  }
   return limparTexto(linhas.join(' '), 700);
 }
 
