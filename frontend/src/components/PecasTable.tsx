@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -54,6 +54,7 @@ interface PecasTableProps {
   initialStatusFiltro?: StatusFiltro;
   initialSearch?: string;
   searchRequestId?: number;
+  variarAoAbrir?: boolean;
 }
 
 const STATUS_CONFIG: Record<
@@ -164,6 +165,7 @@ export default function PecasTable({
   initialStatusFiltro,
   initialSearch,
   searchRequestId,
+  variarAoAbrir = false,
 }: PecasTableProps) {
   const [pecas, setPecas] = useState<Peca[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,10 +180,11 @@ export default function PecasTable({
   const [pecaEmEdicao, setPecaEmEdicao] = useState<Peca | null>(null);
   const [pecaDetalheId, setPecaDetalheId] = useState<number | null>(null);
   const [pagina, setPagina] = useState(1);
+  const ordemAleatoria = useRef(new Map<number, number>());
 
   const fetchPecas = async () => {
     const params = new URLSearchParams({ resumo: '1' });
-    if (limit !== undefined) params.set('limite', String(limit));
+    if (limit !== undefined && !variarAoAbrir) params.set('limite', String(limit));
 
     for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
       try {
@@ -205,7 +208,7 @@ export default function PecasTable({
 
   useEffect(() => {
     fetchPecas();
-  }, [limit]);
+  }, [limit, variarAoAbrir]);
 
   useEffect(() => {
     if (initialSearch === undefined) return;
@@ -312,6 +315,20 @@ export default function PecasTable({
         return true;
       })
       .sort((a, b) => {
+        const quantidadeA = Math.max(0, Number(a.quantidade) || 0);
+        const quantidadeB = Math.max(0, Number(b.quantidade) || 0);
+
+        if (variarAoAbrir) {
+          // Na dashboard, cada abertura escolhe uma ordem diferente, mas os
+          // anúncios com estoque continuam antes dos anúncios zerados.
+          const disponivelA = quantidadeA > 0 ? 1 : 0;
+          const disponivelB = quantidadeB > 0 ? 1 : 0;
+          if (disponivelA !== disponivelB) return disponivelB - disponivelA;
+          if (!ordemAleatoria.current.has(a.id)) ordemAleatoria.current.set(a.id, Math.random());
+          if (!ordemAleatoria.current.has(b.id)) ordemAleatoria.current.set(b.id, Math.random());
+          return ordemAleatoria.current.get(a.id)! - ordemAleatoria.current.get(b.id)!;
+        }
+
         if (ordenacao === 'nome') {
           const porNome = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
           if (porNome !== 0) return porNome;
@@ -331,8 +348,6 @@ export default function PecasTable({
         const ativoA = Boolean(a.ml_ativo);
         const ativoB = Boolean(b.ml_ativo);
         if (ativoA !== ativoB) return ativoA ? -1 : 1;
-        const quantidadeA = Math.max(0, Number(a.quantidade) || 0);
-        const quantidadeB = Math.max(0, Number(b.quantidade) || 0);
         if (quantidadeA !== quantidadeB) return quantidadeB - quantidadeA;
         const vendidoA = anuncioVendido(a);
         const vendidoB = anuncioVendido(b);
@@ -340,7 +355,7 @@ export default function PecasTable({
         if (ordenacao === 'nome') return b.id - a.id;
         return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
       });
-  }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao]);
+  }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao, variarAoAbrir]);
 
   const exibidas = limit !== undefined ? filtradas.slice(0, limit) : filtradas;
   const completo = limit === undefined;
