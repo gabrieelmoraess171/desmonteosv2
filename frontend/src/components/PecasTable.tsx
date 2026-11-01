@@ -150,8 +150,8 @@ function origemAplicacao(peca: Peca): string {
 
 function anuncioVendido(peca: Peca): boolean {
   return (
-    String(peca.ml_status || '').toLowerCase() === 'closed' ||
-    (Number(peca.vendas_count || 0) > 0 && Number(peca.quantidade || 0) <= 0)
+    Number(peca.vendas_count || 0) > 0 &&
+    Number(peca.quantidade || 0) <= 0
   );
 }
 

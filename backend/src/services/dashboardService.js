@@ -826,20 +826,30 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
          COALESCE(SUM(CASE WHEN ml_ativo = 1 AND quantidade = 0 THEN 1 ELSE 0 END), 0) AS anuncios_esgotados,
          COALESCE(SUM(CASE WHEN ml_ativo = 0 THEN 1 ELSE 0 END), 0) AS fora_ml,
          COALESCE(SUM(CASE
-           WHEN ml_ativo = 1 AND (
-             quantidade <= 0
-             OR TRIM(COALESCE(descricao, '')) = ''
-             OR LENGTH(TRIM(COALESCE(descricao, ''))) < 40
-             OR TRIM(COALESCE(categoria, '')) = ''
-             OR TRIM(COALESCE(sku, '')) = ''
-             OR COALESCE(peso_kg, 0) <= 0
-             OR COALESCE(comprimento_cm, 0) <= 0
-             OR COALESCE(largura_cm, 0) <= 0
-             OR COALESCE(altura_cm, 0) <= 0
+           WHEN NOT EXISTS (
+             SELECT 1 FROM vendas v
+             WHERE v.peca_id = pecas.id
+               AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado', 'cancelled', 'canceled', 'refunded', 'reembolsada')
+           )
+           AND (
+             LOWER(COALESCE(ml_status, '')) IN ('cancelled', 'canceled', 'rejected', 'blocked', 'closed')
              OR (
-               TRIM(COALESCE(ml_thumbnail, '')) = ''
-               AND NOT EXISTS (
-                 SELECT 1 FROM peca_imagens pi WHERE pi.peca_id = pecas.id
+               ml_ativo = 1 AND (
+                 quantidade <= 0
+                 OR TRIM(COALESCE(descricao, '')) = ''
+                 OR LENGTH(TRIM(COALESCE(descricao, ''))) < 40
+                 OR TRIM(COALESCE(categoria, '')) = ''
+                 OR TRIM(COALESCE(sku, '')) = ''
+                 OR COALESCE(peso_kg, 0) <= 0
+                 OR COALESCE(comprimento_cm, 0) <= 0
+                 OR COALESCE(largura_cm, 0) <= 0
+                 OR COALESCE(altura_cm, 0) <= 0
+                 OR (
+                   TRIM(COALESCE(ml_thumbnail, '')) = ''
+                   AND NOT EXISTS (
+                     SELECT 1 FROM peca_imagens pi WHERE pi.peca_id = pecas.id
+                   )
+                 )
                )
              )
            ) THEN 1

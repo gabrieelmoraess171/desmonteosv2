@@ -124,6 +124,49 @@ function validarPayloadPeca(payload) {
   return null;
 }
 
+function motivoCancelamentoMl(peca) {
+  let dados = peca.ml_dados;
+  if (typeof dados === 'string') {
+    try {
+      dados = JSON.parse(dados);
+    } catch {
+      dados = null;
+    }
+  }
+
+  const valores = [];
+  const coletar = (valor) => {
+    if (Array.isArray(valor)) return valor.forEach(coletar);
+    if (valor && typeof valor === 'object') {
+      ['code', 'description', 'message', 'reason', 'type', 'status'].forEach((chave) => coletar(valor[chave]));
+      return;
+    }
+    const textoMotivo = texto(valor, 160);
+    if (textoMotivo) valores.push(textoMotivo);
+  };
+
+  coletar(dados?.status_detail);
+  coletar(dados?.status_details);
+  coletar(dados?.sub_status);
+  coletar(dados?.substatus);
+  coletar(dados?.moderation_status);
+  coletar(dados?.moderation_reason);
+
+  const motivo = valores.find((valor) =>
+    /categoria|category|atribut|attribute|imagem|picture|foto|image|titulo|title|descricao|description|document|polic|bloque|reprov|rejeit|cancel/i.test(valor)
+  );
+  if (!motivo) return 'Motivo não informado pelo Mercado Livre; abrir o anúncio no painel do ML para consultar o detalhe.';
+
+  const normalizado = motivo.toLowerCase();
+  if (/categoria|category/.test(normalizado)) return 'Categoria incorreta informada pelo Mercado Livre';
+  if (/imagem|picture|foto|image/.test(normalizado)) return 'Imagens não aceitas pelo Mercado Livre';
+  if (/titulo|title/.test(normalizado)) return 'Título fora das regras do Mercado Livre';
+  if (/descricao|description/.test(normalizado)) return 'Descrição fora das regras do Mercado Livre';
+  if (/atribut|attribute/.test(normalizado)) return 'Atributos obrigatórios ou incorretos no Mercado Livre';
+  if (/bloque|reprov|rejeit|polic/.test(normalizado)) return 'Anúncio bloqueado por política do Mercado Livre';
+  return `Motivo informado pelo Mercado Livre: ${motivo}`;
+}
+
 function avaliarAnuncio(peca) {
   const motivos = [];
   const statusMl = String(peca.ml_status || '').toLowerCase();
@@ -135,7 +178,9 @@ function avaliarAnuncio(peca) {
     return { status: 'inativo', motivos: [] };
   }
 
-  if (canceladoMl || statusMl === 'closed') motivos.push('Anúncio cancelado pelo Mercado Livre');
+  if (canceladoMl || statusMl === 'closed') {
+    motivos.push(`Anúncio cancelado pelo Mercado Livre: ${motivoCancelamentoMl(peca)}`);
+  }
   // Na listagem resumida a descrição completa não é enviada; nesse caso o
   // tamanho vem calculado do banco em descricao_len.
   const tamanhoDescricao =
@@ -216,6 +261,7 @@ app.get('/api/pecas', async (req, res) => {
          p.quantidade, p.preco, p.ml_ativo,
          p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
+         p.ml_dados,
          (
            SELECT COUNT(*)
            FROM vendas v
