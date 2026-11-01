@@ -1,7 +1,7 @@
 import express from 'express';
 import { getDb } from '../database.js';
 import { gerarSugestaoResposta } from '../services/iaService.js';
-import { responderPerguntaMl, obterMensagensReclamacao, obterDetalheReclamacao, obterResolucoesEsperadasReclamacao, obterPedidoMl, obterEnvioMl, enviarMensagemReclamacao } from '../services/mercadoLivreService.js';
+import { responderPerguntaMl, obterMensagensReclamacao, obterDetalheReclamacao, obterResolucoesEsperadasReclamacao, obterPedidoMl, obterEnvioMl, enviarMensagemReclamacao, sincronizarPerguntas } from '../services/mercadoLivreService.js';
 
 const router = express.Router();
 
@@ -127,18 +127,31 @@ router.get('/perguntas/historico', async (req, res) => {
       return res.status(400).json({ error: 'Informe o anúncio para consultar o histórico.' });
     }
 
+    // A sincronização leve só busca perguntas pendentes. Para o histórico,
+    // atualize também as perguntas antigas que já receberam resposta.
+    try {
+      await sincronizarPerguntas();
+    } catch {
+      // Mantém o histórico local disponível se o Mercado Livre estiver fora.
+    }
+
     const db = getDb();
-    const usarComprador = mlBuyerId && Number.isInteger(pecaId) && pecaId > 0;
+    const temPeca = Number.isInteger(pecaId) && pecaId > 0;
+    const parametros = mlBuyerId
+      ? [mlBuyerId, temPeca ? pecaId : null, mlItemId || null]
+      : [temPeca ? pecaId : null, mlItemId || null];
     const historico = await db.all(
       `SELECT q.id, q.pergunta, q.resposta, q.respondida, q.ml_question_id,
               q.ml_item_id, q.ml_buyer_id, datetime(q.data_pergunta, 'localtime') AS data_pergunta,
               datetime(q.data_resposta, 'localtime') AS data_resposta
          FROM perguntas_ml q
         WHERE q.respondida = 1
-          AND (${usarComprador ? 'q.peca_id = ? AND q.ml_buyer_id = ?' : Number.isInteger(pecaId) && pecaId > 0 ? 'q.peca_id = ?' : 'q.ml_item_id = ?'})
+          AND ${mlBuyerId
+            ? '(q.ml_buyer_id = ? AND (q.peca_id = ? OR q.ml_item_id = ?))'
+            : '(q.peca_id = ? OR q.ml_item_id = ?)'}
         ORDER BY q.data_pergunta DESC, q.id DESC
         LIMIT 20`,
-      usarComprador ? [pecaId, mlBuyerId] : [Number.isInteger(pecaId) && pecaId > 0 ? pecaId : mlItemId]
+      parametros
     );
 
     res.json({ historico });

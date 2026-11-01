@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  ExternalLink,
   Image as ImageIcon,
   Loader2,
   MessageSquare,
@@ -36,6 +37,7 @@ interface Pergunta {
   peca_carro?: string | null;
   peca_imagem?: string | null;
   peca_preco?: number | null;
+  peca_ml_permalink?: string | null;
   peca_descricao?: string | null;
   peca_garantia?: string | null;
 }
@@ -96,6 +98,12 @@ function formatarMoeda(valor?: number | null): string {
     style: 'currency',
     currency: 'BRL',
   }).format(Number(valor) || 0);
+}
+
+function urlAnuncio(permalink?: string | null, itemId?: string | null): string | null {
+  if (permalink) return permalink;
+  if (!itemId) return null;
+  return `https://www.mercadolivre.com.br/p/${encodeURIComponent(itemId)}`;
 }
 
 type FocoAtendimento = 'perguntas' | 'reclamacoes';
@@ -329,6 +337,15 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
     }
   };
 
+  const abrirAnuncio = (pergunta: Pergunta) => {
+    const url = urlAnuncio(pergunta.peca_ml_permalink, pergunta.ml_item_id);
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (pergunta.peca_id) setPecaAberta(pergunta.peca_id);
+  };
+
   const handleResolvida = (id: number) => {
     setDados((atual) => ({
       ...atual,
@@ -443,11 +460,9 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                       <div className="flex items-start gap-3">
                         <button
                           type="button"
-                          onClick={() =>
-                            pergunta.peca_id && setPecaAberta(pergunta.peca_id)
-                          }
-                          disabled={!pergunta.peca_id}
-                          title="Ver informações do anúncio"
+                          onClick={() => abrirAnuncio(pergunta)}
+                          disabled={!pergunta.peca_id && !pergunta.ml_item_id}
+                          title={urlAnuncio(pergunta.peca_ml_permalink, pergunta.ml_item_id) ? 'Abrir anúncio no Mercado Livre' : 'Ver informações do anúncio'}
                           className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary transition-all hover:border-accent/50 hover:shadow-lg disabled:cursor-default"
                         >
                           {pergunta.peca_imagem ? (
@@ -464,7 +479,7 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                           )}
                           {pergunta.peca_id ? (
                             <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 py-0.5 text-center text-[9px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
-                              Ver anúncio
+                              <><ExternalLink className="mr-1 inline h-2.5 w-2.5" />Abrir no Mercado Livre</>
                             </span>
                           ) : null}
                         </button>
@@ -489,7 +504,7 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                           {pergunta.ml_question_id && (
                             <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-ml/25 bg-ml/10 px-2 py-0.5 text-[10px] font-semibold text-ml">
                               <Store className="h-3 w-3" />
-                              Pergunta real do Mercado Livre
+                              Mercado Livre
                             </span>
                           )}
                         </div>

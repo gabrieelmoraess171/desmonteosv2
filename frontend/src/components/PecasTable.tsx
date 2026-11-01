@@ -309,6 +309,9 @@ export default function PecasTable({
         return true;
       })
       .sort((a, b) => {
+        const vendidoA = anuncioVendido(a);
+        const vendidoB = anuncioVendido(b);
+        if (vendidoA !== vendidoB) return vendidoA ? 1 : -1;
         if (ordenacao !== 'nome') {
           const da = dataPublicacao(a), db = dataPublicacao(b);
           if (da !== null && db !== null) {

@@ -253,6 +253,13 @@ function badgeAnuncio(peca: Peca) {
     };
   }
 
+  if (peca.ml_status === 'closed') {
+    return {
+      label: 'Vendido',
+      className: 'border-warning/25 bg-warningSoft text-warning',
+    };
+  }
+
   return {
     label: peca.ml_status || 'Vinculado',
     className: 'border-accent/20 bg-accentSoft text-accent',

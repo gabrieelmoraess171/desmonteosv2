@@ -356,7 +356,7 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
   const perguntaLimpa = limparTexto(pergunta, 600);
   const sugestaoFallback = fallback(perguntaLimpa, peca);
   const chave = chaveGemini();
-  const modeloConfigurado = String(opcoes.modelo || modeloGemini()).trim();
+  const modeloConfigurado = modeloGemini();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice

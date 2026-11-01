@@ -61,6 +61,14 @@ function textoTipo(valor?: string): string {
   return 'Clássico';
 }
 
+function textoStatus(valor?: string | null): string {
+  const status = String(valor || '').toLowerCase();
+  if (status === 'active') return 'Ativo';
+  if (status === 'paused') return 'Pausado';
+  if (status === 'closed') return 'Vendido';
+  return valor || '—';
+}
+
 function valorAtributo(atributo: MercadoLivreAtributo): string {
   return String(atributo.value_name || atributo.value_id || '').trim();
 }
@@ -169,7 +177,7 @@ export default function MercadoLivreDetalhes({
       <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
         {[
           ['ID do anúncio', dados.id],
-          ['Status', dados.status],
+          ['Status', textoStatus(dados.status)],
           ['Preço ML', dados.price ? `R$ ${Number(dados.price).toFixed(2).replace('.', ',')}` : '—'],
           ['Preço original', dados.original_price ? `R$ ${Number(dados.original_price).toFixed(2).replace('.', ',')}` : '—'],
           ['Disponível', dados.available_quantity],
