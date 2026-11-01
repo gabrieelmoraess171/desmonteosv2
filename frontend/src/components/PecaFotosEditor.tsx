@@ -9,6 +9,8 @@ import {
 import axios from 'axios';
 import {
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   Image as ImageIcon,
   ImagePlus,
   Loader2,
@@ -255,6 +257,14 @@ export default function PecaFotosEditor({
     if (imagemArrastada !== null) void moverImagem(imagemArrastada, destinoId);
   };
 
+  const moverComBotao = (imagemId: number, direcao: -1 | 1) => {
+    const locais = imagens.filter((imagem) => imagem.origem !== 'mercado_livre');
+    const indice = locais.findIndex((imagem) => imagem.id === imagemId);
+    const destino = indice + direcao;
+    if (indice < 0 || destino < 0 || destino >= locais.length) return;
+    void moverImagem(imagemId, locais[destino].id);
+  };
+
   const limiteAtingido =
     imagens.filter((imagem) => imagem.origem !== 'mercado_livre').length >=
     MAX_FOTOS;
@@ -356,6 +366,30 @@ export default function PecaFotosEditor({
                   </span>
                 )}
                 <span className="flex gap-1">
+                {imagem.origem !== 'mercado_livre' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => moverComBotao(imagem.id, -1)}
+                      disabled={uploading || sincronizando}
+                      title="Mover foto para a esquerda"
+                      aria-label="Mover foto para a esquerda"
+                      className="rounded-full bg-card/90 p-1.5 text-ink hover:bg-card disabled:opacity-50"
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moverComBotao(imagem.id, 1)}
+                      disabled={uploading || sincronizando}
+                      title="Mover foto para a direita"
+                      aria-label="Mover foto para a direita"
+                      className="rounded-full bg-card/90 p-1.5 text-ink hover:bg-card disabled:opacity-50"
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  </>
+                )}
                 {imagem.origem !== 'mercado_livre' && imagem.is_principal !== 1 && (
                   <button
                     type="button"

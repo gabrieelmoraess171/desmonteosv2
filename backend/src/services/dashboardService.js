@@ -739,7 +739,7 @@ export async function obterRankingTiposPeca(db, params = {}) {
       vendidos: item.vendidos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
     }))
     .sort((a, b) => b.unidades - a.unidades || b.vendas - a.vendas || b.faturamento - a.faturamento)
-    .slice(0, 6);
+    .slice(0, 10);
 
   return topTiposPeca;
 }

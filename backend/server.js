@@ -118,11 +118,17 @@ function validarPayloadPeca(payload) {
 }
 
 function avaliarAnuncio(peca) {
-  if (!peca.ml_ativo) {
+  const motivos = [];
+  const statusMl = String(peca.ml_status || '').toLowerCase();
+  const vendido = statusMl === 'closed' && Number(peca.vendas_count) > 0;
+  const canceladoMl = ['cancelled', 'canceled', 'rejected', 'blocked'].includes(statusMl);
+
+  if (vendido) return { status: 'inativo', motivos: [] };
+  if (!peca.ml_ativo && !canceladoMl && statusMl !== 'closed') {
     return { status: 'inativo', motivos: [] };
   }
 
-  const motivos = [];
+  if (canceladoMl || statusMl === 'closed') motivos.push('Anúncio cancelado pelo Mercado Livre');
   // Na listagem resumida a descrição completa não é enviada; nesse caso o
   // tamanho vem calculado do banco em descricao_len.
   const tamanhoDescricao =
@@ -187,6 +193,16 @@ app.get('/api/pecas', async (req, res) => {
     const resumo = req.query.resumo === '1';
     const limiteBruto = Number(req.query.limite) || 0;
     const limite = Math.min(Math.max(Math.trunc(limiteBruto), 0), 500);
+    const termosBusca = texto(req.query.busca || '', 120)
+      .toLowerCase()
+      .split(/\s+/)
+      .map((termo) => termo.replace(/[%_]/g, ''))
+      .filter(Boolean);
+    const camposBusca = ['p.nome', 'p.sku', 'p.carro', 'p.categoria', 'p.marca', 'p.modelo', 'p.ano', 'p.numero_oem', 'p.ml_titulo', 'p.ml_item_id'];
+    const buscaSql = termosBusca.length
+      ? `WHERE ${termosBusca.map(() => `(${camposBusca.map((campo) => `LOWER(COALESCE(${campo}, '')) LIKE ?`).join(' OR ')})`).join(' AND ')}`
+      : '';
+    const buscaParams = termosBusca.flatMap((termo) => camposBusca.map(() => `%${termo}%`));
     const campos = resumo
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
          p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia, p.ml_publicado_em, p.aplicacao_origem, p.categoria_origem,
@@ -235,9 +251,10 @@ app.get('/api/pecas', async (req, res) => {
           )
         ) AS imagem_principal
       FROM pecas p
+      ${buscaSql}
       ORDER BY (p.ml_publicado_em IS NULL) ASC, p.ml_publicado_em DESC, p.id DESC
       ${limite > 0 ? `LIMIT ${limite}` : ''}
-    `);
+    `, buscaParams);
 
     res.json(pecas.map((peca) => comStatusAnuncio(comMetadadosPeca(peca))));
   } catch (error) {

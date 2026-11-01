@@ -413,13 +413,23 @@ export default function EditorAnunciosPage({
   const pecasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    if (!termo) return pecas;
+    const filtradas = !termo
+      ? [...pecas]
+      : pecas.filter((peca) =>
+          [peca.nome, peca.sku, peca.ml_titulo, peca.ml_item_id]
+            .filter(Boolean)
+            .some((valor) => String(valor).toLowerCase().includes(termo))
+        );
 
-    return pecas.filter((peca) =>
-      [peca.nome, peca.sku, peca.ml_titulo, peca.ml_item_id]
-        .filter(Boolean)
-        .some((valor) => String(valor).toLowerCase().includes(termo))
-    );
+    return filtradas.sort((a, b) => {
+      const ativoA = a.ml_ativo && a.ml_status !== 'closed' ? 1 : 0;
+      const ativoB = b.ml_ativo && b.ml_status !== 'closed' ? 1 : 0;
+      if (ativoA !== ativoB) return ativoB - ativoA;
+      const vendidoA = a.ml_status === 'closed' || Number(a.quantidade) <= 0 ? 1 : 0;
+      const vendidoB = b.ml_status === 'closed' || Number(b.quantidade) <= 0 ? 1 : 0;
+      if (vendidoA !== vendidoB) return vendidoA - vendidoB;
+      return b.id - a.id;
+    });
   }, [busca, pecas]);
 
   const pecaSelecionada = useMemo(

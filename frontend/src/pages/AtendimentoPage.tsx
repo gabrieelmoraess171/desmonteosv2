@@ -4,7 +4,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
-  ExternalLink,
+  Clock3,
   Image as ImageIcon,
   Loader2,
   MessageSquare,
@@ -104,6 +104,25 @@ function urlAnuncio(permalink?: string | null, itemId?: string | null): string |
   if (permalink) return permalink;
   if (!itemId) return null;
   return `https://www.mercadolivre.com.br/p/${encodeURIComponent(itemId)}`;
+}
+
+function alertaTempoPergunta(dataPergunta: string): {
+  label: string;
+  className: string;
+} {
+  const inicio = new Date(String(dataPergunta || '').replace(' ', 'T')).getTime();
+  const horas = Number.isFinite(inicio) ? Math.max(0, (Date.now() - inicio) / 3_600_000) : 0;
+
+  if (horas >= 8) {
+    return { label: `${Math.floor(horas)}h sem resposta`, className: 'border-danger/30 bg-dangerSoft text-danger' };
+  }
+  if (horas >= 4) {
+    return { label: `${Math.floor(horas)}h sem resposta`, className: 'border-warning/30 bg-warningSoft text-warning' };
+  }
+  if (horas >= 1) {
+    return { label: `${Math.floor(horas)}h sem resposta`, className: 'border-warning/20 bg-warningSoft/60 text-warning' };
+  }
+  return { label: 'Nova pergunta', className: 'border-success/20 bg-successSoft text-success' };
 }
 
 type FocoAtendimento = 'perguntas' | 'reclamacoes';
@@ -346,6 +365,10 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
     if (pergunta.peca_id) setPecaAberta(pergunta.peca_id);
   };
 
+  const abrirProduto = (pergunta: Pergunta) => {
+    if (pergunta.peca_id) setPecaAberta(pergunta.peca_id);
+  };
+
   const handleResolvida = (id: number) => {
     setDados((atual) => ({
       ...atual,
@@ -451,6 +474,7 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                 {dados.perguntas.map((pergunta) => {
                   const sugestao = pergunta.sugestao_ia || '';
                   const fonte = fontes[pergunta.id];
+                  const alertaTempo = alertaTempoPergunta(pergunta.data_pergunta);
 
                   return (
                     <li
@@ -460,9 +484,9 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                       <div className="flex items-start gap-3">
                         <button
                           type="button"
-                          onClick={() => abrirAnuncio(pergunta)}
+                          onClick={() => abrirProduto(pergunta)}
                           disabled={!pergunta.peca_id && !pergunta.ml_item_id}
-                          title={urlAnuncio(pergunta.peca_ml_permalink, pergunta.ml_item_id) ? 'Abrir anúncio no Mercado Livre' : 'Ver informações do anúncio'}
+                          title="Abrir produto no nosso site"
                           className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary transition-all hover:border-accent/50 hover:shadow-lg disabled:cursor-default"
                         >
                           {pergunta.peca_imagem ? (
@@ -479,7 +503,7 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                           )}
                           {pergunta.peca_id ? (
                             <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 py-0.5 text-center text-[9px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
-                              <><ExternalLink className="mr-1 inline h-2.5 w-2.5" />Abrir no Mercado Livre</>
+                              Abrir produto
                             </span>
                           ) : null}
                         </button>
@@ -488,14 +512,20 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                           <p className="text-sm font-medium leading-relaxed">
                             “{pergunta.pergunta}”
                           </p>
-                          <p className="mt-1 text-[11px] text-muted">
+                          <button
+                            type="button"
+                            onClick={() => abrirAnuncio(pergunta)}
+                            disabled={!urlAnuncio(pergunta.peca_ml_permalink, pergunta.ml_item_id)}
+                            className="mt-1 block max-w-full truncate text-left text-[11px] text-muted underline decoration-transparent underline-offset-2 transition hover:text-ml hover:decoration-ml disabled:no-underline"
+                            title="Abrir anúncio no Mercado Livre"
+                          >
                             {pergunta.peca_nome || 'Peça não vinculada'}
                             {pergunta.peca_sku ? ` • ${pergunta.peca_sku}` : ''}
                             {pergunta.peca_carro
                               ? ` • ${pergunta.peca_carro}`
                               : ''}{' '}
                             • {formatarData(pergunta.data_pergunta)}
-                          </p>
+                          </button>
                           {pergunta.peca_preco ? (
                             <p className="mt-1 text-[11px] font-semibold text-success">
                               {formatarMoeda(pergunta.peca_preco)}
@@ -507,6 +537,10 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                               Mercado Livre
                             </span>
                           )}
+                          <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${alertaTempo.className}`}>
+                            <Clock3 className="h-3 w-3" />
+                            {alertaTempo.label}
+                          </span>
                         </div>
                       </div>
 

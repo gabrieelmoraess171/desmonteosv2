@@ -54,6 +54,14 @@ router.get('/analise', async (req, res) => {
             END), 0) AS descricao_curta,
             COALESCE(SUM(quantidade * preco), 0) AS valor
           FROM pecas
+          WHERE NOT (
+            quantidade <= 0
+            AND EXISTS (
+              SELECT 1 FROM vendas v
+              WHERE v.peca_id = pecas.id
+                AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado', 'cancelled', 'canceled', 'refunded', 'reembolsada')
+            )
+          )
         `),
         db.all(`
           SELECT

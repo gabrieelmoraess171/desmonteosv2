@@ -79,6 +79,15 @@ interface DashboardStats {
   reclamacoesHoje: number;
 }
 
+interface SugestaoBusca {
+  id: number;
+  nome: string;
+  sku?: string | null;
+  carro?: string | null;
+  imagem_principal?: string | null;
+  ml_item_id?: string | null;
+}
+
 const initialStats: DashboardStats = {
   totalPecas: 0,
   totalVendas: 0,
@@ -295,6 +304,8 @@ function App() {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [sugestoesBusca, setSugestoesBusca] = useState<SugestaoBusca[]>([]);
+  const [buscaAberta, setBuscaAberta] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
   const [stockSearchRevision, setStockSearchRevision] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -723,6 +734,44 @@ function App() {
     setStockSearchRevision((value) => value + 1);
     setStatusInicialEstoque(null);
     handleNavigate('lotes');
+    setBuscaAberta(false);
+  };
+
+  useEffect(() => {
+    const termo = globalSearch.trim();
+    if (termo.length < 2) {
+      setSugestoesBusca([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void axios
+        .get<SugestaoBusca[]>('/api/pecas', {
+          params: { resumo: '1', limite: 4, busca: termo },
+          signal: controller.signal,
+          timeout: 8000,
+        })
+        .then(({ data }) => setSugestoesBusca(Array.isArray(data) ? data.slice(0, 4) : []))
+        .catch(() => {
+          if (!controller.signal.aborted) setSugestoesBusca([]);
+        });
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [globalSearch]);
+
+  const escolherSugestaoBusca = (sugestao: SugestaoBusca) => {
+    const termo = sugestao.sku || sugestao.nome;
+    setGlobalSearch(termo);
+    setStockSearch(termo);
+    setStockSearchRevision((value) => value + 1);
+    setStatusInicialEstoque(null);
+    setBuscaAberta(false);
+    handleNavigate('lotes');
   };
 
   return (
@@ -797,14 +846,20 @@ function App() {
               </div>
 
               <div className="app-header-actions flex flex-wrap items-center justify-end gap-2">
+                <div className="relative">
                 <form
+                  id="busca-global"
                   className="global-search flex"
                   onSubmit={handleGlobalSearch}
                   role="search"
                 >
                   <input
                     value={globalSearch}
-                    onChange={(event) => setGlobalSearch(event.target.value)}
+                    onFocus={() => setBuscaAberta(true)}
+                    onChange={(event) => {
+                      setGlobalSearch(event.target.value);
+                      setBuscaAberta(true);
+                    }}
                     placeholder="Pesquisar peças: SKU, nome, OEM..."
                     aria-label="Pesquisar peças por SKU, nome, OEM ou aplicação"
                   />
@@ -812,6 +867,32 @@ function App() {
                     <Search className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </form>
+                {buscaAberta && globalSearch.trim().length >= 2 && (
+                  <div className="absolute right-0 top-full z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-card p-2 shadow-2xl">
+                    {sugestoesBusca.length > 0 ? sugestoesBusca.map((sugestao) => (
+                      <button
+                        key={sugestao.id}
+                        type="button"
+                        onClick={() => escolherSugestaoBusca(sugestao)}
+                        className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-white/[0.06]"
+                      >
+                        <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-secondary">
+                          {sugestao.imagem_principal ? <img src={sugestao.imagem_principal} alt="" className="h-full w-full object-cover" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-semibold text-ink">{sugestao.nome}</span>
+                          <span className="block truncate text-[10px] text-muted">{sugestao.sku || 'Sem SKU'}{sugestao.carro ? ` • ${sugestao.carro}` : ''}</span>
+                        </span>
+                      </button>
+                    )) : (
+                      <p className="px-3 py-4 text-xs text-muted">Nenhuma peça encontrada.</p>
+                    )}
+                    <button type="submit" form="busca-global" className="mt-1 w-full border-t border-line px-3 pt-2 text-center text-xs font-semibold text-accent hover:text-cyan">
+                      Ver todos os resultados
+                    </button>
+                  </div>
+                )}
+                </div>
                 <NotificacoesBell
                   itens={notificacoes}
                   naoLidas={naoLidas}

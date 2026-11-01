@@ -111,13 +111,6 @@ function formatarMoeda(valor: number): string {
   }).format(Number(valor) || 0);
 }
 
-function formatarTipoAnuncio(valor?: string | null): string {
-  const tipo = String(valor || '').trim().toLowerCase();
-  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'Premium';
-  if (['free', 'gratis', 'grátis'].includes(tipo)) return 'Grátis';
-  return 'Clássico';
-}
-
 function urlAnuncio(peca: Peca): string | null {
   if (!peca.ml_item_id) return null;
   return (
@@ -679,7 +672,7 @@ export default function PecasTable({
                         </span>
                         {peca.ml_item_id && (
                           <span className="inline-flex rounded-md border border-accent/20 bg-accentSoft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                            ML {formatarTipoAnuncio(peca.tipo_anuncio)}
+                            MercadoLivre
                           </span>
                         )}
                       </div>
@@ -706,7 +699,7 @@ export default function PecasTable({
                             peca.quantidade > 0 ? 'bg-success' : 'bg-danger'
                           }`}
                         />
-                        {peca.quantidade} un.
+                        {peca.quantidade > 0 ? `${peca.quantidade} un.` : vendido ? '0 un. • Vendida' : '0 un. • Sem estoque'}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3.5 font-semibold">
@@ -899,7 +892,7 @@ export default function PecasTable({
                         </span>
                         {peca.ml_item_id && (
                           <span className="rounded-md border border-accent/20 bg-accentSoft px-1.5 py-0.5 font-semibold text-accent">
-                            ML {formatarTipoAnuncio(peca.tipo_anuncio)}
+                            MercadoLivre
                           </span>
                         )}
                       </div>
@@ -925,7 +918,7 @@ export default function PecasTable({
                           peca.quantidade > 0 ? 'text-success' : 'text-danger'
                         }`}
                       >
-                        {peca.quantidade} un.
+                        {peca.quantidade > 0 ? `${peca.quantidade} un.` : vendido ? '0 un. • Vendida' : '0 un. • Sem estoque'}
                       </p>
                     </div>
                     <div>

@@ -29,6 +29,14 @@ export const CATEGORIAS_PECA = [
   'Ar-condicionado e Climatização',
   'Carroceria e Estrutura',
   'Acessórios e Equipamentos',
+  'Áudio, Multimídia e Navegação',
+  'Airbags e Segurança',
+  'Instrumentos e Painéis',
+  'Injeção e Alimentação',
+  'Ignição e Partida',
+  'Módulos e Computadores',
+  'Higiene e Conveniência',
+  'Peças de Motocicletas',
   'Outros',
 ] as const;
 
@@ -74,6 +82,22 @@ export const CATEGORIA_ML: Record<string, string> = {
     'Autopeças > Peças de Carros e Caminhonetes > Carroceria e Estrutura',
   'Acessórios e Equipamentos':
     'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Áudio, Multimídia e Navegação':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Airbags e Segurança':
+    'Autopeças > Peças de Carros e Caminhonetes > Segurança',
+  'Instrumentos e Painéis':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Injeção e Alimentação':
+    'Autopeças > Peças de Carros e Caminhonetes > Motor e Componentes',
+  'Ignição e Partida':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Módulos e Computadores':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Higiene e Conveniência':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Peças de Motocicletas':
+    'Autopeças > Peças de Motos > Outros',
   Outros: 'Autopeças > Peças de Carros e Caminhonetes > Outros',
 };
 
