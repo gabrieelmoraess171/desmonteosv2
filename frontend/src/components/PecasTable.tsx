@@ -348,6 +348,11 @@ export default function PecasTable({
             return -1;
           } else if (db !== null) {
             return 1;
+          } else {
+            // Anúncios recém-importados podem ainda aguardar a sincronização
+            // da data oficial do ML. O ID é crescente e funciona como um
+            // fallback seguro para não esconder os anúncios novos no fim.
+            if (a.id !== b.id) return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
           }
         }
 
