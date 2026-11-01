@@ -1069,6 +1069,7 @@ function App() {
                   <DeferredSection>
                   <PecasTable
                     limit={5}
+                    variarAoAbrir
                     onChange={handlePecasChanged}
                     onViewAll={() => handleNavigate('lotes')}
                   />
