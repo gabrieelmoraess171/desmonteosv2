@@ -1,7 +1,7 @@
 import express from 'express';
 import { getDb } from '../database.js';
 import { gerarSugestaoResposta } from '../services/iaService.js';
-import { responderPerguntaMl, obterMensagensReclamacao, obterDetalheReclamacao, obterResolucoesEsperadasReclamacao, obterPedidoMl, obterEnvioMl, enviarMensagemReclamacao, sincronizarPerguntas } from '../services/mercadoLivreService.js';
+import { responderPerguntaMl, obterMensagensReclamacao, obterDetalheReclamacao, obterResolucoesEsperadasReclamacao, obterPedidoMl, obterEnvioMl, enviarMensagemReclamacao } from '../services/mercadoLivreService.js';
 
 const router = express.Router();
 
@@ -125,14 +125,6 @@ router.get('/perguntas/historico', async (req, res) => {
     const mlBuyerId = String(req.query.ml_buyer_id || '').trim();
     if ((!Number.isInteger(pecaId) || pecaId <= 0) && !mlItemId) {
       return res.status(400).json({ error: 'Informe o anúncio para consultar o histórico.' });
-    }
-
-    // Atualiza as perguntas pendentes sem bloquear o atendimento com uma
-    // varredura completa do histórico remoto a cada clique.
-    try {
-      await sincronizarPerguntas({ apenasPendentes: true });
-    } catch {
-      // Mantém o histórico local disponível se o Mercado Livre estiver fora.
     }
 
     const db = getDb();
