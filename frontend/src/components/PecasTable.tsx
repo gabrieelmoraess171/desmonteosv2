@@ -179,17 +179,26 @@ export default function PecasTable({
   const [pagina, setPagina] = useState(1);
 
   const fetchPecas = async () => {
-    try {
-      const params = new URLSearchParams({ resumo: '1' });
-      if (limit !== undefined) params.set('limite', String(limit));
-      const response = await axios.get<Peca[]>(
-        `/api/pecas?${params.toString()}`
-      );
-      setPecas(response.data);
-    } catch (error) {
-      console.error('Erro ao buscar peças:', error);
-    } finally {
-      setLoading(false);
+    const params = new URLSearchParams({ resumo: '1' });
+    if (limit !== undefined) params.set('limite', String(limit));
+
+    for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
+      try {
+        const response = await axios.get<Peca[]>(
+          `/api/pecas?${params.toString()}`,
+          { timeout: 25000 }
+        );
+        setPecas(response.data);
+        setLoading(false);
+        return;
+      } catch (error) {
+        if (tentativa === 3) {
+          console.error('Erro ao buscar peças:', error);
+          setLoading(false);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, tentativa * 1500));
+      }
     }
   };
 
