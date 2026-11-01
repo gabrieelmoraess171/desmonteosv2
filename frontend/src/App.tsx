@@ -1069,7 +1069,6 @@ function App() {
                   <DeferredSection>
                   <PecasTable
                     limit={5}
-                    somenteDisponiveis
                     onChange={handlePecasChanged}
                     onViewAll={() => handleNavigate('lotes')}
                   />
@@ -1082,7 +1081,6 @@ function App() {
 
             {activeView === 'lotes' && (
               <PecasTable
-                somenteDisponiveis
                 onChange={handlePecasChanged}
                 initialStatusFiltro={statusInicialEstoque || undefined}
                 initialSearch={stockSearch}
