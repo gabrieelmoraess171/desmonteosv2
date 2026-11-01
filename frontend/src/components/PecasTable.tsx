@@ -54,6 +54,7 @@ interface PecasTableProps {
   initialStatusFiltro?: StatusFiltro;
   initialSearch?: string;
   searchRequestId?: number;
+  somenteDisponiveis?: boolean;
 }
 
 const STATUS_CONFIG: Record<
@@ -164,6 +165,7 @@ export default function PecasTable({
   initialStatusFiltro,
   initialSearch,
   searchRequestId,
+  somenteDisponiveis = false,
 }: PecasTableProps) {
   const [pecas, setPecas] = useState<Peca[]>([]);
   const [loading, setLoading] = useState(true);
@@ -286,6 +288,12 @@ export default function PecasTable({
 
     return pecas
       .filter((peca) => {
+      // As listas principais do estoque e da dashboard começam pelos anúncios
+      // que realmente têm unidade disponível. O filtro explícito "Sem estoque"
+      // continua permitindo consultar os itens zerados.
+      if (somenteDisponiveis && statusFiltro !== 'sem-estoque' && Number(peca.quantidade) <= 0) {
+        return false;
+      }
       const textoBusca = normalizarBusca(
         [peca.nome, peca.sku, peca.carro, peca.aplicacao, peca.categoria, peca.marca, peca.modelo, peca.ano, peca.numero_oem, peca.ml_titulo, peca.ml_item_id]
           .filter(Boolean)
@@ -327,7 +335,7 @@ export default function PecasTable({
         }
         return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
       });
-  }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao]);
+  }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao, somenteDisponiveis]);
 
   const exibidas = limit !== undefined ? filtradas.slice(0, limit) : filtradas;
   const completo = limit === undefined;
