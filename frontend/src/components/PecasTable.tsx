@@ -345,9 +345,11 @@ export default function PecasTable({
           if (da !== null && db !== null) {
             if (da !== db) return ordenacao === 'recentes' ? db - da : da - db;
           } else if (da !== null) {
-            return -1;
+            // Sem data oficial ainda: em "Últimos" o item recém-importado
+            // deve aparecer antes; em "Primeiros", depois dos datados.
+            return ordenacao === 'recentes' ? 1 : -1;
           } else if (db !== null) {
-            return 1;
+            return ordenacao === 'recentes' ? -1 : 1;
           } else {
             // Anúncios recém-importados podem ainda aguardar a sincronização
             // da data oficial do ML. O ID é crescente e funciona como um
