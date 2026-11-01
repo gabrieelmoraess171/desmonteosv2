@@ -12,7 +12,12 @@ const TIMEOUT_FREELLMAPI_MS = 15000;
 // Assim o painel aceita tanto a nomenclatura antiga (GEMINI_*) quanto a nova.
 function chaveGemini() {
   return String(
-    process.env.GEMINI_KEY || process.env.GOOGLE_AI_KEY || ''
+    process.env.GEMINI_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_AI_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      ''
   ).trim();
 }
 
