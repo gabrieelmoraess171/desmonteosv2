@@ -124,7 +124,7 @@ function validarPayloadPeca(payload) {
   return null;
 }
 
-function motivoCancelamentoMl(peca) {
+function lerDadosMl(peca) {
   let dados = peca.ml_dados;
   if (typeof dados === 'string') {
     try {
@@ -133,6 +133,11 @@ function motivoCancelamentoMl(peca) {
       dados = null;
     }
   }
+  return dados && typeof dados === 'object' ? dados : {};
+}
+
+function motivoCancelamentoMl(peca) {
+  const dados = lerDadosMl(peca);
 
   const valores = [];
   const coletar = (valor) => {
@@ -167,10 +172,18 @@ function motivoCancelamentoMl(peca) {
   return `Motivo informado pelo Mercado Livre: ${motivo}`;
 }
 
+function anuncioFoiVendido(peca) {
+  const dados = lerDadosMl(peca);
+  return (
+    Number(peca.vendas_count) > 0 ||
+    Number(dados.sold_quantity) > 0
+  );
+}
+
 function avaliarAnuncio(peca) {
   const motivos = [];
   const statusMl = String(peca.ml_status || '').toLowerCase();
-  const vendido = statusMl === 'closed' && Number(peca.vendas_count) > 0;
+  const vendido = anuncioFoiVendido(peca);
   const canceladoMl = ['cancelled', 'canceled', 'rejected', 'blocked'].includes(statusMl);
 
   if (vendido) return { status: 'inativo', motivos: [] };
