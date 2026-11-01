@@ -127,10 +127,10 @@ router.get('/perguntas/historico', async (req, res) => {
       return res.status(400).json({ error: 'Informe o anúncio para consultar o histórico.' });
     }
 
-    // A sincronização leve só busca perguntas pendentes. Para o histórico,
-    // atualize também as perguntas antigas que já receberam resposta.
+    // Atualiza as perguntas pendentes sem bloquear o atendimento com uma
+    // varredura completa do histórico remoto a cada clique.
     try {
-      await sincronizarPerguntas();
+      await sincronizarPerguntas({ apenasPendentes: true });
     } catch {
       // Mantém o histórico local disponível se o Mercado Livre estiver fora.
     }
