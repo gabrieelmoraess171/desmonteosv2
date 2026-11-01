@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MODELO_PADRAO = 'gemini-3.8-flash';
-const MODELOS_RESERVA = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
+const MODELO_PADRAO = 'gemini-3.5-flash-lite';
+const MODELOS_RESERVA = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 const TIMEOUT_MS = 15000;
 const TIMEOUT_RESERVA_MS = 10000;
 const TIMEOUT_FREELLMAPI_MS = 15000;
@@ -18,7 +18,9 @@ function chaveGemini() {
       process.env.GOOGLE_API_KEY ||
       process.env.GOOGLE_GEMINI_API_KEY ||
       ''
-  ).trim();
+  )
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
 }
 
 function modeloGemini() {
