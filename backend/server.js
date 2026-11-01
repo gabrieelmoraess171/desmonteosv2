@@ -45,7 +45,7 @@ import {
 
 import { montarPayloadPeca, origensAposEdicao } from './src/services/pecaPayload.js';
 import { comMetadadosPeca, revisarMetadadosLocais } from './src/services/pecaMetadados.js';
-import { consultarPlanParts } from './src/services/planPartsService.js';
+import { chavePlanParts, consultarPlanParts } from './src/services/planPartsService.js';
 
 dotenv.config();
 
@@ -88,7 +88,7 @@ app.get('/api/health', (_req, res) => {
         process.env.GOOGLE_API_KEY ||
         process.env.GOOGLE_GEMINI_API_KEY
     ),
-    planPartsConfigured: Boolean(process.env.PLAN_PARTS_API_KEY),
+    planPartsConfigured: Boolean(chavePlanParts()),
     featureRelease: 'catalog-performance-v1',
     revision: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null
   });
@@ -489,7 +489,7 @@ app.get('/api/catalogo/part-number/:partNumber', async (req, res) => {
 
   const consulta = partNumber.replace(/[^a-zA-Z0-9]/g, '');
   const url = `https://7zap.com/api/parts-search/search-prefix?q=${encodeURIComponent(consulta)}&limit=24`;
-  let planParts = { status: process.env.PLAN_PARTS_API_KEY ? 'indisponivel' : 'nao_configurado', resultados: [] };
+  let planParts = { status: chavePlanParts() ? 'indisponivel' : 'nao_configurado', resultados: [] };
   try {
     try {
       planParts = await consultarPlanParts(partNumber);

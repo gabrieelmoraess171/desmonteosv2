@@ -1,5 +1,16 @@
 const BASE_URL = 'https://cdn.plan.parts';
 
+export function chavePlanParts() {
+  return String(
+    process.env.PLAN_PARTS_API_KEY ||
+      process.env.PLANPARTS_API_KEY ||
+      process.env.PLAN_PARTS_KEY ||
+      process.env.PLANPARTS_KEY ||
+      process.env.PLAN_PARTS_TOKEN ||
+      ''
+  ).trim();
+}
+
 function texto(valor, limite = 240) {
   return String(valor ?? '').trim().slice(0, limite);
 }
@@ -45,7 +56,7 @@ function normalizarResultado(item, partNumber) {
 }
 
 export async function consultarPlanParts(partNumber) {
-  const chave = String(process.env.PLAN_PARTS_API_KEY || '').trim();
+  const chave = chavePlanParts();
   if (!chave) return { status: 'nao_configurado', resultados: [] };
 
   const consulta = texto(partNumber, 80);
