@@ -395,8 +395,8 @@ async function gerarSugestaoFreeLLMAPI(prompt, configuracao, opcoes = {}) {
 export async function gerarSugestaoResposta({ pergunta, peca }) {
   const perguntaLimpa = limparTexto(pergunta, 600);
   const sugestaoFallback = fallback(perguntaLimpa, peca);
-  const chave = chaveGemini();
-  const modeloConfigurado = modeloGemini();
+  const chave = chaveGemini();  const modeloConfigurado = String(opcoes.modelo || modeloGemini()).trim();
+  const modeloConfigurado = modeloGemini()
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice
@@ -571,7 +571,6 @@ async function gerarTextoGeminiGenerico(prompt, opcoes = {}) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
             generationConfig: {
               temperature: opcoes.temperature ?? 0.5,
               maxOutputTokens: opcoes.maxTokens ?? 600,
@@ -960,6 +959,7 @@ async function chamarVisaoGemini(prompt, imagens, opcoes = {}) {
           body: JSON.stringify({
             contents: [
               {
+                            ...(opcoes.googleSearch ? { tools: [{ google_search: {} }] } : {}),
                 role: 'user',
                 parts: [
                   { text: prompt },
