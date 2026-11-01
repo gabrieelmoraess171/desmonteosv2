@@ -59,6 +59,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ML_VENDAS_RESUMO_SQL = process.env.DATABASE_URL
   ? "NULLIF((p.ml_dados::jsonb ->> 'sold_quantity'), '')::integer"
   : "CAST(json_extract(COALESCE(p.ml_dados, '{}'), '$.sold_quantity') AS INTEGER)";
+const ML_DATA_PUBLICACAO_RESUMO_SQL = process.env.DATABASE_URL
+  ? "COALESCE(p.ml_publicado_em, NULLIF((p.ml_dados::jsonb ->> 'date_created'), ''), NULLIF((p.ml_dados::jsonb ->> 'start_time'), ''))"
+  : "COALESCE(p.ml_publicado_em, json_extract(COALESCE(p.ml_dados, '{}'), '$.date_created'), json_extract(COALESCE(p.ml_dados, '{}'), '$.start_time'))";
 
 const db = await initDatabase();
 
@@ -282,7 +285,9 @@ app.get('/api/pecas', async (req, res) => {
     const buscaParams = termosBusca.flatMap((termo) => camposBusca.map(() => `%${termo}%`));
     const campos = resumo
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
-         p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia, p.ml_publicado_em, p.aplicacao_origem, p.categoria_origem,
+         p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia,
+         ${ML_DATA_PUBLICACAO_RESUMO_SQL} AS ml_publicado_em,
+         p.aplicacao_origem, p.categoria_origem,
          p.quantidade, p.preco, p.ml_ativo,
          p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
