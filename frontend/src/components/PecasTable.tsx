@@ -329,6 +329,14 @@ export default function PecasTable({
           return ordemAleatoria.current.get(a.id)! - ordemAleatoria.current.get(b.id)!;
         }
 
+        // O estoque deve começar pelo que ainda pode ser vendido. Anúncios
+        // vendidos ficam no fim, independentemente da data de publicação.
+        const vendidoA = anuncioVendido(a);
+        const vendidoB = anuncioVendido(b);
+        const grupoA = vendidoA ? 2 : a.ml_ativo ? 0 : 1;
+        const grupoB = vendidoB ? 2 : b.ml_ativo ? 0 : 1;
+        if (grupoA !== grupoB) return grupoA - grupoB;
+
         if (ordenacao === 'nome') {
           const porNome = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
           if (porNome !== 0) return porNome;
@@ -349,9 +357,6 @@ export default function PecasTable({
         const ativoB = Boolean(b.ml_ativo);
         if (ativoA !== ativoB) return ativoA ? -1 : 1;
         if (quantidadeA !== quantidadeB) return quantidadeB - quantidadeA;
-        const vendidoA = anuncioVendido(a);
-        const vendidoB = anuncioVendido(b);
-        if (vendidoA !== vendidoB) return vendidoA ? 1 : -1;
         if (ordenacao === 'nome') return b.id - a.id;
         return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
       });
