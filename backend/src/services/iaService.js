@@ -286,6 +286,32 @@ function fallback(pergunta, peca) {
   return limparTexto(linhas.join(' '), 700);
 }
 
+function orientacaoCompatibilidade(pergunta, peca) {
+  const texto = normalizar(pergunta);
+  if (!/serve|compat|aplica|modelo|ano|cabe|encaix/.test(texto)) {
+    return 'A pergunta não solicita confirmação de compatibilidade; responda diretamente ao assunto perguntado.';
+  }
+
+  const anosPergunta = anosDoTexto(pergunta);
+  const anosPeca = anosDaPeca(peca);
+  const aplicacao = aplicacaoDaPeca(peca);
+
+  if (anosPergunta.length === 0) {
+    return `Aplicação cadastrada no anúncio: ${aplicacao}. Não há ano explícito na pergunta para confirmar.`;
+  }
+
+  const confirmados = anosPergunta.filter((ano) => anosPeca.includes(ano));
+  const fora = anosPergunta.filter((ano) => !anosPeca.includes(ano));
+
+  return [
+    `Aplicação cadastrada no anúncio: ${aplicacao}.`,
+    `Ano(s) perguntado(s): ${anosPergunta.join(', ')}.`,
+    `Ano(s) encontrado(s) na aplicação: ${confirmados.join(', ') || 'nenhum'}.`,
+    `Ano(s) não encontrado(s): ${fora.join(', ') || 'nenhum'}.`,
+    'Não confirme compatibilidade se o ano/modelo não estiver sustentado pela ficha; peça apenas o dado que faltar.'
+  ].join(' ');
+}
+
 function configuracaoFreeLLMAPI() {
   const url = String(process.env.FREELLMAPI_URL || '')
     .trim()
@@ -396,6 +422,10 @@ export async function gerarSugestaoResposta({ pergunta, peca }) {
     resumoPeca(peca),
     '',
     `Pergunta do comprador: ${perguntaLimpa}`,
+    `Verificação objetiva antes de responder: ${orientacaoCompatibilidade(
+      perguntaLimpa,
+      peca
+    )}`,
     '',
     'Resposta para enviar ao comprador:'
   ].join('\n');
