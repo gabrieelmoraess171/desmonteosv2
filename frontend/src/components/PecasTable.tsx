@@ -31,6 +31,7 @@ interface Peca extends PecaCompleta {
   ml_thumbnail?: string | null;
   ml_permalink?: string | null;
   vendas_count?: number | null;
+  ml_vendas_count?: number | null;
   status?: 'inativo' | 'revisar' | 'pronto';
   motivos?: string[];
   aplicacao?: string | null;

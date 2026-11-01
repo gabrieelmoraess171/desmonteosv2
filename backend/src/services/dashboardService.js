@@ -19,6 +19,10 @@ const STATUS_CANCELADOS = [
   'reembolsada'
 ];
 
+const ML_VENDAS_SQL = process.env.DATABASE_URL
+  ? "NULLIF((ml_dados::jsonb ->> 'sold_quantity'), '')::integer"
+  : "CAST(json_extract(COALESCE(ml_dados, '{}'), '$.sold_quantity') AS INTEGER)";
+
 const PERIODOS = {
   hoje: { chave: 'hoje', dias: 1, label: 'Hoje', descricao: 'Hoje • por hora' },
   '7': { chave: '7', dias: 7, label: '7 dias', descricao: 'Últimos 7 dias' },
@@ -831,6 +835,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
              WHERE v.peca_id = pecas.id
                AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado', 'cancelled', 'canceled', 'refunded', 'reembolsada')
            )
+           AND COALESCE(${ML_VENDAS_SQL}, 0) <= 0
            AND (
              LOWER(COALESCE(ml_status, '')) IN ('cancelled', 'canceled', 'rejected', 'blocked', 'closed')
              OR (

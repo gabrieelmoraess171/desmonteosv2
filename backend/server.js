@@ -52,6 +52,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Mantém apenas o número de vendas do cache do ML na listagem resumida. O
+// JSON completo continua reservado para a ficha do anúncio, evitando uma
+// resposta pesada sem perder a identificação de anúncios vendidos.
+const ML_VENDAS_RESUMO_SQL = process.env.DATABASE_URL
+  ? "NULLIF((p.ml_dados::jsonb ->> 'sold_quantity'), '')::integer"
+  : "CAST(json_extract(COALESCE(p.ml_dados, '{}'), '$.sold_quantity') AS INTEGER)";
+
 const db = await initDatabase();
 
 // Sincronizações interrompidas por um reinício do servidor ficariam
@@ -176,6 +183,7 @@ function anuncioFoiVendido(peca) {
   const dados = lerDadosMl(peca);
   return (
     Number(peca.vendas_count) > 0 ||
+    Number(peca.ml_vendas_count) > 0 ||
     Number(dados.sold_quantity) > 0
   );
 }
@@ -282,6 +290,7 @@ app.get('/api/pecas', async (req, res) => {
            WHERE v.peca_id = p.id
              AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado')
          ) AS vendas_count,
+         COALESCE(${ML_VENDAS_RESUMO_SQL}, 0) AS ml_vendas_count,
          p.peso_kg, p.comprimento_cm, p.largura_cm, p.altura_cm,
          LENGTH(TRIM(COALESCE(p.descricao, ''))) AS descricao_len`
       : 'p.*';
