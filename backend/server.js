@@ -188,7 +188,9 @@ function avaliarAnuncio(peca) {
       ? texto(peca.descricao).length
       : Number(peca.descricao_len) || 0;
 
-  if (Number(peca.quantidade) <= 0) motivos.push('Sem estoque');
+  if (Number(peca.quantidade) <= 0 && !canceladoMl && statusMl !== 'closed') {
+    motivos.push('Sem estoque');
+  }
   // A foto do anúncio no Mercado Livre também conta: não é preciso reenviar
   // imagem para uma peça que já tem miniatura no ML.
   if (!Number(peca.imagens_count) && !texto(peca.ml_thumbnail)) {
