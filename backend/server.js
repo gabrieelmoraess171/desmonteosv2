@@ -330,7 +330,12 @@ app.get('/api/pecas', async (req, res) => {
         ) AS imagem_principal
       FROM pecas p
       ${buscaSql}
-      ORDER BY (p.ml_publicado_em IS NULL) ASC, p.ml_publicado_em DESC, p.id DESC
+      ORDER BY
+        CASE WHEN COALESCE(p.quantidade, 0) > 0 THEN 1 ELSE 0 END DESC,
+        COALESCE(p.quantidade, 0) DESC,
+        (p.ml_publicado_em IS NULL) ASC,
+        p.ml_publicado_em DESC,
+        p.id DESC
       ${limite > 0 ? `LIMIT ${limite}` : ''}
     `, buscaParams);
 
