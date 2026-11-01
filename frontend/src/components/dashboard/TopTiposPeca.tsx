@@ -64,7 +64,7 @@ export default function TopTiposPeca({
   const [aberto, setAberto] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<'7' | '14' | '30' | 'custom'>('7');
   const [datas, setDatas] = useState(() => intervalo(7));
-  const [tipos, setTipos] = useState(tiposIniciais);
+  const [tipos, setTipos] = useState(tiposIniciais.slice(0, 10));
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [vendaDetalhe, setVendaDetalhe] = useState<VendaDetalheRelatorio | null>(null);
@@ -77,7 +77,7 @@ export default function TopTiposPeca({
   useEffect(() => () => consultaDetalhe.current?.abort(), []);
 
   useEffect(() => {
-    if (periodo === '7' && /\b7\b/.test(periodoLabel)) setTipos(tiposIniciais);
+    if (periodo === '7' && /\b7\b/.test(periodoLabel)) setTipos(tiposIniciais.slice(0, 10));
   }, [tiposIniciais, periodoLabel, periodo]);
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function TopTiposPeca({
       signal: controller.signal,
       timeout: 20000,
     }).then(({ data }) => {
-      if (!controller.signal.aborted) setTipos(Array.isArray(data) ? data : []);
+      if (!controller.signal.aborted) setTipos(Array.isArray(data) ? data.slice(0, 10) : []);
     }).catch(() => {
       if (!controller.signal.aborted) {
         setErro('Não foi possível atualizar o ranking. Tente novamente.');
