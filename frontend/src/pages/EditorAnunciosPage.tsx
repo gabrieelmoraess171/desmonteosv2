@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -16,13 +17,14 @@ import {
   Loader2,
   MapPin,
   Package,
+  Pause,
+  Play,
   RefreshCw,
   Ruler,
   Search,
   Send,
   Sparkles,
   Trash2,
-  Video,
   Wand2,
 } from 'lucide-react';
 import axios from 'axios';
@@ -98,7 +100,6 @@ interface FormAnuncio {
   tipoAnuncio: string;
   gtin: string;
   localizacao: string;
-  videoUrl: string;
   modoCompra: string;
   atributos: Record<string, string>;
 }
@@ -225,7 +226,6 @@ function formularioDaPeca(peca: Peca): FormAnuncio {
     tipoAnuncio: normalizarTipoAnuncio(peca.tipo_anuncio),
     gtin: peca.gtin || '',
     localizacao: peca.localizacao || '',
-    videoUrl: peca.video_url || '',
     modoCompra: peca.modo_compra || 'buy_it_now',
     atributos: lerAtributos(peca.atributos),
   };
@@ -331,6 +331,13 @@ export default function EditorAnunciosPage({
   const [resultadoVerificacao, setResultadoVerificacao] = useState<ResultadoVerificadorAnuncio | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  const [alterandoStatus, setAlterandoStatus] = useState(false);
+  const mutacaoEmCurso = useRef(false);
+  const preservarFormularioAposStatus = useRef<{
+    id: number;
+    ativo: boolean;
+  } | null>(null);
+  const mutacaoPendente = enviando || excluindo || alterandoStatus;
 
   const carregar = async (manterSelecao = true) => {
     setLoading(true);
@@ -423,6 +430,19 @@ export default function EditorAnunciosPage({
 
   useEffect(() => {
     if (pecaDetalheSelecionada) {
+      const statusAtualizado = preservarFormularioAposStatus.current;
+      preservarFormularioAposStatus.current = null;
+
+      if (statusAtualizado?.id === pecaDetalheSelecionada.id) {
+        // Pausar/reativar altera somente o status e mantém o rascunho atual.
+        setFormulario((atual) =>
+          atual
+            ? { ...atual, mlAtivo: statusAtualizado.ativo }
+            : formularioDaPeca(pecaDetalheSelecionada)
+        );
+        return;
+      }
+
       setFormulario(formularioDaPeca(pecaDetalheSelecionada));
       setErro('');
       setAviso('');
@@ -469,7 +489,7 @@ export default function EditorAnunciosPage({
   };
 
   const gerarComIa = async () => {
-    if (!pecaSelecionada) return;
+    if (!pecaSelecionada || mutacaoEmCurso.current) return;
 
     setGerando(true);
     setErro('');
@@ -615,7 +635,7 @@ export default function EditorAnunciosPage({
   };
 
   const completarFichaComIa = async () => {
-    if (!pecaSelecionada || !formulario || completandoFicha) return;
+    if (!pecaSelecionada || !formulario || completandoFicha || mutacaoEmCurso.current) return;
 
     setCompletandoFicha(true);
     setErro('');
@@ -695,7 +715,7 @@ export default function EditorAnunciosPage({
   const enviarParaAprovacao = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!pecaSelecionada || !formulario) return;
+    if (!pecaSelecionada || !formulario || mutacaoEmCurso.current) return;
 
     const titulo = formulario.titulo.replace(/\s+/g, ' ').trim();
     const descricao = formulario.descricao.trim();
@@ -737,6 +757,7 @@ export default function EditorAnunciosPage({
       return;
     }
 
+    mutacaoEmCurso.current = true;
     setEnviando(true);
     setErro('');
     setAviso('');
@@ -763,7 +784,6 @@ export default function EditorAnunciosPage({
         tipo_anuncio: formulario.tipoAnuncio,
         gtin: formulario.gtin.trim(),
         localizacao: formulario.localizacao.trim(),
-        video_url: formulario.videoUrl.trim(),
         modo_compra: formulario.modoCompra,
       };
       const payload = {
@@ -814,12 +834,13 @@ export default function EditorAnunciosPage({
         setErro('Não foi possível enviar as alterações para aprovação.');
       }
     } finally {
+      mutacaoEmCurso.current = false;
       setEnviando(false);
     }
   };
 
   const verificarAnuncio = async () => {
-    if (!pecaSelecionada || verificandoAnuncio) return;
+    if (!pecaSelecionada || verificandoAnuncio || mutacaoEmCurso.current) return;
     setVerificandoAnuncio(true);
     setErro('');
     try {
@@ -840,7 +861,7 @@ export default function EditorAnunciosPage({
   };
 
   const excluirAnuncio = async () => {
-    if (!pecaSelecionada?.ml_item_id || excluindo) return;
+    if (!pecaSelecionada?.ml_item_id || mutacaoEmCurso.current) return;
 
     const confirmado = window.confirm(
       `Excluir o anúncio ${pecaSelecionada.ml_item_id} no Mercado Livre?\n\nA peça continuará no estoque, mas o anúncio será encerrado e desvinculado. Essa ação não pode ser desfeita pelo painel.`
@@ -848,6 +869,7 @@ export default function EditorAnunciosPage({
 
     if (!confirmado) return;
 
+    mutacaoEmCurso.current = true;
     setExcluindo(true);
     setErro('');
     setAviso('');
@@ -874,7 +896,64 @@ export default function EditorAnunciosPage({
         setErro('Não foi possível excluir o anúncio no Mercado Livre.');
       }
     } finally {
+      mutacaoEmCurso.current = false;
       setExcluindo(false);
+    }
+  };
+
+  const statusMlSelecionado = String(
+    pecaDetalheSelecionada?.ml_status || pecaSelecionada?.ml_status || ''
+  ).toLowerCase();
+  const permiteAlterarStatus = ['active', 'paused'].includes(statusMlSelecionado);
+  const anuncioPausado = statusMlSelecionado === 'paused';
+
+  const alternarStatusAnuncio = async () => {
+    if (
+      !pecaSelecionada?.ml_item_id ||
+      !pecaDetalheSelecionada ||
+      !formulario ||
+      !permiteAlterarStatus ||
+      mutacaoEmCurso.current ||
+      loading ||
+      gerando ||
+      completandoFicha ||
+      verificandoAnuncio
+    ) return;
+
+    const id = pecaSelecionada.id;
+    const ativo = anuncioPausado;
+    mutacaoEmCurso.current = true;
+    setAlterandoStatus(true);
+    setErro('');
+    setAviso('');
+
+    try {
+      await axios.put(
+        `/api/pecas/${id}`,
+        { ml_ativo: ativo ? 1 : 0 },
+        { timeout: 30000 }
+      );
+
+      // A API confirma a atualização no ML antes de gravar o status local.
+      // Atualizar só esses campos evita recarregar e apagar edições não salvas.
+      const status = { ml_ativo: ativo ? 1 : 0, ml_status: ativo ? 'active' : 'paused' };
+      preservarFormularioAposStatus.current = { id, ativo };
+      setPecas((atuais) => atuais.map((peca) => peca.id === id ? { ...peca, ...status } : peca));
+      setPecaDetalhe((atual) => atual?.id === id ? { ...atual, ...status } : atual);
+      setAviso(
+        ativo
+          ? 'Anúncio reativado no Mercado Livre. As demais edições continuam no formulário.'
+          : 'Anúncio pausado no Mercado Livre. As demais edições continuam no formulário.'
+      );
+    } catch (error) {
+      setErro(
+        axios.isAxiosError<{ error?: string }>(error)
+          ? error.response?.data?.error || 'Não foi possível alterar o status do anúncio no Mercado Livre.'
+          : 'Não foi possível alterar o status do anúncio no Mercado Livre.'
+      );
+    } finally {
+      mutacaoEmCurso.current = false;
+      setAlterandoStatus(false);
     }
   };
 
@@ -906,7 +985,8 @@ export default function EditorAnunciosPage({
               <button
                 type="button"
                 onClick={onOpenApproval}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-white/[0.09] hover:text-ink"
+                disabled={mutacaoPendente}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-white/[0.09] hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send className="h-4 w-4" />
                 Abrir fila de aprovação
@@ -915,7 +995,7 @@ export default function EditorAnunciosPage({
             <button
               type="button"
               onClick={() => void carregar(true)}
-              disabled={loading}
+              disabled={loading || mutacaoPendente}
               className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw
@@ -929,6 +1009,7 @@ export default function EditorAnunciosPage({
 
       {(erro || aviso) && (
         <div
+          role={erro ? 'alert' : 'status'}
           className={`flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
             erro
               ? 'border-danger/25 bg-dangerSoft text-danger'
@@ -946,7 +1027,8 @@ export default function EditorAnunciosPage({
               <button
                 type="button"
                 onClick={onOpenApproval}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-success/25 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-success transition hover:bg-white/[0.08]"
+                disabled={mutacaoPendente}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-success/25 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-success transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send className="h-3.5 w-3.5" />
                 Ver fila de aprovação
@@ -1020,7 +1102,8 @@ export default function EditorAnunciosPage({
                       key={peca.id}
                       type="button"
                       onClick={() => setPecaId(peca.id)}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                      disabled={mutacaoPendente}
+                      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
                         ativa
                           ? 'border-accent/50 bg-accentSoft'
                           : 'border-white/10 bg-white/[0.03] hover:border-accent/30 hover:bg-white/[0.06]'
@@ -1105,11 +1188,31 @@ export default function EditorAnunciosPage({
                       </a>
                     )}
 
+                    {pecaSelecionada.ml_item_id && permiteAlterarStatus && (
+                      <button
+                        type="button"
+                        onClick={() => void alternarStatusAnuncio()}
+                        disabled={mutacaoPendente || !pecaDetalheSelecionada || gerando || completandoFicha || verificandoAnuncio}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accentSoft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {alterandoStatus ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : anuncioPausado ? (
+                          <Play className="h-3.5 w-3.5" />
+                        ) : (
+                          <Pause className="h-3.5 w-3.5" />
+                        )}
+                        {alterandoStatus
+                          ? anuncioPausado ? 'Reativando...' : 'Pausando...'
+                          : anuncioPausado ? 'Reativar anúncio' : 'Pausar anúncio'}
+                      </button>
+                    )}
+
                     {pecaSelecionada.ml_item_id && (
                       <button
                         type="button"
                         onClick={() => void excluirAnuncio()}
-                        disabled={excluindo}
+                        disabled={mutacaoPendente}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-danger/25 bg-dangerSoft px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {excluindo ? (
@@ -1156,7 +1259,7 @@ export default function EditorAnunciosPage({
                         <button
                           type="button"
                           onClick={() => void completarFichaComIa()}
-                          disabled={completandoFicha || gerando}
+                          disabled={completandoFicha || gerando || mutacaoPendente}
                           className="inline-flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {completandoFicha ? (
@@ -1171,7 +1274,7 @@ export default function EditorAnunciosPage({
                         <button
                           type="button"
                           onClick={() => void gerarComIa()}
-                          disabled={gerando || completandoFicha}
+                          disabled={gerando || completandoFicha || mutacaoPendente}
                           className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {gerando ? (
@@ -1184,7 +1287,7 @@ export default function EditorAnunciosPage({
                         <button
                           type="button"
                           onClick={() => void verificarAnuncio()}
-                          disabled={verificandoAnuncio || gerando || completandoFicha}
+                          disabled={verificandoAnuncio || gerando || completandoFicha || mutacaoPendente}
                           className="inline-flex items-center gap-2 rounded-xl border border-success/30 bg-successSoft px-3.5 py-2 text-xs font-semibold text-success transition hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {verificandoAnuncio ? (
@@ -1604,33 +1707,21 @@ export default function EditorAnunciosPage({
                   </Bloco>
 
                   <Bloco
-                    titulo="Vídeo e fotos"
-                    descricao="Até 20 fotos com capa definida. O vídeo do YouTube é opcional e aumenta a conversão."
-                    icone={<Video className="h-4 w-4" />}
+                    titulo="Fotos do cadastro"
+                    descricao="Organize até 20 fotos e escolha a imagem de capa da peça."
+                    icone={<ImageIcon className="h-4 w-4" />}
                   >
-                    <Campo label="Vídeo do anúncio (YouTube)">
-                      <input
-                        value={formulario.videoUrl}
-                        onChange={(event) =>
-                          atualizarCampo('videoUrl', event.target.value)
-                        }
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        className="mt-1 w-full rounded-xl border border-white/10 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-accent/50"
-                      />
-                    </Campo>
-
-                    <div className="mt-4">
-                      <PecaFotosEditor
-                        pecaId={pecaSelecionada.id}
-                        mlItemId={pecaSelecionada.ml_item_id}
-                      />
-                    </div>
+                    <PecaFotosEditor
+                      pecaId={pecaSelecionada.id}
+                      mlItemId={pecaSelecionada.ml_item_id}
+                    />
                   </Bloco>
 
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
                     <input
                       type="checkbox"
                       checked={formulario.mlAtivo}
+                      disabled={mutacaoPendente}
                       onChange={(event) =>
                         atualizarCampo('mlAtivo', event.target.checked)
                       }
@@ -1672,7 +1763,7 @@ export default function EditorAnunciosPage({
                   <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
                     <button
                       type="submit"
-                      disabled={enviando}
+                      disabled={mutacaoPendente}
                       className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {enviando ? (
@@ -1691,7 +1782,7 @@ export default function EditorAnunciosPage({
                       <button
                         type="button"
                         onClick={() => void excluirAnuncio()}
-                        disabled={excluindo}
+                        disabled={mutacaoPendente}
                         className="inline-flex items-center gap-2 rounded-xl border border-danger/25 bg-dangerSoft px-4 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {excluindo ? (

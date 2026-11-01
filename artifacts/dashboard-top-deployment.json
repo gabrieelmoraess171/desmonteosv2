@@ -1,0 +1,129 @@
+{
+  "commit": "dc6481825a150d629b2d3d7bd4d9b53f8033bb09",
+  "site": "https://desmonteosv2.pages.dev",
+  "verifiedAtBrt": "2026-10-31T01:59:29.266499-03:00",
+  "scope": "Read-only public HTML, JS, CSS and images. No business or authentication API requests.",
+  "localCssSha256": "aed74d432d50ec9041c9bb5892682615eb323a65724f3841d860fecfae6931f7",
+  "index": {
+    "path": "/?release-check=dc6481825a15-1793422768",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "etag": null,
+    "bytes": 960,
+    "sha256": "a7dee2b2c249d7ddcec0c18293397fa1bf98001117841835a7e961c4a598d3ac"
+  },
+  "assets": [
+    {
+      "path": "/assets/index-Gf87XDiV.js",
+      "status": 200,
+      "contentType": "application/javascript",
+      "etag": "\"084e617f149cfefdd44453a72da5d566\"",
+      "bytes": 560654,
+      "sha256": "4170d441d12805c8a4f0dd56e5b95a3c188a7861b573c78e2333cc90aaf79c8f"
+    },
+    {
+      "path": "/assets/react-B1zWkZJs.js",
+      "status": 200,
+      "contentType": "application/javascript",
+      "etag": "\"15c9381804af1eecd2e6029a1c65e761\"",
+      "bytes": 160429,
+      "sha256": "d9e79e5d86de002353243409e73e3799bbd0f74dfec92408d03247ddb27602bd"
+    },
+    {
+      "path": "/assets/icons-lezdbWGk.js",
+      "status": 200,
+      "contentType": "application/javascript",
+      "etag": "\"b4fd21674937d58a95a9cdefa0c1586d\"",
+      "bytes": 43131,
+      "sha256": "2d1cda21c27a53b31f162a62d608196ac5be8b4ea48a73a35e2b7b7fe27d66a4"
+    },
+    {
+      "path": "/assets/supabase-BvIc6Gdf.js",
+      "status": 200,
+      "contentType": "application/javascript",
+      "etag": "\"03ca7553e68cc69de8b9d39adf039293\"",
+      "bytes": 167900,
+      "sha256": "99f11ade320b4064b4dba241b027f50e9b43a1ff0fa09cb4081940dd60b05fec"
+    },
+    {
+      "path": "/assets/index-mzNvgWvX.css",
+      "status": 200,
+      "contentType": "text/css; charset=utf-8",
+      "etag": "\"126be89e72b33bec5c94239f7e537c39\"",
+      "bytes": 100397,
+      "sha256": "aed74d432d50ec9041c9bb5892682615eb323a65724f3841d860fecfae6931f7"
+    }
+  ],
+  "checks": {
+    "index200": true,
+    "assets200": true,
+    "expectedCssPath": true,
+    "cssShaMatchesLocal": true,
+    "heroBeforeStatsInBundle": true,
+    "urgentLabel": true,
+    "respondLabel": true,
+    "dangerTone": true,
+    "warningTone": true,
+    "heroMotionCss": true,
+    "images200AndMatchLocal": true
+  },
+  "bundleOrder": {
+    "heroPosition": 544154,
+    "statsPosition": 545287
+  },
+  "attempts": [
+    {
+      "timeBrt": "2026-10-31T01:59:29.135235-03:00",
+      "assetPaths": [
+        "/assets/index-Gf87XDiV.js",
+        "/assets/react-B1zWkZJs.js",
+        "/assets/icons-lezdbWGk.js",
+        "/assets/supabase-BvIc6Gdf.js",
+        "/assets/index-mzNvgWvX.css"
+      ],
+      "checks": {
+        "index200": true,
+        "assets200": true,
+        "expectedCssPath": true,
+        "cssShaMatchesLocal": true,
+        "heroBeforeStatsInBundle": true,
+        "urgentLabel": true,
+        "respondLabel": true,
+        "dangerTone": true,
+        "warningTone": true,
+        "heroMotionCss": true,
+        "images200AndMatchLocal": true
+      }
+    }
+  ],
+  "images": [
+    {
+      "path": "/assets/vision/arrow-forward.svg",
+      "status": 200,
+      "contentType": "image/svg+xml",
+      "etag": "\"02c0f8b0cacea7e0531def6a2a7c7d52\"",
+      "bytes": 494,
+      "sha256": "debd1dff8b1cc41fc96c34f4df46b9fb07b8d60756154fa5e4e0da709f69fda5",
+      "matchesLocalSha256": true
+    },
+    {
+      "path": "/assets/vision/background.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "etag": "\"bc428db96ac677f596ba5c50e10d7cac\"",
+      "bytes": 389530,
+      "sha256": "f4677d35d6f864d36c71b0ff8e940b4be6494c2c7c671e327ad806b8097fabc9",
+      "matchesLocalSha256": true
+    },
+    {
+      "path": "/assets/vision/welcome-jellyfish.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "etag": "\"1d152a62ce473f3d2a83f807eacf1cde\"",
+      "bytes": 470226,
+      "sha256": "b82e67a6cadff35d31fdbb999c2d4ac6f94e2ea0c7d17d15536b266c634d549e",
+      "matchesLocalSha256": true
+    }
+  ],
+  "live": true
+}

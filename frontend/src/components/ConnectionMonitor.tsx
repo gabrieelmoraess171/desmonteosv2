@@ -27,7 +27,9 @@ export default function ConnectionMonitor({ onStatusChange }: ConnectionMonitorP
   useEffect(() => {
     checkConnection(true);
 
-    const interval = window.setInterval(() => checkConnection(), 30000);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void checkConnection();
+    }, 60000);
     return () => window.clearInterval(interval);
   }, [checkConnection]);
 

@@ -1198,7 +1198,7 @@ export async function analisarFotosPecaComIa({
 
   if (codigoParaPesquisa) {
     const identificado = await identificarProdutoLoteComGoogle({
-      sku: codigoParaPesquisa,
+      numero_oem: codigoParaPesquisa,
       nome: dados.nome,
       observacoes: dados.observacoes
     });
@@ -1237,7 +1237,8 @@ const PROMPT_LOTE = [
   '{',
   '  "produtos": [',
   '    {',
-  '      "sku": "SKU LIDO NA ETIQUETA",',
+  '      "sku": "SKU INTERNO LIDO NA ETIQUETA",',
+  '      "numero_oem": "código do fabricante legível na peça ou etiqueta original, ou vazio",',
   '      "nome": "nome curto da peça",',
   '      "arquivos": ["nome-exato-1.jpg", "nome-exato-2.jpg"],',
   '      "peso_kg": 0,',
@@ -1254,7 +1255,8 @@ const PROMPT_LOTE = [
   '- Não invente SKU. Se a etiqueta não estiver legível, use "DESCONHECIDO".',
   '- Agrupe pela peça, não pela ordem de envio.',
   '- Aponte em alertas quando a sequência estiver fora da ordem ou faltar a foto de SKU/medidas/peso.',
-  '- A última imagem de cada produto é a referência do código OEM/part number; use-a para identificar a peça.',
+  '- SKU interno e código OEM são campos diferentes. Nunca copie o SKU interno para numero_oem nem deduza aplicação pelo SKU.',
+  '- Só informe numero_oem quando estiver explicitamente legível na peça ou na etiqueta do fabricante. A última imagem pode ser uma foto de peso/medidas; não presuma que contenha OEM.',
   '- Não descarte fotos recebidas. Os nomes devem ser copiados exatamente, inclusive arquivos IMG_*.jpeg.'
 ].join('\n');
 
@@ -1276,11 +1278,19 @@ async function buscarAnunciosMercadoLivreLote(sku) {
   }));
 }
 
-async function identificarProdutoLoteComGoogle(produto) {
-  if (!produto?.sku || produto.sku === 'DESCONHECIDO') return produto;
+export function codigoOemParaPesquisa(produto = {}) {
+  const codigo = limparTexto(produto.numero_oem || produto.oem || produto.part_number, 120);
+  if (!/^[a-z0-9][a-z0-9 .\/-]{3,119}$/i.test(codigo) || !/\d/.test(codigo)) return '';
+  if (/desconhecido|nao visivel|não visível|nao informado|não informado/i.test(codigo)) return '';
+  return codigo;
+}
+
+export async function identificarProdutoLoteComGoogle(produto) {
+  const codigo = codigoOemParaPesquisa(produto);
+  if (!codigo) return produto;
   let anuncios = [];
-  try { anuncios = await buscarAnunciosMercadoLivreLote(produto.sku); } catch { anuncios = []; }
-  const prompt = `Identifique esta autopeça pelo código OEM/SKU "${produto.sku}". Primeiro respeite o nome e a forma visual já reconhecida; use Google e Mercado Livre apenas para confirmar aplicação. Isso vale para qualquer fabricante. Nunca troque uma peça interna por retrovisor, farol ou peça externa apenas por coincidência de busca. Não use Universal ou anos sem evidência. Retorne confiança baixa se houver conflito. Responda somente JSON: {"peca":"", "lado":"direito|esquerdo|", "marca":"", "modelo":"", "anos":"", "aplicacao":"", "confianca":"alta|media|baixa", "observacao":""}. Anúncios: ${JSON.stringify(anuncios)}. Nome preliminar: ${produto.nome || 'não informado'}.`;
+  try { anuncios = await buscarAnunciosMercadoLivreLote(codigo); } catch { anuncios = []; }
+  const prompt = `Identifique esta autopeça pelo código OEM do fabricante "${codigo}". O SKU interno não é uma referência de fabricante. Primeiro respeite o nome e a forma visual já reconhecida; use Google e Mercado Livre apenas para confirmar aplicação. Isso vale para qualquer fabricante. Nunca troque uma peça interna por retrovisor, farol ou peça externa apenas por coincidência de busca. Não use Universal ou anos sem evidência. Retorne confiança baixa se houver conflito. Responda somente JSON: {"peca":"", "lado":"direito|esquerdo|", "marca":"", "modelo":"", "anos":"", "aplicacao":"", "confianca":"alta|media|baixa", "observacao":""}. Anúncios: ${JSON.stringify(anuncios)}. Nome preliminar: ${produto.nome || 'não informado'}.`;
   try {
     const resposta = await gerarTextoComGemini(prompt, { modelo: 'gemini-2.5-flash', googleSearch: true, maxTokens: 500, limiteCaracteres: 1800, timeoutMs: 20000 });
     const json = extrairJson(resposta?.texto || '');
@@ -1489,6 +1499,7 @@ export async function analisarFotosLoteComIa({
         .map((produto) => ({
           sku: limparTexto(produto?.sku, 100).toUpperCase() || 'DESCONHECIDO',
           nome: limparTexto(produto?.nome, 200),
+          numero_oem: limparTexto(produto?.numero_oem, 120),
           arquivos: Array.isArray(produto?.arquivos)
             ? produto.arquivos
                 .map((arquivo) => limparTexto(arquivo, 220))
@@ -1503,7 +1514,14 @@ export async function analisarFotosLoteComIa({
         .filter((produto) => produto.arquivos.length > 0)
     : [];
 
-  const produtosEnriquecidos = await Promise.all(produtos.slice(0, 20).map((produto) => identificarProdutoLoteComGoogle(produto)));
+  const produtosEnriquecidos = [...produtos];
+  let proximo = 0;
+  await Promise.all(Array.from({ length: Math.min(3, produtos.length) }, async () => {
+    while (proximo < produtos.length) {
+      const indice = proximo++;
+      produtosEnriquecidos[indice] = await identificarProdutoLoteComGoogle(produtos[indice]);
+    }
+  }));
   if (produtosEnriquecidos.length === 0) {
     return {
       produtos: fallbackProdutos,

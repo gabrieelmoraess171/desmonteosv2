@@ -16,6 +16,7 @@ import aprovacoesRouter from './src/routes/aprovacoes.js';
 import { seedDemo } from './src/demoSeed.js';
 import {
   obterAnalyticsDashboard,
+  obterRankingTiposPeca,
   obterResumoDashboard
 } from './src/services/dashboardService.js';
 import {
@@ -38,8 +39,12 @@ import {
   obterIntegracao,
   sincronizarPerguntas,
   sincronizarReclamacoes,
-  sincronizarVendas
+  sincronizarVendas,
+  sincronizarMetadadosPendentes
 } from './src/services/mercadoLivreService.js';
+
+import { montarPayloadPeca, origensAposEdicao } from './src/services/pecaPayload.js';
+import { comMetadadosPeca, revisarMetadadosLocais } from './src/services/pecaMetadados.js';
 
 dotenv.config();
 
@@ -67,7 +72,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'online',
-    database: process.env.DATABASE_URL ? 'supabase-postgres' : 'sqlite'
+    database: process.env.DATABASE_URL ? 'supabase-postgres' : 'sqlite',
+    featureRelease: 'catalog-performance-v1',
+    revision: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null
   });
 });
 app.use('/api/lotes', lotesRouter);
@@ -80,16 +87,6 @@ app.use('/api/mercadolivre', mercadoLivreRouter);
 app.use('/api/ia', iaRouter);
 app.use('/api/aprovacoes', aprovacoesRouter);
 
-function normalizarBooleano(valor) {
-  return (
-    valor === true ||
-    valor === 1 ||
-    valor === '1' ||
-    valor === 'true' ||
-    valor === 'on'
-  );
-}
-
 function numero(valor, padrao = 0) {
   const numeroConvertido = Number(valor);
   return Number.isFinite(numeroConvertido) ? numeroConvertido : padrao;
@@ -99,81 +96,6 @@ function texto(valor, limite = 500) {
   return String(valor ?? '').trim().slice(0, limite);
 }
 
-function parseAtributos(valor) {
-  if (!valor) return '{}';
-  try {
-    const objeto = typeof valor === 'string' ? JSON.parse(valor) : valor;
-    if (!objeto || typeof objeto !== 'object' || Array.isArray(objeto)) throw new Error();
-    const json = JSON.stringify(objeto);
-    if (json.length > 30000) throw new Error();
-    return json;
-  } catch {
-    throw new Error('A ficha técnica deve conter atributos válidos e ter até 30 mil caracteres.');
-  }
-}
-
-function montarPayloadPeca(body = {}, atual = {}) {
-  const nome = texto(body.nome ?? atual.nome, 200);
-  const descricao = texto(body.descricao ?? atual.descricao, 5000);
-  const carro = texto(body.carro ?? atual.carro, 200);
-  const categoria = normalizarCategoria(
-    body.categoria ?? atual.categoria,
-    nome,
-    descricao,
-    carro
-  );
-  const categoriaMl =
-    texto(body.categoria_ml ?? atual.categoria_ml, 300) ||
-    sugerirCategoriaMl(categoria);
-  const sku = texto(body.sku ?? atual.sku, 100).toUpperCase();
-
-  return {
-    nome,
-    sku,
-    carro,
-    descricao,
-    categoria,
-    categoria_ml: categoriaMl,
-    ml_category_id: texto(body.ml_category_id ?? atual.ml_category_id, 80),
-    ml_config: (() => {
-      const bruto = body.ml_config ?? atual.ml_config ?? '{}';
-      const config = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;
-      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Configuração do anúncio inválida.');
-      config.shipping = { mode: 'not_specified', free_shipping: false, local_pick_up: false, ...(config.shipping || {}) };
-      config.shipping.mode = 'not_specified';
-      config.shipping.free_shipping = false;
-      config.shipping.local_pick_up = false;
-      config.sale_terms = { WARRANTY_TYPE: 'Sem garantia', ...(config.sale_terms || {}) };
-      config.sale_terms.WARRANTY_TYPE = 'Sem garantia';
-      const json = JSON.stringify(config);
-      if (json.length > 30000) throw new Error('Configuração do anúncio excede o limite de tamanho.');
-      return json;
-    })(),
-    marca: texto(body.marca ?? atual.marca, 120),
-    modelo: texto(body.modelo ?? atual.modelo, 120),
-    ano: texto(body.ano ?? atual.ano, 40),
-    condicao: 'usado',
-    numero_oem: texto(body.numero_oem ?? atual.numero_oem, 120),
-    garantia: 'Sem garantia',
-    peso_kg: numero(body.peso_kg ?? atual.peso_kg),
-    comprimento_cm: numero(body.comprimento_cm ?? atual.comprimento_cm),
-    largura_cm: numero(body.largura_cm ?? atual.largura_cm),
-    altura_cm: numero(body.altura_cm ?? atual.altura_cm),
-    atributos: parseAtributos(body.atributos ?? atual.atributos),
-    ml_titulo:
-      texto(body.ml_titulo ?? atual.ml_titulo, 60) || nome.slice(0, 60),
-    tipo_anuncio: 'premium',
-    gtin: texto(body.gtin ?? atual.gtin, 60),
-    localizacao: '',
-    video_url: texto(body.video_url ?? atual.video_url, 500),
-    modo_compra:
-      texto(body.modo_compra ?? atual.modo_compra ?? 'buy_it_now', 40) ||
-      'buy_it_now',
-    quantidade: Math.trunc(numero(body.quantidade ?? atual.quantidade)),
-    preco: numero(body.preco ?? atual.preco),
-    ml_ativo: normalizarBooleano(body.ml_ativo ?? atual.ml_ativo) ? 1 : 0
-  };
-}
 
 function validarPayloadPeca(payload) {
   if (!payload.nome) {
@@ -267,7 +189,7 @@ app.get('/api/pecas', async (req, res) => {
     const limite = Math.min(Math.max(Math.trunc(limiteBruto), 0), 500);
     const campos = resumo
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
-         p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia,
+         p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia, p.ml_publicado_em, p.aplicacao_origem, p.categoria_origem,
          p.quantidade, p.preco, p.ml_ativo,
          p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
@@ -313,11 +235,11 @@ app.get('/api/pecas', async (req, res) => {
           )
         ) AS imagem_principal
       FROM pecas p
-      ORDER BY p.id DESC
+      ORDER BY (p.ml_publicado_em IS NULL) ASC, p.ml_publicado_em DESC, p.id DESC
       ${limite > 0 ? `LIMIT ${limite}` : ''}
     `);
 
-    res.json(pecas.map(comStatusAnuncio));
+    res.json(pecas.map((peca) => comStatusAnuncio(comMetadadosPeca(peca))));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -632,6 +554,15 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
+// Ranking independente: evita recalcular todo o dashboard ao filtrar produtos.
+app.get('/api/dashboard/ranking', async (req, res) => {
+  try {
+    res.json(await obterRankingTiposPeca(db, req.query));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 // Dashboard analítico com período selecionável.
 app.get('/api/dashboard/analytics', async (req, res) => {
   try {
@@ -718,7 +649,7 @@ app.get('/api/pecas/:id', async (req, res) => {
       [peca.id]
     );
 
-    res.json({ ...comStatusAnuncio(peca), imagens });
+    res.json({ ...comStatusAnuncio(comMetadadosPeca(peca)), imagens });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -804,7 +735,8 @@ app.put('/api/pecas/:id', async (req, res) => {
            numero_oem = ?, garantia = ?, peso_kg = ?, comprimento_cm = ?,
            largura_cm = ?, altura_cm = ?, atributos = ?, ml_titulo = ?,
            tipo_anuncio = ?, gtin = ?, localizacao = ?, video_url = ?,
-           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?, ml_category_id = ?, ml_config = ?
+           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?, ml_category_id = ?, ml_config = ?,
+           categoria_origem = ?, aplicacao_origem = ?
        WHERE id = ?`,
       [
         payload.nome,
@@ -835,6 +767,8 @@ app.put('/api/pecas/:id', async (req, res) => {
         payload.ml_ativo,
         payload.ml_category_id || null,
         payload.ml_config,
+        origensAposEdicao(req.body, atual, payload).categoria_origem,
+        origensAposEdicao(req.body, atual, payload).aplicacao_origem,
         atual.id
       ]
     );
@@ -1084,6 +1018,15 @@ app.listen(PORT, () => {
   console.log(
     `📊 Banco: ${process.env.DATABASE_URL ? 'Supabase Postgres' : 'database.sqlite'}`
   );
+
+  // Corrige categorias/aplicações a partir do cache existente sem rede e sem
+  // atrasar a abertura da API; grava em lotes pequenos.
+  void revisarMetadadosLocais(db).catch((error) => console.warn('Revisão local de metadados:', error.message));
+  const revisarMl = () => void sincronizarMetadadosPendentes().catch((error) => console.warn('Atualização de metadados ML:', error.message));
+  setTimeout(() => {
+    revisarMl();
+    setInterval(revisarMl, 60_000);
+  }, 20_000);
 
   // Espera o servidor estabilizar antes da primeira varredura automática.
   setTimeout(() => {

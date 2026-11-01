@@ -16,6 +16,7 @@ import {
   classificarCategoria,
   sugerirCategoriaMl
 } from '../utils/categorias.js';
+import { lerObjeto, metadadosPeca } from './pecaMetadados.js';
 
 const MARGEM_EXPIRACAO_MS = 5 * 60 * 1000;
 const LIMITE_ANUNCIOS = 10000;
@@ -24,6 +25,7 @@ const LIMITE_PERGUNTAS = 1000;
 const LIMITE_RECLAMACOES = 200;
 const TAMANHO_PAGINA_ANUNCIOS = 100;
 const CONCORRENCIA_DESCRICOES = 6;
+// Metadados derivados somente de evidências do cadastro/ML.
 const sincronizacoesEmAndamento = new Set();
 const cacheBillingCliente = new Map();
 
@@ -953,6 +955,10 @@ function dadosAnuncioMl(item, descricao = '') {
   const dados = {
     id: texto(item?.id, 100),
     title: texto(item?.title, 200),
+    date_created: item?.date_created || null,
+    start_time: item?.start_time || null,
+    compatibilidades: Array.isArray(item?.compatibilidades) ? item.compatibilidades : [],
+    compatibilidades_info: item?.compatibilidades_info || null,
     listing_type_id: texto(item?.listing_type_id, 60),
     tipo_anuncio: normalizarTipoAnuncioMl(item?.listing_type_id),
     category_id: texto(item?.category_id, 80),
@@ -1052,8 +1058,7 @@ async function obterDescricaoItem(mlItemId) {
   }
 }
 
-async function upsertPecaMl(item) {
-  const db = getDb();
+export async function upsertPecaMl(item, { db = getDb(), obterDescricao = obterDescricaoItem } = {}) {
   const mlItemId = texto(item?.id, 100);
 
   if (!mlItemId) return { criado: false, ignorado: true };
@@ -1107,9 +1112,16 @@ async function upsertPecaMl(item) {
   const ano = atributoItem(item, ['VEHICLE_YEAR', 'YEAR', 'ANO']);
   const numeroOem = atributoItem(item, ['PART_NUMBER', 'OEM', 'GTIN']);
   const descricaoMl = !peca || !String(peca.descricao || '').trim()
-    ? await obterDescricaoItem(mlItemId)
+    ? await obterDescricao(mlItemId)
     : '';
-  const mlDados = dadosAnuncioMl(item, descricaoMl);
+  const cacheAnterior = lerObjeto(peca?.ml_dados);
+  const itemCompleto = {
+    ...cacheAnterior, ...item,
+    compatibilidades: item.compatibilidades ?? cacheAnterior.compatibilidades,
+    compatibilidades_info: item.compatibilidades_info ?? cacheAnterior.compatibilidades_info,
+  };
+  const mlDados = dadosAnuncioMl(itemCompleto, descricaoMl || cacheAnterior.descricao || peca?.descricao || '');
+  const metadata = metadadosPeca({ ...peca, nome: peca?.nome || titulo, ml_item_id: mlItemId }, itemCompleto);
   const agora = new Date().toISOString();
 
   if (!peca) {
@@ -1130,7 +1142,7 @@ async function upsertPecaMl(item) {
     const valores = [
       titulo || `Anúncio ${mlItemId}`,
       sku,
-      '',
+      metadata.aplicacao,
       descricao,
       categoria,
       categoriaMl,
@@ -1167,7 +1179,7 @@ async function upsertPecaMl(item) {
            largura_cm, altura_cm, atributos, ml_titulo, tipo_anuncio,
            quantidade, preco, ml_ativo, ml_item_id, ml_permalink, ml_status,
            ml_category_id, ml_thumbnail, ml_health, ml_dados, ml_sincronizado_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (${valores.map(() => '?').join(',')})`,
         valores
       );
 
@@ -1188,6 +1200,7 @@ async function upsertPecaMl(item) {
       resultado = await inserir();
     }
 
+    await db.run('UPDATE pecas SET ml_publicado_em = ?, aplicacao_origem = ?, categoria_origem = ? WHERE id = ?', [metadata.ml_publicado_em, metadata.aplicacao_origem, metadata.categoria_origem, resultado.lastID]);
     return { criado: true, peca_id: resultado.lastID };
   }
 
@@ -1203,6 +1216,11 @@ async function upsertPecaMl(item) {
        ml_thumbnail = ?,
        ml_health = COALESCE(?, ml_health),
        ml_dados = ?,
+       carro = ?,
+       aplicacao_origem = ?,
+       ml_publicado_em = COALESCE(?, ml_publicado_em),
+       categoria = ?,
+       categoria_origem = ?,
        tipo_anuncio = ?,
        atributos = ?,
        marca = CASE WHEN TRIM(?) <> '' THEN ? ELSE marca END,
@@ -1247,6 +1265,11 @@ async function upsertPecaMl(item) {
       thumbnail,
       mlHealth,
       mlDados,
+      metadata.aplicacao,
+      metadata.aplicacao_origem,
+      metadata.ml_publicado_em,
+      metadata.categoria,
+      metadata.categoria_origem,
       tipoAnuncio,
       atributos,
       marca,
@@ -1314,6 +1337,38 @@ export async function sincronizarPecas() {
       ignorados
     };
   });
+}
+
+let revisaoMetadadosRodando = false;
+export async function sincronizarMetadadosPendentes({ limite = 20 } = {}) {
+  if (revisaoMetadadosRodando) return { emAndamento: true };
+  revisaoMetadadosRodando = true;
+  try {
+    const integracao = await obterIntegracao();
+    if (!integracao) return { itens: 0 };
+    const db = getDb();
+    const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    const pendentes = await db.all(`SELECT id, ml_item_id FROM pecas
+      WHERE COALESCE(ml_item_id, '') <> '' AND (ml_metadados_em IS NULL OR ml_metadados_em < ?)
+      ORDER BY COALESCE(ml_metadados_em, '') ASC, id ASC LIMIT ?`, [cutoff, Math.min(Math.max(Number(limite) || 20, 1), 20)]);
+    if (!pendentes.length) return { itens: 0 };
+    const dados = await mlFetch(`/items?ids=${pendentes.map((peca) => encodeURIComponent(peca.ml_item_id)).join(',')}`);
+    let atualizados = 0;
+    await db.run(`UPDATE pecas SET ml_metadados_em = ? WHERE id IN (${pendentes.map(() => '?').join(',')})`, [new Date().toISOString(), ...pendentes.map((peca) => peca.id)]);
+    await mapComLimite(Array.isArray(dados) ? dados : [], 2, async (entrada) => {
+      const item = entrada?.body;
+      if (Number(entrada?.code) !== 200 || !item?.id) return;
+      let compatibilidades;
+      try { compatibilidades = await mlFetch(`/items/${encodeURIComponent(item.id)}/compatibilities`); } catch { /* O ML pode limitar compatibilidades por licença/categoria. */ }
+      try {
+        await upsertPecaMl({ ...item,
+          ...(compatibilidades ? { compatibilidades: compatibilidades.products || compatibilidades.products_families || compatibilidades.compatibilities || [], compatibilidades_info: compatibilidades } : {}),
+        });
+        atualizados += 1;
+      } catch (error) { console.warn(`Metadados do anúncio ${item.id}:`, error.message); }
+    });
+    return { itens: pendentes.length, atualizados };
+  } finally { revisaoMetadadosRodando = false; }
 }
 
 function extrairId(valor) {
@@ -1927,6 +1982,10 @@ async function upsertPerguntaMl(perguntaMl) {
   if (!mlQuestionId) return { ignorado: true };
 
   const mlItemId = texto(perguntaMl?.item_id, 100);
+  const mlBuyerId = texto(
+    perguntaMl?.from?.id ?? perguntaMl?.from?.user_id ?? perguntaMl?.user_id,
+    100
+  );
   const peca = mlItemId
     ? await db.get('SELECT id FROM pecas WHERE ml_item_id = ?', [mlItemId])
     : null;
@@ -1953,6 +2012,7 @@ async function upsertPerguntaMl(perguntaMl) {
          peca_id = COALESCE(?, peca_id),
          pergunta = ?,
          ml_item_id = ?,
+         ml_buyer_id = COALESCE(NULLIF(?, ''), ml_buyer_id),
          ml_status = ?,
          data_pergunta = COALESCE(?, data_pergunta),
          resposta = CASE WHEN ? <> '' THEN ? ELSE resposta END,
@@ -1968,6 +2028,7 @@ async function upsertPerguntaMl(perguntaMl) {
         peca?.id ?? null,
         texto(perguntaMl?.text, 5000),
         mlItemId,
+        mlBuyerId,
         texto(perguntaMl?.status, 40),
         dataPergunta,
         resposta,
@@ -1984,8 +2045,8 @@ async function upsertPerguntaMl(perguntaMl) {
   const resultado = await db.run(
     `INSERT INTO perguntas_ml (
        peca_id, pergunta, resposta, respondida, data_pergunta,
-       ml_question_id, ml_item_id, ml_status, data_resposta, atualizado_em
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+       ml_question_id, ml_item_id, ml_buyer_id, ml_status, data_resposta, atualizado_em
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
     [
       peca?.id ?? null,
       texto(perguntaMl?.text, 5000),
@@ -1994,6 +2055,7 @@ async function upsertPerguntaMl(perguntaMl) {
       dataPergunta,
       mlQuestionId,
       mlItemId,
+      mlBuyerId,
       texto(perguntaMl?.status, 40),
       dataResposta
     ]
@@ -2592,7 +2654,8 @@ export async function obterDetalhesAnuncioMl(itemId) {
     ...anuncio,
     tipo_anuncio: normalizarTipoAnuncioMl(anuncio?.listing_type_id),
     descricao_ml: texto(descricao?.plain_text || descricao?.text, 12000),
-    compatibilidades: compatibilidades?.products_families || compatibilidades?.compatibilities || []
+    compatibilidades: compatibilidades?.products || compatibilidades?.products_families || compatibilidades?.compatibilities || [],
+    compatibilidades_info: compatibilidades || null
   };
 }
 
@@ -3775,7 +3838,11 @@ export async function atualizarAnuncioPeca(pecaId, dados = {}) {
     const urlsLocais = imagensLocais.map((imagem) =>
       urlImagemPublica(imagem.caminho, origem)
     );
-    const urls = [...new Set([...urlsAtuais, ...urlsLocais])].slice(0, 20);
+    // A ordem local é a fonte de verdade quando há fotos cadastradas. Isso
+    // permite que mover a capa/fotos no estoque seja refletido no anúncio.
+    const urls = urlsLocais.length > 0
+      ? [...new Set(urlsLocais)].slice(0, 20)
+      : [...new Set(urlsAtuais)].slice(0, 20);
     if (urls.length > 0) corpo.pictures = urls.map((source) => ({ source }));
   }
 

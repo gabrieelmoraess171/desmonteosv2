@@ -1,0 +1,237 @@
+{
+  "outputDir": "/private/tmp/desmonte-dashboard-top-check",
+  "dataSource": "Simulated browser fixtures; no real authentication or business API used.",
+  "mocked": [
+    "/api/health",
+    "/api/dashboard/analytics",
+    "/api/pecas",
+    "/api/dashboard",
+    "/api/vendas/notificacoes",
+    "/api/mercadolivre/sincronizar-leve",
+    "/api/vendas/envios",
+    "/api/pecas/proximo-sku"
+  ],
+  "errors": [],
+  "geometry": {
+    "390": {
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "maxBlockAnimationDelay": 0,
+      "hero": {
+        "x": 14,
+        "y": 262.1875,
+        "width": 362,
+        "height": 300,
+        "bottom": 562.1875
+      },
+      "stats": {
+        "x": 14,
+        "y": 580.1875,
+        "width": 362,
+        "height": 476,
+        "bottom": 1056.1875
+      },
+      "heroDomBeforeStats": true,
+      "image": {
+        "naturalWidth": 3310,
+        "naturalHeight": 2207,
+        "rect": {
+          "x": -68.375,
+          "y": 193.375,
+          "width": 625.03125,
+          "height": 416.75,
+          "bottom": 610.125
+        },
+        "objectFit": "fill",
+        "objectPosition": "50% 50%",
+        "animationName": "none",
+        "animationPlayState": "running"
+      }
+    },
+    "1440": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "maxBlockAnimationDelay": 0,
+      "hero": {
+        "x": 294,
+        "y": 198.1875,
+        "width": 1122,
+        "height": 287.453125,
+        "bottom": 485.640625
+      },
+      "stats": {
+        "x": 294,
+        "y": 507.640625,
+        "width": 1122,
+        "height": 152.453125,
+        "bottom": 660.09375
+      },
+      "heroDomBeforeStats": true,
+      "image": {
+        "naturalWidth": 3310,
+        "naturalHeight": 2207,
+        "rect": {
+          "x": 532.1875,
+          "y": -82.9765625,
+          "width": 1244.515625,
+          "height": 829.796875,
+          "bottom": 746.8203125
+        },
+        "objectFit": "fill",
+        "objectPosition": "50% 50%",
+        "animationName": "none",
+        "animationPlayState": "running"
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "greeting hero spans full width above four stats at 1440 and 390",
+      "ok": true
+    },
+    {
+      "name": "period 15 days updates aria-pressed and 15 chart data points",
+      "ok": true
+    },
+    {
+      "name": "chart accepts empty series without errors",
+      "ok": true
+    },
+    {
+      "name": "Vendas hoje card opens existing sales page",
+      "ok": true
+    },
+    {
+      "name": "Cadastrar peça opens existing registration dialog",
+      "ok": true
+    },
+    {
+      "name": "Importar lote opens existing import page",
+      "ok": true
+    },
+    {
+      "name": "desktop sidebar collapses and expands",
+      "ok": true
+    },
+    {
+      "name": "mobile menu labels remain visible after desktop collapse; closes",
+      "ok": true
+    },
+    {
+      "name": "logout confirmation can be cancelled",
+      "ok": true
+    },
+    {
+      "name": "complaints mark service danger and ad reviews warning with visible labels",
+      "ok": true
+    },
+    {
+      "name": "questions without complaints mark service warning with visible label",
+      "ok": true
+    },
+    {
+      "name": "zero pending questions complaints and reviews show default cards without alerts",
+      "ok": true
+    },
+    {
+      "name": "hero decorative image and glow animate under normal motion",
+      "ok": true
+    },
+    {
+      "name": "reduced motion disables hero decorative animations",
+      "ok": true
+    }
+  ],
+  "toneScenarios": [
+    {
+      "scenario": "complaints",
+      "service": {
+        "className": "dashboard-card dashboard-card--danger group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": "Urgente",
+        "iconColor": "rgba(255, 90, 100, 0.16)"
+      },
+      "ads": {
+        "className": "dashboard-card dashboard-card--warning group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": "Revisar",
+        "iconColor": "rgba(255, 190, 72, 0.14)"
+      }
+    },
+    {
+      "scenario": "questions-only",
+      "service": {
+        "className": "dashboard-card dashboard-card--warning group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": "Responder",
+        "iconColor": "rgba(255, 190, 72, 0.14)"
+      },
+      "ads": {
+        "className": "dashboard-card dashboard-card--warning group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": "Revisar",
+        "iconColor": "rgba(255, 190, 72, 0.14)"
+      }
+    },
+    {
+      "scenario": "no-pending",
+      "service": {
+        "className": "dashboard-card  group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": null,
+        "iconColor": "rgb(0, 117, 255)"
+      },
+      "ads": {
+        "className": "dashboard-card  group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "status": null,
+        "iconColor": "rgb(0, 117, 255)"
+      }
+    }
+  ],
+  "motion": {
+    "normalBefore": {
+      "image": {
+        "animationName": "welcome-float",
+        "animationPlayState": "running",
+        "transform": "matrix(-0.999876, -0.015768, -0.015768, 0.999876, -0.694952, -415.439)"
+      },
+      "glow": {
+        "animationName": "welcome-glow-drift",
+        "animationPlayState": "running",
+        "transform": "matrix(0.906002, 0, 0, 0.906002, -1.3933, 0.685931)"
+      }
+    },
+    "normalAfter": {
+      "image": {
+        "animationName": "welcome-float",
+        "animationPlayState": "running",
+        "transform": "matrix(-0.999992, 0.0039441, 0.0039441, 0.999992, -8.82706, -421.764)"
+      },
+      "glow": {
+        "animationName": "welcome-glow-drift",
+        "animationPlayState": "running",
+        "transform": "matrix(0.980193, 0, 0, 0.980193, -18.6161, 9.16487)"
+      }
+    },
+    "reducedBefore": {
+      "image": {
+        "animationName": "none",
+        "animationPlayState": "running",
+        "transform": "matrix(-1, 0, 0, 1, 0, -414.898)"
+      },
+      "glow": {
+        "animationName": "none",
+        "animationPlayState": "running",
+        "transform": "none"
+      }
+    },
+    "reducedAfter": {
+      "image": {
+        "animationName": "none",
+        "animationPlayState": "running",
+        "transform": "matrix(-1, 0, 0, 1, 0, -414.898)"
+      },
+      "glow": {
+        "animationName": "none",
+        "animationPlayState": "running",
+        "transform": "none"
+      }
+    }
+  },
+  "verifiedAtSaoPaulo": "2026-10-31T01:57:47.987040-03:00"
+}

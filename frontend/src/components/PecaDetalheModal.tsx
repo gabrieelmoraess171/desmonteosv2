@@ -27,6 +27,7 @@ import {
 } from '../config/categorias';
 import { avaliarQualidadeMl } from '../utils/mlQualidade';
 import MercadoLivreDetalhes from './MercadoLivreDetalhes';
+import PecaFotosEditor from './PecaFotosEditor';
 
 interface ImagemPeca {
   id: number;
@@ -425,6 +426,12 @@ export default function PecaDetalheModal({
                     {avisoImagens}
                   </p>
                 ) : null}
+
+                <PecaFotosEditor
+                  pecaId={peca.id}
+                  mlItemId={peca.ml_item_id}
+                  onChange={() => onChange?.()}
+                />
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">

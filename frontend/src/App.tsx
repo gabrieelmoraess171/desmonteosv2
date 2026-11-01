@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import {
   DollarSign,
   ExternalLink,
+  ImagePlus,
   LogOut,
   Menu,
   MessageSquare,
@@ -10,19 +11,20 @@ import {
   Search,
   ShoppingBag,
   Store,
+  Sparkles,
 } from 'lucide-react';
-import PecasTable from './components/PecasTable';
-import ImportLotPage from './pages/ImportLotPage';
-import ConfiguracoesPage from './pages/ConfiguracoesPage';
-import NFePage from './pages/NFePage';
-import AtendimentoPage from './pages/AtendimentoPage';
-import NovaPecaPage from './pages/NovaPecaPage';
-import RelatoriosPage from './pages/RelatoriosPage';
-import MarketplacesPage from './pages/MarketplacesPage';
-import AnaliseIaPage from './pages/AnaliseIaPage';
-import EditorAnunciosPage from './pages/EditorAnunciosPage';
-import FilaAprovacaoPage from './pages/FilaAprovacaoPage';
-import VendasPage from './pages/VendasPage';
+const PecasTable = lazy(() => import('./components/PecasTable'));
+const ImportLotPage = lazy(() => import('./pages/ImportLotPage'));
+const ConfiguracoesPage = lazy(() => import('./pages/ConfiguracoesPage'));
+const NFePage = lazy(() => import('./pages/NFePage'));
+const AtendimentoPage = lazy(() => import('./pages/AtendimentoPage'));
+const NovaPecaPage = lazy(() => import('./pages/NovaPecaPage'));
+const RelatoriosPage = lazy(() => import('./pages/RelatoriosPage'));
+const MarketplacesPage = lazy(() => import('./pages/MarketplacesPage'));
+const AnaliseIaPage = lazy(() => import('./pages/AnaliseIaPage'));
+const EditorAnunciosPage = lazy(() => import('./pages/EditorAnunciosPage'));
+const FilaAprovacaoPage = lazy(() => import('./pages/FilaAprovacaoPage'));
+const VendasPage = lazy(() => import('./pages/VendasPage'));
 import type { VendaAba } from './types/vendas';
 import ConnectionMonitor from './components/ConnectionMonitor';
 import NotificacoesBell, {
@@ -32,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import DashboardCard from './components/DashboardCard';
 import DashboardGreeting from './components/DashboardGreeting';
+import DeferredSection from './components/DeferredSection';
 import RevenueChart, {
   type PeriodoDashboard,
   type SeriePonto,
@@ -292,6 +295,8 @@ function App() {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockSearchRevision, setStockSearchRevision] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarKey>('dashboard');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -352,26 +357,32 @@ function App() {
   const ActiveIcon = activeItem.icon;
   const headerInfo = TITULOS[activeView];
 
+  const dashboardRequest = useRef<AbortController | null>(null);
   const fetchDashboard = useCallback(async () => {
+    dashboardRequest.current?.abort();
+    const controller = new AbortController();
+    dashboardRequest.current = controller;
     try {
       const [dashboardRes, analyticsRes] = await Promise.all([
-        axios.get<DashboardStats>('/api/dashboard', { timeout: 12000 }),
+        axios.get<DashboardStats>('/api/dashboard', { timeout: 12000, signal: controller.signal }),
         axios.get<AnalyticsData>(
           `/api/dashboard/analytics?periodo=${periodo}`,
-          { timeout: 12000 }
+          { timeout: 12000, signal: controller.signal }
         ),
       ]);
 
+      if (controller.signal.aborted) return;
       setStats({ ...initialStats, ...dashboardRes.data });
       setAnalytics({ ...initialAnalytics, ...analyticsRes.data });
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('Erro ao buscar dashboard:', error);
+      if (!axios.isCancel(error)) console.error('Erro ao buscar dashboard:', error);
     }
   }, [periodo]);
 
   useEffect(() => {
     void fetchDashboard();
+    return () => dashboardRequest.current?.abort();
   }, [fetchDashboard]);
 
   // Atualiza o painel sozinho enquanto ele está aberto, para refletir venda,
@@ -385,7 +396,7 @@ function App() {
       void fetchDashboard();
     };
 
-    const intervalo = window.setInterval(atualizar, 20000);
+    const intervalo = window.setInterval(atualizar, 30000);
     document.addEventListener('visibilitychange', atualizar);
 
     return () => {
@@ -398,7 +409,6 @@ function App() {
   useEffect(() => {
     let ativo = true;
     let verificando = false;
-    let sincronizandoMercadoLivre = false;
     // Cada tipo tem seu próprio marco inicial. Se apenas uma categoria já
     // tiver sido lida, as outras não podem despejar registros antigos como
     // se fossem novas.
@@ -438,15 +448,8 @@ function App() {
       verificando = true;
 
       try {
-        if (!sincronizandoMercadoLivre) {
-          sincronizandoMercadoLivre = true;
-          void axios
-            .post('/api/mercadolivre/sincronizar-leve', {}, { timeout: 15000 })
-            .finally(() => {
-              sincronizandoMercadoLivre = false;
-            });
-        }
-
+        // A sincronização com o ML já roda no servidor a cada minuto.
+        // Cada navegador consulta somente notificações locais, sem disparar outra varredura.
         const depoisVenda = Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0);
         const depoisReclamacao = Number(
           readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0
@@ -591,7 +594,7 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 20000);
+    const intervalo = window.setInterval(() => void checar(), 30000);
     const aoVisivel = () => void checar();
     document.addEventListener('visibilitychange', aoVisivel);
 
@@ -714,16 +717,12 @@ function App() {
 
   const handleGlobalSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const termo = globalSearch.trim().toLocaleLowerCase('pt-BR');
+    const termo = globalSearch.trim();
     if (!termo) return;
-
-    const destino = NAV_ITEMS.find((item) =>
-      item.label.toLocaleLowerCase('pt-BR').includes(termo)
-    );
-    if (destino) {
-      handleNavigate(destino.key);
-      setGlobalSearch('');
-    }
+    setStockSearch(termo);
+    setStockSearchRevision((value) => value + 1);
+    setStatusInicialEstoque(null);
+    handleNavigate('lotes');
   };
 
   return (
@@ -797,19 +796,21 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="app-header-actions flex flex-wrap items-center justify-end gap-2">
                 <form
-                  className="global-search hidden xl:flex"
+                  className="global-search flex"
                   onSubmit={handleGlobalSearch}
                   role="search"
                 >
-                  <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <input
                     value={globalSearch}
                     onChange={(event) => setGlobalSearch(event.target.value)}
-                    placeholder="Buscar módulo..."
-                    aria-label="Buscar módulo"
+                    placeholder="Pesquisar peças: SKU, nome, OEM..."
+                    aria-label="Pesquisar peças por SKU, nome, OEM ou aplicação"
                   />
+                  <button type="submit" aria-label="Pesquisar peças" className="global-search__submit">
+                    <Search className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </form>
                 <NotificacoesBell
                   itens={notificacoes}
@@ -846,6 +847,7 @@ function App() {
         </header>
 
         <main className="relative mx-auto w-full max-w-7xl flex-1 p-5 sm:p-6">
+          <Suspense fallback={<div role="status" className="rounded-2xl border border-line bg-card p-6 text-sm text-muted">Carregando tela…</div>}>
           <div key={activeView} className="view-enter">
             {activeView === 'dashboard' && (
               <div className="dashboard-stack space-y-6">
@@ -863,28 +865,32 @@ function App() {
                 </div>
 
                 <section className="dashboard-welcome-panel glass-panel" aria-label="Resumo da operação">
-                  <div className="dashboard-welcome-art" aria-hidden="true">
-                    <img src="/assets/vision/welcome-jellyfish.jpg" alt="" />
-                    <span className="dashboard-welcome-glow" />
-                  </div>
                   <div className="dashboard-welcome-copy">
-                    <DashboardGreeting userName={userName} />
+                    <DashboardGreeting key={userName} userName={userName} />
                     <div className="dashboard-welcome-summary">
-                      <span className="inline-flex items-center gap-2 text-success">
+                      <span className="welcome-chip welcome-chip--success">
                         <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                        {stats.vendasHoje} venda(s) hoje
+                        {stats.vendasHoje} venda(s) hoje · {formatCurrency(stats.faturamentoHoje)}
                       </span>
-                      <span>{formatCurrency(stats.faturamentoHoje)} em vendas</span>
+                      <span className="welcome-chip welcome-chip--accent">
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        {analytics.estoque.anuncios} anúncio(s) ML ativo(s)
+                      </span>
+                      {companyName && <span className="welcome-chip"><Store className="h-3.5 w-3.5" aria-hidden="true" />{companyName}</span>}
                     </div>
                   </div>
                   <div className="dashboard-welcome-actions">
-                    <button type="button" onClick={() => handleNavigate('nova')} className="vision-primary-action">
-                      <Package className="h-4 w-4" aria-hidden="true" />
-                      Cadastrar peça
+                    <button type="button" onClick={() => handleNavigate('nova')} className="welcome-shortcut">
+                      <Package className="h-4 w-4 text-accent" aria-hidden="true" />Cadastrar peça
                     </button>
-                    <button type="button" onClick={() => handleNavigate('importar')} className="vision-text-action">
-                      Importar lote
-                      <img src="/assets/vision/arrow-forward.svg" alt="" width="13" height="13" />
+                    <button type="button" onClick={() => handleNavigate('pedidos')} className="welcome-shortcut">
+                      <ShoppingBag className="h-4 w-4 text-success" aria-hidden="true" />Fechar NF-e
+                    </button>
+                    <button type="button" onClick={() => handleNavigate('importar')} className="welcome-shortcut">
+                      <ImagePlus className="h-4 w-4 text-cyan" aria-hidden="true" />Importar lote
+                    </button>
+                    <button type="button" data-tone={atendimentoTone} onClick={() => handleNavigate('atendimento')} className="welcome-shortcut">
+                      <MessageSquare className="h-4 w-4" aria-hidden="true" />Atendimento
                     </button>
                   </div>
                 </section>
@@ -979,11 +985,13 @@ function App() {
                 </div>
 
                 <div className="dashboard-stock-panel">
+                  <DeferredSection>
                   <PecasTable
                     limit={5}
                     onChange={handlePecasChanged}
                     onViewAll={() => handleNavigate('lotes')}
                   />
+                  </DeferredSection>
                 </div>
               </div>
             )}
@@ -994,6 +1002,8 @@ function App() {
               <PecasTable
                 onChange={handlePecasChanged}
                 initialStatusFiltro={statusInicialEstoque || undefined}
+                initialSearch={stockSearch}
+                searchRequestId={stockSearchRevision}
               />
             )}
 
@@ -1064,6 +1074,7 @@ function App() {
               />
             )}
           </div>
+          </Suspense>
         </main>
 
         <footer className="mt-auto border-t border-line bg-white/[0.015] backdrop-blur-xl">

@@ -33,6 +33,9 @@ interface Peca extends PecaCompleta {
   vendas_count?: number | null;
   status?: 'inativo' | 'revisar' | 'pronto';
   motivos?: string[];
+  aplicacao?: string | null;
+  aplicacao_origem?: string | null;
+  ml_publicado_em?: string | null;
 }
 
 type StatusFiltro =
@@ -48,6 +51,8 @@ interface PecasTableProps {
   onChange?: () => void;
   onViewAll?: () => void;
   initialStatusFiltro?: StatusFiltro;
+  initialSearch?: string;
+  searchRequestId?: number;
 }
 
 const STATUS_CONFIG: Record<
@@ -130,6 +135,26 @@ function normalizarBusca(valor: unknown): string {
     .trim();
 }
 
+function dataPublicacao(peca: Peca): number | null {
+  if (!peca.ml_publicado_em) return null;
+  const valor = new Date(peca.ml_publicado_em).getTime();
+  return Number.isFinite(valor) ? valor : null;
+}
+
+function publicacaoLabel(peca: Peca): string {
+  const data = dataPublicacao(peca);
+  if (data === null) return peca.ml_item_id ? 'Publicação: data não disponível no ML' : 'Ainda não publicado no ML';
+  return `Publicado em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(data))}`;
+}
+
+function aplicacaoLabel(peca: Peca): string {
+  return peca.aplicacao || peca.carro || 'Aplicação não disponível';
+}
+
+function origemAplicacao(peca: Peca): string {
+  return peca.aplicacao_origem === 'titulo_ml' ? 'Aplicação descrita no título do anúncio' : 'Aplicação registrada na ficha ou nas compatibilidades do Mercado Livre';
+}
+
 function anuncioVendido(peca: Peca): boolean {
   return (
     String(peca.ml_status || '').toLowerCase() === 'closed' ||
@@ -137,21 +162,20 @@ function anuncioVendido(peca: Peca): boolean {
   );
 }
 
-function prioridadeListagem(peca: Peca): number {
-  if (Boolean(peca.ml_ativo)) return 0;
-  if (anuncioVendido(peca)) return 1;
-  return 2;
-}
 
 export default function PecasTable({
   limit,
   onChange,
   onViewAll,
   initialStatusFiltro,
+  initialSearch,
+  searchRequestId,
 }: PecasTableProps) {
   const [pecas, setPecas] = useState<Peca[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(initialSearch || '');
+  const [buscaDoHeader, setBuscaDoHeader] = useState(initialSearch !== undefined);
+  const [ordenacao, setOrdenacao] = useState<'recentes' | 'antigos' | 'nome'>('recentes');
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>(
     initialStatusFiltro || 'todos'
   );
@@ -164,6 +188,7 @@ export default function PecasTable({
   const fetchPecas = async () => {
     try {
       const params = new URLSearchParams({ resumo: '1' });
+      if (limit !== undefined) params.set('limite', String(limit));
       const response = await axios.get<Peca[]>(
         `/api/pecas?${params.toString()}`
       );
@@ -177,7 +202,16 @@ export default function PecasTable({
 
   useEffect(() => {
     fetchPecas();
-  }, []);
+  }, [limit]);
+
+  useEffect(() => {
+    if (initialSearch === undefined) return;
+    setBusca(initialSearch);
+    setBuscaDoHeader(true);
+    setStatusFiltro('todos');
+    setCategoriaFiltro('todas');
+    setPagina(1);
+  }, [initialSearch, searchRequestId]);
 
   // A listagem vem resumida (sem descrição/atributos para ser rápida). Ao
   // editar, busca a ficha completa para não apagar dados ao salvar.
@@ -250,7 +284,7 @@ export default function PecasTable({
     return pecas
       .filter((peca) => {
       const textoBusca = normalizarBusca(
-        [peca.nome, peca.sku, peca.carro, peca.categoria, peca.marca, peca.modelo, peca.ano, peca.numero_oem]
+        [peca.nome, peca.sku, peca.carro, peca.aplicacao, peca.categoria, peca.marca, peca.modelo, peca.ano, peca.numero_oem, peca.ml_titulo, peca.ml_item_id]
           .filter(Boolean)
           .join(' ')
       );
@@ -275,11 +309,19 @@ export default function PecasTable({
         return true;
       })
       .sort((a, b) => {
-        const prioridade = prioridadeListagem(a) - prioridadeListagem(b);
-        if (prioridade !== 0) return prioridade;
+        if (ordenacao !== 'nome') {
+          const da = dataPublicacao(a), db = dataPublicacao(b);
+          if (da !== null && db !== null) {
+            if (da !== db) return ordenacao === 'recentes' ? db - da : da - db;
+            return b.id - a.id;
+          }
+          if (da !== null) return -1;
+          if (db !== null) return 1;
+          return ordenacao === 'recentes' ? b.id - a.id : a.id - b.id;
+        }
         return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
       });
-  }, [pecas, busca, categoriaFiltro, statusFiltro]);
+  }, [pecas, busca, buscaDoHeader, categoriaFiltro, statusFiltro, ordenacao]);
 
   const exibidas = limit !== undefined ? filtradas.slice(0, limit) : filtradas;
   const completo = limit === undefined;
@@ -295,7 +337,7 @@ export default function PecasTable({
 
   useEffect(() => {
     setPagina(1);
-  }, [busca, statusFiltro, categoriaFiltro]);
+  }, [busca, statusFiltro, categoriaFiltro, ordenacao]);
 
   const aplicarFiltroResumo = (filtro: StatusFiltro) => {
     setStatusFiltro(filtro);
@@ -344,7 +386,7 @@ export default function PecasTable({
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        {completo && <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {[
             {
               label: 'Itens',
@@ -419,7 +461,7 @@ export default function PecasTable({
               </button>
             );
           })}
-        </div>
+        </div>}
 
         {statusFiltro !== 'todos' && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -446,13 +488,13 @@ export default function PecasTable({
         )}
 
         {completo && (
-          <div className="mt-5 grid gap-3 md:grid-cols-[1fr_190px_190px]">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_170px_190px_190px]">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted" />
               <input
                 type="search"
                 value={busca}
-                onChange={(event) => setBusca(event.target.value)}
+                onChange={(event) => { setBusca(event.target.value); setBuscaDoHeader(false); }}
                 placeholder="Buscar por peça, SKU, carro ou categoria..."
                 className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm"
               />
@@ -486,6 +528,11 @@ export default function PecasTable({
                   {categoria}
                 </option>
               ))}
+            </select>
+            <select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="rounded-xl border px-3 py-2.5 text-sm" aria-label="Ordenar anúncios por publicação">
+              <option value="recentes">Últimos publicados</option>
+              <option value="antigos">Primeiros publicados</option>
+              <option value="nome">Nome da peça (A–Z)</option>
             </select>
           </div>
         )}
@@ -550,9 +597,9 @@ export default function PecasTable({
                   >
                     <td className="px-5 py-3.5 sm:px-6">
                       <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary">
+                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary">
                           {peca.imagem_principal ? (
-                            <img
+                            <img decoding="async"
                               src={peca.imagem_principal}
                               alt={peca.nome}
                               loading="lazy"
@@ -584,7 +631,7 @@ export default function PecasTable({
                             )}
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted">
-                            <span className="font-mono text-sm font-bold text-accent">
+                            <span className="inline-flex rounded-md border border-accent/35 bg-accentSoft px-2 py-1 font-mono text-sm font-bold text-accent">
                               {peca.sku || 'Sem SKU'}
                             </span>
                             <span>•</span>
@@ -618,12 +665,13 @@ export default function PecasTable({
                               </>
                             )}
                           </div>
+                          <p className="mt-1 text-[10px] text-muted">{publicacaoLabel(peca)}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-3.5">
                       <div className="flex flex-col items-start gap-1.5">
-                        <span className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs">
+                          <span className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-medium">
                           {peca.categoria || 'Sem categoria'}
                         </span>
                         {peca.ml_item_id && (
@@ -634,8 +682,8 @@ export default function PecasTable({
                       </div>
                     </td>
                     <td className="px-3 py-3.5">
-                      <p className="max-w-[160px] truncate">
-                        {peca.carro || 'Não informada'}
+                      <p className="max-w-[180px] truncate" title={`${origemAplicacao(peca)}: ${aplicacaoLabel(peca)}`}>
+                        {aplicacaoLabel(peca)}
                       </p>
                       <p className="text-[11px] text-muted">
                         {[peca.marca, peca.ano].filter(Boolean).join(' • ') ||
@@ -703,10 +751,10 @@ export default function PecasTable({
                             event.stopPropagation();
                             void handleMLToggle(peca);
                           }}
-                          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                            className={`inline-flex items-center gap-1.5 rounded-lg border border-ml/40 px-2.5 py-1.5 text-xs font-medium transition-colors ${
                             peca.ml_ativo
-                              ? 'bg-successSoft text-success hover:bg-success/20'
-                              : 'bg-white/[0.05] text-muted hover:bg-white/[0.09]'
+                              ? 'bg-ml/15 text-ml hover:bg-ml/25'
+                              : 'bg-ml/5 text-ml/70 hover:bg-ml/15'
                           }`}
                           title={
                             peca.ml_ativo
@@ -786,9 +834,9 @@ export default function PecasTable({
                   className="cursor-pointer p-4 transition-colors active:bg-white/[0.05]"
                 >
                   <div className="flex gap-3">
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary">
+                    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-secondary sm:h-28 sm:w-28">
                       {peca.imagem_principal ? (
-                        <img
+                        <img decoding="async"
                           src={peca.imagem_principal}
                           alt={peca.nome}
                           loading="lazy"
@@ -835,7 +883,7 @@ export default function PecasTable({
                         </div>
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                        <span className="font-mono text-xs font-bold text-accent">
+                        <span className="inline-flex rounded-md border border-accent/35 bg-accentSoft px-2 py-1 font-mono text-xs font-bold text-accent">
                           {peca.sku || 'Sem SKU'}
                         </span>
                         <span
@@ -855,13 +903,14 @@ export default function PecasTable({
                     </div>
                   </div>
 
+                  <p className="mt-2 text-[10px] text-muted">{publicacaoLabel(peca)}</p>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="min-w-0">
                       <p className="text-[10px] uppercase tracking-wider text-muted">
                         Aplicação
                       </p>
-                      <p className="mt-0.5 truncate font-medium">
-                        {peca.carro || 'Não informada'}
+                      <p className="mt-0.5 truncate font-medium" title={`${origemAplicacao(peca)}: ${aplicacaoLabel(peca)}`}>
+                        {aplicacaoLabel(peca)}
                       </p>
                     </div>
                     <div>
@@ -894,10 +943,10 @@ export default function PecasTable({
                           event.stopPropagation();
                           void handleMLToggle(peca);
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                          className={`inline-flex items-center gap-1.5 rounded-lg border border-ml/40 px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                           peca.ml_ativo
-                            ? 'bg-successSoft text-success'
-                            : 'bg-white/[0.05] text-muted'
+                            ? 'bg-ml/15 text-ml'
+                            : 'bg-ml/5 text-ml/70'
                         }`}
                       >
                         {peca.ml_ativo ? (
@@ -1004,7 +1053,7 @@ export default function PecasTable({
             onClick={onViewAll}
             className="inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-cyan"
           >
-            Ver estoque completo ({filtradas.length} itens) →
+            Ver estoque completo →
           </button>
         </div>
       )}

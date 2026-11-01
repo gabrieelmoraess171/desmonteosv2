@@ -76,6 +76,10 @@ export async function initDatabase() {
     ml_thumbnail: 'TEXT',
     ml_health: 'REAL',
     ml_sincronizado_em: 'TEXT',
+    categoria_origem: 'TEXT',
+    aplicacao_origem: 'TEXT',
+    ml_publicado_em: 'TEXT',
+    ml_metadados_em: 'TEXT',
     ml_dados: "TEXT DEFAULT '{}'"
   };
 
@@ -177,6 +181,7 @@ export async function initDatabase() {
   const novasColunasPerguntas = {
     ml_question_id: 'TEXT',
     ml_item_id: 'TEXT',
+    ml_buyer_id: 'TEXT',
     ml_status: "TEXT DEFAULT ''",
     data_resposta: 'TEXT',
     atualizado_em: 'TEXT'
@@ -388,9 +393,12 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id);
     CREATE INDEX IF NOT EXISTS idx_venda_itens_sku ON venda_itens(sku);
     CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_venda);
+    CREATE INDEX IF NOT EXISTS idx_vendas_peca_status ON vendas(peca_id, status);
     CREATE INDEX IF NOT EXISTS idx_vendas_plataforma ON vendas(plataforma);
     CREATE INDEX IF NOT EXISTS idx_pecas_ml ON pecas(ml_ativo);
     CREATE INDEX IF NOT EXISTS idx_pecas_categoria ON pecas(categoria);
+    CREATE INDEX IF NOT EXISTS idx_pecas_publicacao ON pecas(ml_publicado_em);
+    CREATE INDEX IF NOT EXISTS idx_pecas_revisao_metadados ON pecas(ml_metadados_em);
     CREATE INDEX IF NOT EXISTS idx_perguntas_respondida ON perguntas_ml(respondida);
     CREATE INDEX IF NOT EXISTS idx_reclamacoes_status ON reclamacoes_ml(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_pecas_sku

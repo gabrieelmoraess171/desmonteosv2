@@ -11,6 +11,7 @@ const STATUS_RECLAMACAO_ABERTA =
 const CAMPOS_PERGUNTA = `
   q.id, q.peca_id, q.pergunta, q.resposta, q.sugestao_ia, q.sugestao_fonte, q.respondida,
   q.ml_question_id, q.ml_item_id, q.ml_status,
+  q.ml_buyer_id,
   datetime(q.data_pergunta, 'localtime') AS data_pergunta,
   datetime(q.data_resposta, 'localtime') AS data_resposta,
   p.nome AS peca_nome, p.sku AS peca_sku, p.carro AS peca_carro,
@@ -112,6 +113,35 @@ router.get('/', async (req, res) => {
         reclamacoesAbertas: reclamacoes.length
       }
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/perguntas/historico', async (req, res) => {
+  try {
+    const pecaId = Number(req.query.peca_id);
+    const mlItemId = String(req.query.ml_item_id || '').trim();
+    const mlBuyerId = String(req.query.ml_buyer_id || '').trim();
+    if ((!Number.isInteger(pecaId) || pecaId <= 0) && !mlItemId) {
+      return res.status(400).json({ error: 'Informe o anúncio para consultar o histórico.' });
+    }
+
+    const db = getDb();
+    const usarComprador = mlBuyerId && Number.isInteger(pecaId) && pecaId > 0;
+    const historico = await db.all(
+      `SELECT q.id, q.pergunta, q.resposta, q.respondida, q.ml_question_id,
+              q.ml_item_id, q.ml_buyer_id, datetime(q.data_pergunta, 'localtime') AS data_pergunta,
+              datetime(q.data_resposta, 'localtime') AS data_resposta
+         FROM perguntas_ml q
+        WHERE q.respondida = 1
+          AND (${usarComprador ? 'q.peca_id = ? AND q.ml_buyer_id = ?' : Number.isInteger(pecaId) && pecaId > 0 ? 'q.peca_id = ?' : 'q.ml_item_id = ?'})
+        ORDER BY q.data_pergunta DESC, q.id DESC
+        LIMIT 20`,
+      usarComprador ? [pecaId, mlBuyerId] : [Number.isInteger(pecaId) && pecaId > 0 ? pecaId : mlItemId]
+    );
+
+    res.json({ historico });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

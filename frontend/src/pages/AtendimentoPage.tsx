@@ -27,6 +27,7 @@ interface Pergunta {
   respondida: number;
   ml_question_id?: string | null;
   ml_item_id?: string | null;
+  ml_buyer_id?: string | null;
   ml_status?: string | null;
   data_resposta?: string | null;
   data_pergunta: string;
@@ -37,6 +38,14 @@ interface Pergunta {
   peca_preco?: number | null;
   peca_descricao?: string | null;
   peca_garantia?: string | null;
+}
+
+interface PerguntaHistorico {
+  id: number;
+  pergunta: string;
+  resposta?: string | null;
+  data_pergunta: string;
+  data_resposta?: string | null;
 }
 
 interface Reclamacao {
@@ -114,6 +123,9 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
   const [gerandoId, setGerandoId] = useState<number | null>(null);
   const [reclamacaoAberta, setReclamacaoAberta] = useState<number | null>(null);
   const [pecaAberta, setPecaAberta] = useState<number | null>(null);
+  const [historicoAberto, setHistoricoAberto] = useState<number | null>(null);
+  const [historicos, setHistoricos] = useState<Record<number, PerguntaHistorico[]>>({});
+  const [carregandoHistorico, setCarregandoHistorico] = useState<number | null>(null);
 
   useEffect(() => {
     if (!foco || loading) return;
@@ -296,6 +308,27 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
     }
   };
 
+  const alternarHistorico = async (pergunta: Pergunta) => {
+    if (historicoAberto === pergunta.id) {
+      setHistoricoAberto(null);
+      return;
+    }
+    setHistoricoAberto(pergunta.id);
+    if (historicos[pergunta.id]) return;
+    setCarregandoHistorico(pergunta.id);
+    try {
+      const { data } = await axios.get<{ historico: PerguntaHistorico[] }>(
+        '/api/atendimento/perguntas/historico',
+        { params: { peca_id: pergunta.peca_id, ml_item_id: pergunta.ml_item_id, ml_buyer_id: pergunta.ml_buyer_id } }
+      );
+      setHistoricos((atual) => ({ ...atual, [pergunta.id]: data.historico || [] }));
+    } catch {
+      setHistoricos((atual) => ({ ...atual, [pergunta.id]: [] }));
+    } finally {
+      setCarregandoHistorico(null);
+    }
+  };
+
   const handleResolvida = (id: number) => {
     setDados((atual) => ({
       ...atual,
@@ -465,6 +498,18 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => void alternarHistorico(pergunta)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-accent/30 hover:text-accent"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {carregandoHistorico === pergunta.id
+                            ? 'Consultando histórico...'
+                            : historicoAberto === pergunta.id
+                              ? 'Ocultar histórico'
+                              : 'Ver histórico do anúncio'}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void gerarSugestao(pergunta)}
                           disabled={gerandoId === pergunta.id}
                           className="inline-flex items-center gap-2 rounded-xl border border-accent/25 bg-accentSoft px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
@@ -492,6 +537,31 @@ export default function AtendimentoPage({ foco }: AtendimentoPageProps) {
                           </span>
                         )}
                       </div>
+
+                      {historicoAberto === pergunta.id ? (
+                        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+                            {pergunta.ml_buyer_id
+                              ? 'Perguntas anteriores respondidas por este comprador'
+                              : 'Perguntas anteriores respondidas neste anúncio'}
+                          </p>
+                          {(historicos[pergunta.id] || []).length === 0 ? (
+                            <p className="mt-2 text-xs text-muted">
+                              Nenhuma pergunta respondida encontrada para este anúncio.
+                            </p>
+                          ) : (
+                            <div className="mt-2 space-y-2">
+                              {(historicos[pergunta.id] || []).map((item) => (
+                                <div key={item.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+                                  <p className="text-xs text-ink">“{item.pergunta}”</p>
+                                  <p className="mt-1 text-xs text-success">Resposta: {item.resposta || 'Respondida no Mercado Livre'}</p>
+                                  <p className="mt-1 text-[10px] text-muted">{formatarData(item.data_pergunta)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
 
                       {sugestao && (
                         <div className="mt-3 rounded-xl border border-accent/20 bg-accentSoft/60 p-3">

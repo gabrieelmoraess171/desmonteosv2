@@ -4,6 +4,7 @@ import {
   useId,
   useState,
   type ChangeEvent,
+  type DragEvent,
 } from 'react';
 import axios from 'axios';
 import {
@@ -48,6 +49,8 @@ export default function PecaFotosEditor({
   const [imagens, setImagens] = useState<PecaImagem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [imagemArrastada, setImagemArrastada] = useState<number | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
   const [error, setError] = useState('');
   const inputId = useId();
 
@@ -213,6 +216,45 @@ export default function PecaFotosEditor({
     }
   };
 
+  const moverImagem = async (origemId: number, destinoId: number) => {
+    const locais = imagens.filter((imagem) => imagem.origem !== 'mercado_livre');
+    const origem = locais.findIndex((imagem) => imagem.id === origemId);
+    const destino = locais.findIndex((imagem) => imagem.id === destinoId);
+    if (origem < 0 || destino < 0 || origem === destino || uploading || sincronizando) return;
+
+    const reordenadas = [...locais];
+    const [movida] = reordenadas.splice(origem, 1);
+    reordenadas.splice(destino, 0, movida);
+    setImagens([...imagens.filter((imagem) => imagem.origem === 'mercado_livre'), ...reordenadas]);
+    setSincronizando(true);
+    setError('');
+
+    try {
+      const response = await axios.patch<{ imagens: PecaImagem[]; aviso?: string }>(
+        `/api/pecas/${pecaId}/imagens/ordem`,
+        { ids: reordenadas.map((imagem) => imagem.id), sincronizarMl: Boolean(mlItemId) }
+      );
+      setImagens(response.data.imagens.map((imagem) => ({ ...imagem, origem: 'local' })));
+      if (response.data.aviso) setError(response.data.aviso);
+      onChange?.();
+    } catch (err) {
+      await fetchImagens();
+      setError(
+        axios.isAxiosError<{ error?: string }>(err)
+          ? err.response?.data?.error || 'Não foi possível mover a foto.'
+          : 'Não foi possível mover a foto.'
+      );
+    } finally {
+      setSincronizando(false);
+      setImagemArrastada(null);
+    }
+  };
+
+  const handleDropImagem = (event: DragEvent<HTMLDivElement>, destinoId: number) => {
+    event.preventDefault();
+    if (imagemArrastada !== null) void moverImagem(imagemArrastada, destinoId);
+  };
+
   const limiteAtingido =
     imagens.filter((imagem) => imagem.origem !== 'mercado_livre').length >=
     MAX_FOTOS;
@@ -244,7 +286,7 @@ export default function PecaFotosEditor({
           ) : (
             <ImagePlus className="h-4 w-4" />
           )}
-          {uploading ? 'Enviando...' : 'Adicionar fotos'}
+          {uploading ? 'Enviando...' : sincronizando ? 'Sincronizando ML...' : 'Adicionar fotos'}
         </label>
         <input
           id={inputId}
@@ -279,7 +321,11 @@ export default function PecaFotosEditor({
           {imagens.map((imagem) => (
             <div
               key={imagem.id}
-              className="group relative overflow-hidden rounded-lg border border-line bg-secondary"
+              draggable={imagem.origem !== 'mercado_livre' && !uploading && !sincronizando}
+              onDragStart={() => setImagemArrastada(imagem.id)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => handleDropImagem(event, imagem.id)}
+              className="group relative cursor-grab overflow-hidden rounded-lg border border-line bg-secondary active:cursor-grabbing"
             >
               <div className="aspect-square">
                 <img
@@ -303,7 +349,13 @@ export default function PecaFotosEditor({
                 </span>
               )}
 
-              <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+              <div className="absolute inset-x-0 bottom-0 flex justify-between gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+                {imagem.origem !== 'mercado_livre' && (
+                  <span className="rounded bg-black/60 px-1.5 py-1 text-[9px] font-semibold text-white">
+                    Arraste para mover
+                  </span>
+                )}
+                <span className="flex gap-1">
                 {imagem.origem !== 'mercado_livre' && imagem.is_principal !== 1 && (
                   <button
                     type="button"
@@ -328,6 +380,7 @@ export default function PecaFotosEditor({
                     <Trash2 className="h-3 w-3" />
                   </button>
                 )}
+                </span>
               </div>
             </div>
           ))}

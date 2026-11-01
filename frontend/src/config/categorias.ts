@@ -10,6 +10,9 @@ export const CATEGORIAS_PECA = [
   'Retrovisores',
   'Faróis e Lanternas',
   'Parachoques',
+  'Almas e Absorvedores de Impacto',
+  'Acabamentos e Molduras',
+  'Maçanetas e Fechaduras',
   'Portas e Capôs',
   'Motor e Componentes',
   'Suspensão e Direção',
@@ -22,6 +25,10 @@ export const CATEGORIAS_PECA = [
   'Escapamento',
   'Transmissão',
   'Baterias',
+  'Filtros e Lubrificação',
+  'Ar-condicionado e Climatização',
+  'Carroceria e Estrutura',
+  'Acessórios e Equipamentos',
   'Outros',
 ] as const;
 
@@ -34,6 +41,12 @@ export const CATEGORIA_ML: Record<string, string> = {
     'Autopeças > Peças de Carros e Caminhonetes > Faróis e Lanternas',
   Parachoques:
     'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Almas e Absorvedores de Impacto':
+    'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Acabamentos e Molduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Interior',
+  'Maçanetas e Fechaduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Portas e Capôs':
     'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Motor e Componentes':
@@ -53,6 +66,14 @@ export const CATEGORIA_ML: Record<string, string> = {
   Transmissão:
     'Autopeças > Peças de Carros e Caminhonetes > Transmissão',
   Baterias: 'Autopeças > Peças de Carros e Caminhonetes > Baterias',
+  'Filtros e Lubrificação':
+    'Autopeças > Peças de Carros e Caminhonetes > Filtros e Lubrificação',
+  'Ar-condicionado e Climatização':
+    'Autopeças > Peças de Carros e Caminhonetes > Ar-condicionado e Climatização',
+  'Carroceria e Estrutura':
+    'Autopeças > Peças de Carros e Caminhonetes > Carroceria e Estrutura',
+  'Acessórios e Equipamentos':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
   Outros: 'Autopeças > Peças de Carros e Caminhonetes > Outros',
 };
 

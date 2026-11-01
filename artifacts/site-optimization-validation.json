@@ -1,0 +1,628 @@
+{
+  "verifiedAtBrt": "2026-10-31 18:54:53",
+  "dataSource": "Local browser fixtures; no real authentication, business APIs or marketplace mutations.",
+  "checks": [
+    {
+      "name": "initial dashboard has no product sync POST and defers stock and editor code",
+      "ok": true
+    },
+    {
+      "name": "welcome banner has no image or refresh button and has four shortcuts",
+      "ok": true
+    },
+    {
+      "name": "desktop and mobile preserve hero before cards without horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "steady normal motion avoids decorative loops and limits blur to banner/header",
+      "ok": true
+    },
+    {
+      "name": "revenue chart remains drawn after animation removal",
+      "ok": true
+    },
+    {
+      "name": "welcome shortcut Cadastrar peça opens registration",
+      "ok": true
+    },
+    {
+      "name": "welcome shortcut Fechar NF-e opens financial page",
+      "ok": true
+    },
+    {
+      "name": "welcome shortcut Importar lote opens import page",
+      "ok": true
+    },
+    {
+      "name": "welcome shortcut Atendimento opens questions and claims",
+      "ok": true
+    },
+    {
+      "name": "header search finds SKU and opens inventory",
+      "ok": true
+    },
+    {
+      "name": "header search updates by product name while inventory is already open",
+      "ok": true
+    },
+    {
+      "name": "same header query reapplies after local edits and resets stale filters",
+      "ok": true
+    },
+    {
+      "name": "header search does not match unrelated application/category metadata",
+      "ok": true
+    },
+    {
+      "name": "greetings fit local period and cycle without repeating before exhaustion",
+      "ok": true
+    }
+  ],
+  "errors": [],
+  "geometry": {
+    "390": {
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "hero": {
+        "x": 14,
+        "y": 263.1875,
+        "width": 362,
+        "bottom": 778.15625
+      },
+      "stats": {
+        "x": 14,
+        "y": 796.15625,
+        "width": 362,
+        "bottom": 1272.15625
+      },
+      "domBefore": true
+    },
+    "1440": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "hero": {
+        "x": 294,
+        "y": 198.1875,
+        "width": 1122,
+        "bottom": 463.21875
+      },
+      "stats": {
+        "x": 294,
+        "y": 485.21875,
+        "width": 1122,
+        "bottom": 637.671875
+      },
+      "domBefore": true
+    }
+  },
+  "metrics": {
+    "initialRequests": [
+      {
+        "method": "GET",
+        "path": "/api/health",
+        "search": ""
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard/ranking",
+        "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard",
+        "search": ""
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard/analytics",
+        "search": "?periodo=7"
+      },
+      {
+        "method": "GET",
+        "path": "/api/vendas/notificacoes",
+        "search": "?vendaId=0&reclamacaoId=0&perguntaId=0"
+      },
+      {
+        "method": "GET",
+        "path": "/api/health",
+        "search": ""
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard/ranking",
+        "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard",
+        "search": ""
+      },
+      {
+        "method": "GET",
+        "path": "/api/dashboard/analytics",
+        "search": "?periodo=7"
+      },
+      {
+        "method": "GET",
+        "path": "/api/vendas/notificacoes",
+        "search": "?vendaId=0&reclamacaoId=0&perguntaId=0"
+      }
+    ],
+    "initialEditorModuleLoaded": false,
+    "initialStockModuleLoaded": false,
+    "effects": {
+      "cardBackdrop": "none",
+      "heroBackdrop": "blur(10px)",
+      "backdropImage": "radial-gradient(at 12% 0%, rgba(0, 117, 255, 0.21), rgba(0, 0, 0, 0) 58%), radial-gradient(at 90% 45%, rgba(61, 85, 180, 0.17), rgba(0, 0, 0, 0) 65%), linear-gradient(155deg, rgb(11, 22, 55), rgb(7, 11, 36) 58%, rgb(3, 6, 21))",
+      "infinite": []
+    },
+    "chart": {
+      "opacity": 1,
+      "width": 666.65625,
+      "lineCount": 1,
+      "dashOffset": "0px",
+      "path": "M 70 168.9261744966443 C 125.5 168.9261744966443, 125.5 125.36912751677852, 181 125.36912751677852 C 236.5 125.36912751677852, 236.5 149.1275167785235, 292 149.1275167785235 C 347.5 149.1275167785235, 347.5 64.6532438478747, 403 64.6532438478747 C 458.5 64.6532438478747, 458.5 92.37136465324383, 514 92.37136465324383 C 569.5 92.37136465324383, 569.5 35.61521252796419, 625 35.61521252796419 C 680.5 35.61521252796419, 680.5 24, 736 24"
+    },
+    "greetings": [
+      {
+        "period": "morning",
+        "values": [
+          {
+            "period": "morning",
+            "headline": "Um novo dia, novas oportunidades, Gabriel.",
+            "phrase": "Organizar a manhã ajuda a deixar o resto do dia mais leve."
+          },
+          {
+            "period": "morning",
+            "headline": "Bom dia, Gabriel! Vamos começar com calma e foco.",
+            "phrase": "Seu próximo bom resultado pode começar nesta manhã."
+          },
+          {
+            "period": "morning",
+            "headline": "Tenha um excelente dia hoje, Gabriel.",
+            "phrase": "Cada peça bem cadastrada abre uma nova oportunidade."
+          },
+          {
+            "period": "morning",
+            "headline": "Uma ótima manhã para você, Gabriel!",
+            "phrase": "Comece pelo que é mais importante. Um passo de cada vez."
+          },
+          {
+            "period": "morning",
+            "headline": "Bom dia, Gabriel! ☀️",
+            "phrase": "Há tempo para fazer bem feito. Escolha a primeira prioridade."
+          },
+          {
+            "period": "morning",
+            "headline": "Que seu dia comece bem, Gabriel.",
+            "phrase": "Foco nos detalhes e disposição para um novo dia."
+          },
+          {
+            "period": "morning",
+            "headline": "Um novo dia, novas oportunidades, Gabriel.",
+            "phrase": "Há tempo para fazer bem feito. Escolha a primeira prioridade."
+          }
+        ]
+      },
+      {
+        "period": "afternoon",
+        "values": [
+          {
+            "period": "afternoon",
+            "headline": "Uma excelente tarde para você, Gabriel!",
+            "phrase": "Organização e constância ajudam a fechar bem o dia."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Ainda temos uma boa tarde pela frente, Gabriel.",
+            "phrase": "Aproveite a tarde para avançar no que faz diferença."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Que o restante do seu dia seja produtivo, Gabriel.",
+            "phrase": "Uma pausa e uma prioridade de cada vez ajudam a manter o ritmo."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Espero que sua tarde esteja indo bem, Gabriel.",
+            "phrase": "O cuidado com cada anúncio faz diferença no resultado."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Boa tarde, Gabriel! Vamos seguir no seu ritmo.",
+            "phrase": "Continue de onde parou. O importante é seguir com atenção."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Boa tarde, Gabriel! 🌤️",
+            "phrase": "Pequenos avanços também fazem um dia produtivo."
+          },
+          {
+            "period": "afternoon",
+            "headline": "Espero que sua tarde esteja indo bem, Gabriel.",
+            "phrase": "Continue de onde parou. O importante é seguir com atenção."
+          }
+        ]
+      },
+      {
+        "period": "night",
+        "values": [
+          {
+            "period": "night",
+            "headline": "Que sua noite seja tranquila, Gabriel.",
+            "phrase": "Fechar o dia com tudo organizado deixa a próxima manhã mais leve."
+          },
+          {
+            "period": "night",
+            "headline": "Boa noite, Gabriel! Vamos fechar o dia com tudo em ordem.",
+            "phrase": "Reconheça o que avançou hoje. Amanhã é uma nova oportunidade."
+          },
+          {
+            "period": "night",
+            "headline": "Uma excelente noite para você, Gabriel!",
+            "phrase": "Cuide dos últimos detalhes e reserve um tempo para descansar."
+          },
+          {
+            "period": "night",
+            "headline": "Espero que você tenha tido um bom dia, Gabriel.",
+            "phrase": "Aproveite este momento para revisar as prioridades de amanhã."
+          },
+          {
+            "period": "night",
+            "headline": "Boa noite, Gabriel. Espero que seu dia tenha sido bom.",
+            "phrase": "Um passo de cada vez também leva longe. Você já avançou hoje."
+          },
+          {
+            "period": "night",
+            "headline": "Boa noite, Gabriel! 🌙",
+            "phrase": "Confira as pendências com calma e deixe o próximo dia encaminhado."
+          },
+          {
+            "period": "night",
+            "headline": "Uma excelente noite para você, Gabriel!",
+            "phrase": "Aproveite este momento para revisar as prioridades de amanhã."
+          }
+        ]
+      }
+    ]
+  },
+  "requestCount": 67,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=0&reclamacaoId=0&perguntaId=0"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=0&reclamacaoId=0&perguntaId=0"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/proximo-sku",
+      "search": "?prefixo=D"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/proximo-sku",
+      "search": "?prefixo=D"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/hoje-ml",
+      "search": "?data=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/hoje-ml",
+      "search": "?data=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/atendimento",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/atendimento",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking",
+      "search": "?periodo=7&rankingInicio=2026-10-25&rankingFim=2026-10-31"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard",
+      "search": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics",
+      "search": "?periodo=7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes",
+      "search": "?vendaId=1&reclamacaoId=1&perguntaId=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas",
+      "search": "?resumo=1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas",
+      "search": "?resumo=1"
+    }
+  ]
+}
