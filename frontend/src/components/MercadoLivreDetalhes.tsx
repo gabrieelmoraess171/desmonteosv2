@@ -10,9 +10,17 @@ interface MercadoLivreAtributo {
 }
 
 interface MercadoLivreCompatibilidade {
-  attributes?: MercadoLivreAtributo[];
+  id?: string | number;
+  name?: string | null;
+  product_name?: string | null;
+  catalog_product_name?: string | null;
+  domain_id?: string | null;
+  source?: string | null;
+  total?: number | null;
+  attributes?: MercadoLivreAtributo[] | Record<string, unknown>;
   note?: string | null;
   restrictions?: unknown[];
+  [key: string]: unknown;
 }
 
 interface MercadoLivreDetalhesData {
@@ -81,6 +89,43 @@ function valorGenerico(valor: unknown): string {
   if (valor === null || valor === undefined || valor === '') return '—';
   if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
   return String(valor);
+}
+
+function atributosCompatibilidade(
+  atributos: MercadoLivreCompatibilidade['attributes']
+): Array<{ nome: string; valor: string }> {
+  if (Array.isArray(atributos)) {
+    return atributos
+      .map((atributo) => ({
+        nome: nomeAtributo(atributo),
+        valor: valorAtributo(atributo),
+      }))
+      .filter((atributo) => atributo.valor);
+  }
+
+  if (!atributos || typeof atributos !== 'object') return [];
+  return Object.entries(atributos)
+    .map(([nome, valor]) => ({
+      nome,
+      valor:
+        valor && typeof valor === 'object'
+          ? valorGenerico((valor as { value_name?: unknown }).value_name ?? (valor as { value_id?: unknown }).value_id)
+          : valorGenerico(valor),
+    }))
+    .filter((atributo) => atributo.valor !== '—');
+}
+
+function textoCompatibilidade(grupo: MercadoLivreCompatibilidade): string {
+  const atributos = atributosCompatibilidade(grupo.attributes);
+  const nome = grupo.name || grupo.product_name || grupo.catalog_product_name;
+  const campos = [
+    nome ? `Nome: ${nome}` : '',
+    grupo.id ? `ID: ${grupo.id}` : '',
+    grupo.domain_id ? `Domínio: ${grupo.domain_id}` : '',
+    grupo.source ? `Origem: ${grupo.source}` : '',
+    ...atributos.map((atributo) => `${atributo.nome}: ${atributo.valor}`),
+  ].filter(Boolean);
+  return campos.join(' • ');
 }
 
 export default function MercadoLivreDetalhes({
@@ -226,14 +271,15 @@ export default function MercadoLivreDetalhes({
           </summary>
           <div className="mt-3 space-y-2">
             {compatibilidades.map((grupo, indice) => {
-              const texto = (grupo.attributes || [])
-                .map((atributo) => `${nomeAtributo(atributo)}: ${valorAtributo(atributo)}`)
-                .filter(Boolean)
-                .join(' • ');
+              const texto = textoCompatibilidade(grupo);
+              const dadosBrutos = JSON.stringify(grupo);
               return (
-                <div key={`${texto}-${indice}`} className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-xs text-muted">
-                  {texto || `Grupo de compatibilidade ${indice + 1}`}
+                <div key={`${texto || dadosBrutos}-${indice}`} className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-xs text-muted">
+                  {texto || dadosBrutos}
                   {grupo.note ? <span className="mt-1 block text-ink">{grupo.note}</span> : null}
+                  {grupo.restrictions && grupo.restrictions.length > 0 ? (
+                    <span className="mt-1 block text-ink">Restrições: {grupo.restrictions.map(valorGenerico).join(', ')}</span>
+                  ) : null}
                 </div>
               );
             })}
