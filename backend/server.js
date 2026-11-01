@@ -276,7 +276,6 @@ app.get('/api/pecas', async (req, res) => {
          p.quantidade, p.preco, p.ml_ativo,
          p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
-         p.ml_dados,
          (
            SELECT COUNT(*)
            FROM vendas v
