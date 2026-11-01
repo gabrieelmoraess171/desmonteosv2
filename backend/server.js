@@ -73,6 +73,13 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'online',
     database: process.env.DATABASE_URL ? 'supabase-postgres' : 'sqlite',
+    geminiConfigured: Boolean(
+      process.env.GEMINI_KEY ||
+        process.env.GEMINI_API_KEY ||
+        process.env.GOOGLE_AI_KEY ||
+        process.env.GOOGLE_API_KEY ||
+        process.env.GOOGLE_GEMINI_API_KEY
+    ),
     featureRelease: 'catalog-performance-v1',
     revision: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null
   });
