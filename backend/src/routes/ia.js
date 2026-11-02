@@ -372,7 +372,8 @@ router.post('/completar-ficha', async (req, res) => {
       peca,
       imagens: imagens.slice(0, MAX_IMAGENS_FICHA),
       categorias,
-      camposPorCategoria
+      camposPorCategoria,
+      fichaMl: req.body?.fichaMl
     });
 
     res.json({

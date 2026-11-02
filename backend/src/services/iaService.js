@@ -2256,6 +2256,201 @@ function fichaCompletaFallback(peca = {}, categoria = '', campos = []) {
   };
 }
 
+// A ficha oficial da categoria chega do frontend (que já a consulta no
+// Mercado Livre para montar o formulário). Ela define quais ids o ML aceita,
+// então é ela que manda: aqui só se limpa e se valida o que veio.
+const MAX_ATRIBUTOS_ML = 80;
+const MAX_OPCOES_ATRIBUTO = 200;
+
+function normalizarFichaMl(ficha) {
+  if (!ficha || typeof ficha !== 'object' || Array.isArray(ficha)) return null;
+
+  const categoryId = limparTexto(ficha.categoryId, 40);
+  const atributos = Array.isArray(ficha.atributos) ? ficha.atributos : [];
+  const termos = Array.isArray(ficha.saleTerms) ? ficha.saleTerms : [];
+
+  const mapear = (campo) => {
+    const id = limparTexto(campo?.id, 80);
+    if (!id) return null;
+    const tags =
+      campo?.tags && typeof campo.tags === 'object' && !Array.isArray(campo.tags)
+        ? Object.fromEntries(
+            Object.entries(campo.tags).map(([chave, valor]) => [
+              limparTexto(chave, 40),
+              valor === true
+            ])
+          )
+        : {};
+    return {
+      id,
+      name: limparTexto(campo?.name, 200) || id,
+      value_type: limparTexto(campo?.value_type, 40),
+      tags,
+      values: (Array.isArray(campo?.values) ? campo.values : [])
+        .map((valor) => limparTexto(valor, 120))
+        .filter(Boolean)
+        .slice(0, MAX_OPCOES_ATRIBUTO),
+      allowed_units: (Array.isArray(campo?.allowed_units)
+        ? campo.allowed_units
+        : []
+      )
+        .map((unidade) => limparTexto(unidade, 40))
+        .filter(Boolean)
+        .slice(0, 20)
+    };
+  };
+
+  const atributosLimpios = atributos
+    .map(mapear)
+    .filter(Boolean)
+    .slice(0, MAX_ATRIBUTOS_ML);
+  const termosLimpios = termos
+    .map(mapear)
+    .filter(Boolean)
+    .slice(0, MAX_ATRIBUTOS_ML);
+
+  if (!atributosLimpios.length && !termosLimpios.length) return null;
+
+  return { categoryId, atributos: atributosLimpios, termos: termosLimpios };
+}
+
+function descreverCampoMl(campo) {
+  const obrigatorio = campo.tags?.required
+    ? 'obrigatório'
+    : campo.tags?.new_required
+      ? 'obrigatório para produto novo'
+      : campo.tags?.conditional_required
+        ? 'condicional'
+        : 'opcional';
+  const partes = [
+    `${campo.id} (${campo.name}) - ${obrigatorio}`,
+    `tipo: ${campo.value_type || 'texto'}`
+  ];
+  if (campo.allowed_units?.length) {
+    partes.push(`unidades: ${campo.allowed_units.join(', ')}`);
+  }
+  if (campo.values?.length) {
+    partes.push(`opções aceitas: ${campo.values.join(' | ')}`);
+  }
+  return `- ${partes.join('; ')}`;
+}
+
+function montarBlocoFichaMl(ficha) {
+  if (!ficha) return '';
+  const linhas = [];
+  if (ficha.atributos.length) {
+    linhas.push('Atributos da categoria no Mercado Livre:', ...ficha.atributos.map(descreverCampoMl));
+  }
+  if (ficha.termos.length) {
+    linhas.push('', 'Condições de venda da categoria no Mercado Livre:', ...ficha.termos.map(descreverCampoMl));
+  }
+  return linhas.join('\n');
+}
+
+function resolverValorMl(campo, bruto) {
+  const valor = limparTexto(bruto, 240);
+  if (!valor) return '';
+
+  // O ML aceita "Não se aplica" pelo value_id -1; qualquer outro texto livre
+  // para atributo de lista quebra a publicação.
+  if (valor === '-1') return campo.tags?.allow_na ? '-1' : '';
+
+  const opcoes = campo.values || [];
+  if (!opcoes.length) return valor;
+
+  const alvo = normalizarComparacao(valor);
+  const direto = opcoes.find((opcao) => normalizarComparacao(opcao) === alvo);
+  if (direto) return direto;
+
+  const contem = opcoes.find((opcao) => alvo.includes(normalizarComparacao(opcao)));
+  return contem || '';
+}
+
+function completarAtributosMl(ficha, bruto) {
+  if (!ficha) return {};
+
+  const entrada = new Map();
+  if (Array.isArray(bruto)) {
+    for (const item of bruto) {
+      const chave = limparTexto(item?.id ?? item?.chave, 80);
+      if (chave) entrada.set(normalizarComparacao(chave), item?.value ?? item?.valor);
+    }
+  } else if (bruto && typeof bruto === 'object') {
+    for (const [chave, valor] of Object.entries(bruto)) {
+      entrada.set(normalizarComparacao(chave), valor);
+    }
+  }
+
+  const resultado = {};
+  for (const campo of ficha.atributos) {
+    if (campo.tags?.read_only) continue;
+    const brutoDoCampo = entrada.get(normalizarComparacao(campo.id)) ??
+      entrada.get(normalizarComparacao(campo.name));
+    if (brutoDoCampo === undefined || brutoDoCampo === null) continue;
+    const valor = resolverValorMl(campo, brutoDoCampo);
+    if (valor) resultado[campo.id] = valor;
+  }
+  return resultado;
+}
+
+// Conversão por nome de campo, para as fotos e o título ajudarem quando o
+// operador ainda não preencheu os dados base.
+const ORIGEM_ATRIBUTO_ML = {
+  BRAND: ['marca', 'fabricante'],
+  CAR_AND_VAN_BRAND: ['marca'],
+  VEHICLE_BRAND: ['marca'],
+  CAR_AND_VAN_MODEL: ['modelo'],
+  MODEL: ['modelo'],
+  VEHICLE_MODEL: ['modelo'],
+  YEAR: ['ano'],
+  OEM: ['numero_oem', 'oem'],
+  PART_NUMBER: ['numero_oem', 'oem'],
+  ALPHANUMERIC_MODEL: ['numero_oem'],
+  SELLER_SKU: ['sku']
+};
+
+function derivarAtributosMl(dados, ficha) {
+  if (!ficha) return {};
+
+  const resultado = {};
+  const preencher = (id, bruto) => {
+    const campo = ficha.atributos.find((item) => item.id === id);
+    if (!campo || campo.tags?.read_only) return;
+    if (String(dados.atributos_ml?.[id] || '').trim()) return;
+    const valor = resolverValorMl(campo, bruto);
+    if (valor) resultado[id] = valor;
+  };
+
+  for (const [id, origens] of Object.entries(ORIGEM_ATRIBUTO_ML)) {
+    for (const origem of origens) {
+      const bruto = dados[origem];
+      if (valorUtil(bruto, 200)) {
+        preencher(id, bruto);
+        break;
+      }
+    }
+  }
+
+  const textoLado = [dados.carro, dados.nome, dados.titulo]
+    .filter(Boolean)
+    .join(' ');
+  for (const id of ['POSITION', 'SIDE']) {
+    if (!ficha.atributos.some((campo) => campo.id === id)) continue;
+    if (/direit|right/i.test(textoLado)) preencher(id, 'Direita');
+    else if (/esquerd|left/i.test(textoLado)) preencher(id, 'Esquerda');
+  }
+
+  const condicao = String(dados.condicao || '').toLowerCase();
+  preencher(
+    'ITEM_CONDITION',
+    condicao === 'novo' ? 'Novo' : condicao === 'recondicionado' ? 'Recondicionado' : 'Usado'
+  );
+
+  if (valorUtil(dados.garantia, 120)) preencher('WARRANTY_TIME', dados.garantia);
+
+  return resultado;
+}
+
 const PROMPT_FICHA_COMPLETA = [
   'Você é especialista em autopeças usadas de desmonte e anúncios do Mercado Livre no Brasil.',
   'Sua tarefa é COMPLETAR TODA a ficha de um anúncio a partir do título e das fotos enviadas.',
@@ -2287,6 +2482,7 @@ const PROMPT_FICHA_COMPLETA = [
   '  "tipo_anuncio": "clássico, premium ou grátis",',
   '  "modo_compra": "buy_it_now ou auction",',
   '  "atributos": { "chave_tecnica": "valor" },',
+  '  "atributos_ml": { "ID_DO_ATRIBUTO": "valor" },',
   '  "confianca": "alta, media ou baixa",',
   '  "estimados": ["nomes dos campos preenchidos por estimativa"],',
   '  "observacoes": "o que precisa ser conferido"',
@@ -2299,6 +2495,7 @@ const PROMPT_FICHA_COMPLETA = [
   '- Quando a informação não estiver visível, deixe o campo de identificação vazio e inclua o nome em "estimados". Medidas e peso também devem ficar em 0 quando não houver leitura legível.',
   '- Para campos de seleção, use EXATAMENTE uma das opções informadas na ficha técnica.',
   '- Para "atributos", preencha TODAS as chaves da categoria escolhida.',
+  '- Para "atributos_ml", use SOMENTE ids que apareçam em "Atributos da categoria no Mercado Livre" e respeite o tipo e as opções aceitas de cada um. Deixe fora os atributos que não puder comprovar nas fotos ou nos dados informados: um valor inventado ou fora da lista quebra a publicação.',
   '- Se a categoria atual estiver definida, mantenha-a; caso contrário, escolha a mais adequada da lista.',
   '- O título deve ter no máximo 60 caracteres e conter peça, lado/posição, veículo e ano quando possível.',
   '- Classifique primeiro a forma e a função. Console central, porta-luvas, moldura, difusor e acabamento interno não são alternador, amortecedor, farol ou retrovisor.',
@@ -2317,12 +2514,14 @@ export async function completarFichaComIa({
   imagens = [],
   categorias = [],
   camposPorCategoria = {},
+  fichaMl = null,
   modo = 'completo'
 } = {}) {
   const categoriasLimpas = Array.isArray(categorias)
     ? categorias.map((item) => limparTexto(item, 80)).filter(Boolean)
     : [];
   const camposLimpos = normalizarCamposPorCategoria(camposPorCategoria);
+  const fichaMlLimpa = normalizarFichaMl(fichaMl);
   const categoriaAtual =
     categoriasLimpas.length > 0
       ? categoriasLimpas.find(
@@ -2364,6 +2563,9 @@ export async function completarFichaComIa({
     '',
     'Ficha técnica por categoria (JSON):',
     schema || '{}',
+    '',
+    montarBlocoFichaMl(fichaMlLimpa) ||
+      'Atributos do Mercado Livre: a categoria oficial não foi carregada; devolva "atributos_ml" como objeto vazio.',
     '',
     `Nomes das fotos: ${
       imagens
@@ -2562,6 +2764,29 @@ export async function completarFichaComIa({
     estimados.add('Categoria Mercado Livre');
   }
 
+  // Os atributos oficiais vêm de duas fontes: o que a IA leu nas fotos
+  // (validado contra a ficha) e o que dá para derivar dos campos base, que é
+  // o que o formulário vai exibir. O derivado vence porque é o que o operador
+  // verá na tela.
+  const atributosMlIa = completarAtributosMl(fichaMlLimpa, json.atributos_ml);
+  const atributosMlDerivados = derivarAtributosMl(
+    {
+      titulo,
+      nome,
+      condicao,
+      sku: valorUtil(json.sku, 80),
+      marca: valorUtil(peca.marca, 120) || valorUtil(json.marca, 120),
+      modelo: valorUtil(peca.modelo, 120) || valorUtil(json.modelo, 120),
+      ano: valorUtil(peca.ano, 40) || valorUtil(json.ano, 40),
+      carro: valorUtil(peca.carro, 200) || valorUtil(json.carro || json.aplicacao, 200),
+      numero_oem: valorUtil(peca.numero_oem, 120) || valorUtil(json.numero_oem, 120),
+      garantia: valorUtil(peca.garantia, 120) || valorUtil(json.garantia, 120),
+      atributos_ml: atributosMlIa
+    },
+    fichaMlLimpa
+  );
+  const atributosMl = { ...atributosMlIa, ...atributosMlDerivados };
+
   const dados = {
     titulo,
     nome,
@@ -2628,6 +2853,7 @@ export async function completarFichaComIa({
     tipo_anuncio: tipoAnuncio,
     modo_compra: modoCompra,
     atributos,
+    atributos_ml: atributosMl,
     confianca: limparTexto(json.confianca || 'media', 20),
     estimados: [...estimados],
     observacoes: limparTexto(json.observacoes, 600)
@@ -2654,8 +2880,25 @@ export async function completarFichaComIa({
   };
   const dadosConfirmados = await confirmarFichaComPesquisa(dadosParaConfirmacao, imagens);
 
+  // A confirmação pode corrigir marca, modelo, ano ou OEM. Recalcula os
+  // atributos oficiais sobre os dados finais para eles não ficarem apontando
+  // para um veículo que a pesquisa acabou de trocar.
+  const atributosMlFinais = fichaMlLimpa
+    ? {
+        ...atributosMlIa,
+        ...derivarAtributosMl(
+          {
+            ...dadosConfirmados,
+            sku: valorUtil(json.sku, 80),
+            atributos_ml: atributosMlIa
+          },
+          fichaMlLimpa
+        )
+      }
+    : atributosMl;
+
   return {
-    dados: dadosConfirmados,
+    dados: { ...dadosConfirmados, atributos_ml: atributosMlFinais },
     fonte: `${resultado.fonte} + Google Search/MODO IA + Mercado Livre`,
     modelo: resultado.modelo,
     estimados: estimadosLista,
