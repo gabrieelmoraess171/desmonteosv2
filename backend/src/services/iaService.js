@@ -17,7 +17,7 @@ function chaveGemini() {
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_AI_KEY ||
       process.env.GOOGLE_API_KEY ||
-      process.env.GOOGLE_GEMINI_API_KEY ||a
+      process.env.GOOGLE_GEMINI_API_KEY ||
       ''
   )
     .trim()
