@@ -1,0 +1,7 @@
+# SPA no Cloudflare Pages: o roteador é BrowserRouter, então qualquer rota
+# digitada direto (ex.: /estoque) precisa cair no index.html. As pastas do
+# build e as chamadas de API continuam servidas de verdade.
+/assets/*  /assets/:splat  200
+/api/*     https://desmonteos-backend.onrender.com/api/:splat  200
+/uploads/* https://desmonteos-backend.onrender.com/uploads/:splat  200
+/*         /index.html  200
