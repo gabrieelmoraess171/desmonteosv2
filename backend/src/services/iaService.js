@@ -17,7 +17,7 @@ function chaveGemini() {
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_AI_KEY ||
       process.env.GOOGLE_API_KEY ||
-      process.env.GOOGLE_GEMINI_API_KEY ||a
+      process.env.GOOGLE_GEMINI_API_KEY ||
       ''
   )
     .trim()
@@ -395,8 +395,8 @@ async function gerarSugestaoFreeLLMAPI(prompt, configuracao, opcoes = {}) {
 export async function gerarSugestaoResposta({ pergunta, peca }) {
   const perguntaLimpa = limparTexto(pergunta, 600);
   const sugestaoFallback = fallback(perguntaLimpa, peca);
-  const chave = chaveGemini();  const modeloConfigurado = String(opcoes.modelo || modeloGemini()).trim();
-  const modeloConfigurado = modeloGemini()
+  const chave = chaveGemini();
+  const modeloConfigurado = modeloGemini();
   const modelos = [modeloConfigurado, ...MODELOS_RESERVA]
     .filter(
       (modelo, indice, lista) => modelo && lista.indexOf(modelo) === indice
