@@ -24,12 +24,14 @@ DESMONTEOS2/
 │   ├── public/
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── cadastro/  # Bloco recolhível, painel de revisão da IA e checklist do ML
 │   │   │   ├── dashboard/ # Gráfico, estoque, ranking e sugestões
 │   │   │   ├── Login.tsx       # Formulário de login local de demonstração
+│   │   │   ├── ModalCadastroPeca.tsx # Cadastro/edição em tela única
 │   │   │   ├── ProtectedRoute.tsx
 │   │   │   ├── PecaDetalheModal.tsx
 │   │   │   └── ReclamacaoDetalheModal.tsx
-│   │   ├── config/        # Categorias, atributos, chaves locais e helpers do ML
+│   │   ├── config/        # Categorias, atributos locais, derivacao de atributos do ML e helpers
 │   │   ├── hooks/         # useAuth e provedor da sessão local
 │   │   ├── pages/         # NF-e, atendimento, relatórios, marketplaces, nova peça e configurações
 │   │   ├── services/      # Cliente da API de lotes (loteService)
@@ -80,14 +82,16 @@ cd frontend
 npm run build
 ```
 
-O build verifica TypeScript e empacotamento. Os testes de regressão do backend cobrem classificação de despachos, pedidos a combinar e atualização dos envios, com banco temporário e API simulada:
+O build verifica TypeScript e empacotamento. Os testes de regressão do backend usam `node --test` com banco temporário e API simulada:
 
 ```bash
 cd backend
 npm test
 ```
 
-Os fluxos com a API real precisam de validação funcional separada.
+Cobrem classificação de despachos e envios, URLs públicas e redirect do OAuth, identificação de OEM, normalização de tipos de peça, validação de publicação do Mercado Livre e a ficha de IA. `backend/tests/atributosMl.test.js` valida a ficha oficial da categoria (opções, `read_only`, sinônimos de posição) e `backend/tests/publicacaoAtributosMl.test.js` percorre o caminho completo — ficha oficial → atributos da IA → derivados dos campos base → JSON salvo → validação de publicação — provando que a peça cadastrada pela tela nova passa na exigência de atributos obrigatórios.
+
+O frontend não tem testes automatizados; a validação do formulário é manual no navegador. Os fluxos com a API real do Mercado Livre também precisam de validação funcional separada.
 
 ## Dados de demonstração
 
@@ -117,7 +121,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 
 - **Login local**: a rota `/login` aceita qualquer nome de usuário e senha preenchidos no modo demonstração. Campos vazios ou somente com espaços exibem erro. Apenas o nome é salvo em `localStorage` (`desmonte.authUser`), nunca a senha. Após entrar, o usuário vai para `/`; a sessão permanece ao recarregar e as demais páginas redirecionam para `/login` quando não há sessão. O login não consulta o backend e não protege a API.
 - **Dashboard**: saudação personalizada, vendas do dia, perguntas, reclamações e anúncios a revisar. O bloco de desempenho alterna entre **Hoje**, **7**, **15** e **30 dias**. Também mostra estoque do Mercado Livre, ranking por categoria e sugestões de melhoria.
-- **Nova peça**: página de orientação com abertura manual do cadastro. O formulário não abre sozinho ao navegar.
+- **Nova peça**: abre direto o formulário de cadastro em tela única, com as fotos no primeiro bloco. O operador solta as fotos, clica em **Identificar com IA** e revisa o que a IA preencheu antes de completar o resto.
 - **Estoque**: lista todos os anúncios cadastrados, com busca, filtros por status e categoria, edição da ficha completa e exclusão. Clicar em uma peça abre a **ficha completa** com anúncio, aplicação, ficha técnica, peso, medidas, descrição, fotos, preço e estoque. Cada peça é um anúncio individual.
 - **Vendas**: pedidos e envios do Mercado Livre, com abas separadas para envios de hoje, próximos dias, entregas a combinar, trânsito, finalizadas e canceladas. A conversa do pedido permite enviar mensagens ao comprador; vendas e envios sincronizam automaticamente a cada 5 segundos enquanto a tela está visível, sem sobrepor sincronizações em andamento. Pedidos sem modalidade de envio rastreável ficam em “A combinar com o comprador”. Pedidos com prazo futuro permanecem em “Próximos dias”, mesmo quando a nota ou etiqueta já está liberada; a tela indica quando é possível antecipar o envio. Envie ZIPs de NF-e em lote: o sistema cruza nome completo, CPF e endereço do comprador no XML com os dados fiscais das vendas. Etiquetas só podem ser emitidas quando disponíveis no Mercado Livre; após gerar o PDF, o sistema registra “Etiqueta emitida” e permite reimprimir.
 - **Atendimento**: perguntas sem resposta e reclamações abertas do Mercado Livre. Cada pergunta mostra a foto do anúncio, permite gerar uma **sugestão de resposta com IA** e responder. A ficha do anúncio abre as fotos do Mercado Livre em carrossel. Clicar em uma reclamação abre o **detalhe completo** no padrão visual do Mercado Livre, com comprador, CPF, endereço, telefone, produtos, valores e histórico do caso.
@@ -131,22 +135,34 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 
 ## Cadastro de peças
 
-O cadastro segue o padrão de ficha do Mercado Livre, em etapas:
+O cadastro segue o padrão de ficha do Mercado Livre em uma tela única, com seis blocos recolhíveis. Cada bloco mostra um selo com o número de pendências, e o checklist é calculado pelas mesmas regras que o backend aplica antes de publicar.
 
-1. Anúncio e identificação: nome, título de até 60 caracteres, categoria, categoria ML, SKU e tipo de anúncio.
-2. Compatibilidade: veículo, marca, modelo, ano, condição, garantia e código OEM.
-3. Ficha técnica da categoria: campos específicos de retrovisores, faróis, parachoques, motor, suspensão, freios, rodas, arrefecimento, elétrica, interior, vidros, escapamento, transmissão e baterias.
-4. Preço, estoque, peso e medidas.
-5. Descrição.
-6. Fotos: até 20 por peça, com capa para o anúncio.
+1. **Fotos** — até 20 por peça, com capa para o anúncio. É o primeiro bloco: a ideia do fluxo é soltar as fotos e deixar a IA identificar o produto.
+2. **Revisão da IA** — aparece depois da leitura, com os campos que a IA preencheu e um selo *estimado* nos que precisam de conferência.
+3. **Identificação** — nome, título de até 60 caracteres, categoria, categoria ML e SKU.
+4. **Aplicação** — veículo, marca, modelo, ano, condição, garantia e código OEM.
+5. **Ficha Mercado Livre** — características da categoria, compatibilidade de veículos e, como reserva, a ficha local por tipo de peça.
+6. **Preço** e **Descrição**.
 
 O SKU é sugerido com a inicial do nome configurado em Configurações. Exemplo: para `Gabriel`, a sugestão é `SKU G001`. A categoria pode ser detectada automaticamente por palavras-chave do nome, descrição e aplicação.
 
-O formulário tem navegação por cinco etapas, campos compactos e identificação/fotos em duas colunas no desktop. A etapa **Ficha Mercado Livre** busca categorias oficiais e carrega as características, opções, atributos obrigatórios/condicionais, termos de venda e limites de fotos da API. Os campos avançados ficam disponíveis por uma opção de exibição.
+### Leitura com IA
+
+O botão **Identificar com IA** envia as fotos, o título e a ficha oficial da categoria escolhida para `POST /api/ia/completar-ficha`. O mesmo fluxo vale para criar e para editar uma peça.
+
+Soltar fotos também agenda a leitura automaticamente: o agrupamento espera 900 ms de silêncio, então fotos soltas em sequência viram uma única chamada em vez de uma por arquivo. Fotos do grupo *medidas* não disparam — elas costumam vir depois da ficha. O botão continua servindo para reler quando o operador quiser.
+
+A diferença em relação a uma leitura genérica é que o backend recebe a lista oficial de atributos da categoria (`fichaMl`) e é obrigado a responder só com ids dessa lista, respeitando tipo e opções de cada um. Valores fora das opções são descartados antes de chegar ao formulário, porque o Mercado Livre recusaria a publicação.
+
+Os campos que o operador já preencheu nunca são sobrescritos. Além do que a IA leu, o frontend deriva os atributos oficiais de marca, modelo, ano, lado/posição, OEM, condição e garantia (`frontend/src/config/atributosMl.ts`), sem sobrescrever o que estiver na ficha. Esses atributos derivados entram no checklist, no formulário e no payload de salvamento — é o que faz a peça passar na validação de atributos obrigatórios sem digitação extra.
+
+A leitura com IA depende de `FREELLMAPI_*` ou `GEMINI_KEY`. Defina `DEBUG_IA_FICHA=1` no `backend/.env` para imprimir no console o JSON bruto quando o modelo responde em formato inesperado.
+
+A **Ficha Mercado Livre** busca categorias oficiais e carrega as características, opções, atributos obrigatórios/condicionais, termos de venda e limites de fotos da API. Os campos avançados ficam disponíveis por uma opção de exibição.
 
 Também permite configurar nome da família do produto, garantia, disponibilidade de estoque, modalidade de envio, frete grátis, retirada, produto de catálogo e loja oficial. O ID oficial da categoria fica em `pecas.ml_category_id`; as configurações adicionais são persistidas em `pecas.ml_config` e os atributos em `pecas.atributos`.
 
-Na mesma etapa, é possível informar grupos de veículos compatíveis com marca, modelo, ano, versão, motor, observações e posições de instalação disponíveis para a categoria. Após aprovação, os grupos são adicionados como compatibilidades do vendedor. Compatibilidades gerenciadas pelo catálogo e sugestões de veículos continuam sujeitas às restrições do Mercado Livre e devem ser revisadas no gerenciador da plataforma.
+No bloco da ficha é possível informar grupos de veículos compatíveis com marca, modelo, ano, versão, motor, observações e posições de instalação disponíveis para a categoria. Após aprovação, os grupos são adicionados como compatibilidades do vendedor. Compatibilidades gerenciadas pelo catálogo e sugestões de veículos continuam sujeitas às restrições do Mercado Livre e devem ser revisadas no gerenciador da plataforma.
 
 Na publicação, o backend consulta os requisitos, aplica `family_name` nas contas com a tag `user_product_seller`, envia condição, características, garantia e configurações de frete e valida o corpo em `/items/validate` antes de criar o anúncio. A descrição, o vídeo do YouTube e as compatibilidades também fazem parte do fluxo. A validação pode exigir dados adicionais conforme categoria, conta e produto; salvar uma ficha local não significa que o anúncio já foi publicado.
 
@@ -225,7 +241,9 @@ Variáveis opcionais:
 
 ### 3. Conectar e sincronizar
 
-**Deploy no Render:** no serviço do backend, configure `ML_REDIRECT_URI=https://desmonteos-backend.onrender.com/api/mercadolivre/oauth/callback`, `FRONTEND_URL=https://desmonteos.onrender.com` e `BACKEND_PUBLIC_URL=https://desmonteos-backend.onrender.com`. Cadastre exatamente o mesmo callback no aplicativo do Mercado Livre e faça o redeploy. A porta interna `10000` não faz parte da URL pública.
+**Deploy no Render:** no serviço do backend, configure `ML_REDIRECT_URI=https://desmonteos-backend.onrender.com/api/mercadolivre/oauth/callback`, `FRONTEND_URL=https://desmonteosv2.pages.dev` e `BACKEND_PUBLIC_URL=https://desmonteos-backend.onrender.com`. Cadastre exatamente o mesmo callback no aplicativo do Mercado Livre e faça o redeploy. A porta interna `10000` não faz parte da URL pública.
+
+**Frontend no Cloudflare Pages:** o projeto publicado é `https://desmonteosv2.pages.dev`, construído a partir de `gabrieelmoraess171/desmonteosv2` (branch `main`), com diretório de saída `frontend/dist` e comando `npm run build`. O app usa `BrowserRouter`, então o build precisa do `frontend/public/_redirects`: ele manda rotas desconhecidas para o `index.html` (sem isso, abrir `/login` ou recarregar a página fora da raiz devolve 404) e encaminha `/api/*` e `/uploads/*` para o backend no Render. Se o frontend for publicado em outro domínio, ajuste `FRONTEND_URL` no backend e o destino das regras em `_redirects`, e confirme que o CORS do backend aceita essa origem.
 
 Quando `ML_REDIRECT_URI` não está definida, o backend deriva o callback de `BACKEND_PUBLIC_URL`, `API_PUBLIC_URL` ou `RENDER_EXTERNAL_URL`. Configurações locais antigas são substituídas por essa origem pública quando disponível; callbacks públicos explícitos continuam tendo prioridade. No Render, o retorno do OAuth também usa o frontend publicado quando a configuração anterior aponta para localhost.
 
@@ -409,6 +427,15 @@ Vendas canceladas e reembolsadas são excluídas. Datas `YYYY-MM-DD` são interp
 | POST | `/api/proprietario/sair` | Encerra a sessão do token enviado |
 | POST | `/api/proprietario/alterar-pin` | Troca o PIN mediante PIN atual e sessão válida |
 
+### Leitura por IA
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/ia/completar-ficha` | Completa a ficha a partir das fotos e do título. Aceita `pecaId`, `imagens`, `categorias`, `camposPorCategoria`, `contexto.peca` e `fichaMl`; devolve `dados` (com `atributos` locais e `atributos_ml` oficiais), `estimados`, `fonte` e `imagensAnalisadas` |
+| POST | `/api/ia/analisar-fotos` | Lê as fotos e sugere identificação da peça, sem completar a ficha inteira |
+
+O `fichaMl` aceita o objeto devolvido por `/api/mercadolivre/cadastro/categorias/:id`; quando presente, a IA só pode responder com ids dessa lista, e valores fora das opções aceitas são descartados no backend.
+
 ### Aprovação de anúncios
 
 | Método | Rota | Descrição |
@@ -459,7 +486,8 @@ As demais rotas continuam sem autenticação de funcionário. A sessão do propr
 - Nome da empresa e WhatsApp financeiro protegidos por PIN de proprietário com hash `scrypt` e sessão de 12 horas.
 - Login local de demonstração com React Router, hook `useAuth`, persistência no navegador, proteção de páginas e logout.
 - Datas de vendas, perguntas e reclamações são convertidas para o fuso local do computador; o “hoje” do dashboard, da NF-e e dos relatórios acompanha a data local, não UTC.
-- Cadastro completo no padrão Mercado Livre, com campos por categoria, até 20 fotos, peso, medidas, OEM e compatibilidade.
+- Cadastro completo no padrão Mercado Livre em tela única: fotos primeiro, identificação a partir das fotos por IA, revisão do que foi preenchido, aplicação, ficha oficial da categoria, preço e descrição, com contador de pendências por bloco.
+- Atributos oficiais do Mercado Livre (`BRAND`, `CAR_AND_VAN_MODEL`, `YEAR`, `POSITION`) derivados dos campos do formulário e enviados na publicação, sem sobrescrever o que o operador digitou.
 - Fotos das peças ficam em `backend/uploads/pecas/<peca_id>/` (ignorado pelo Git) e são removidas junto com a peça.
 - Navegação lateral recolhível com Dashboard, Nova peça, Importar lote, Estoque, Marketplaces, Atendimento, NF-e, Relatórios e Configurações ligados às telas existentes.
 - Interface “liquid glass” escura com animações de entrada, transições entre telas e respeito a `prefers-reduced-motion`.
@@ -474,7 +502,8 @@ As demais rotas continuam sem autenticação de funcionário. A sessão do propr
 - A integração com o Mercado Livre exige um aplicativo próprio (Client ID/Secret) e conexão OAuth; sem isso, o painel continua funcionando com os dados locais e a reputação estimada.
 - A edição remota de fotos, categoria e atributos de anúncios existentes ainda não está implementada.
 - A operação de NF-e importa XMLs já emitidos; não há emissão fiscal própria. Etiquetas e envio de XML dependem da disponibilidade e das permissões da API do Mercado Livre.
-- Os testes automatizados atuais cobrem regras de envios; ainda é necessário ampliar a cobertura e validar os fluxos completos com uma conta conectada.
+- Os testes automatizados cobrem regras de envios, OAuth, publicação e atributos do Mercado Livre; não há testes de frontend, e os fluxos completos ainda precisam ser validados com uma conta conectada.
+- A leitura por IA depende de provedor configurado e de uma categoria oficial escolhida: sem `ml_category_id` não há como saber quais atributos são obrigatórios, e o checklist sinaliza isso como pendência.
 - OAuth e webhook exigem HTTPS público; `localhost`/`127.0.0.1` na Redirect URI retorna 403 do CloudFront — use ngrok/cloudflared para o fluxo completo.
 - O painel não tem autenticação multiusuário; quem tiver acesso pode conectar/desconectar a conta do Mercado Livre.
 
