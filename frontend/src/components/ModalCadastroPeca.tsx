@@ -413,6 +413,9 @@ export default function ModalCadastroPeca({
   const [loading, setLoading] = useState(false);
   const [classificando, setClassificando] = useState(false);
   const [completandoFicha, setCompletandoFicha] = useState(false);
+  // Liga quando o operador solta uma foto: o efeito mais abaixo chama a IA
+  // sozinho, sem precisar de clique.
+  const [leituraAutomaticaPendente, setLeituraAutomaticaPendente] = useState(false);
   const [pecaSalva, setPecaSalva] = useState<{ id: number; fotos: number } | null>(null);
   const [publicando, setPublicando] = useState(false);
   const [publicacao, setPublicacao] = useState<{ permalink: string | null; itemId: string | null } | null>(null);
@@ -465,9 +468,11 @@ export default function ModalCadastroPeca({
       grupo,
     }));
 
-    // A leitura com IA só começa no clique de "Identificar com IA": soltar
-    // fotos nunca dispara chamada sozinho.
     setFotos((atuais) => [...atuais, ...novas].slice(0, 20));
+
+    // A leitura com IA começa sozinha: o operador só escolhe a foto da peça.
+    // Fotos de medidas não disparam, pois costumam vir depois da ficha.
+    if (grupo !== 'medidas') setLeituraAutomaticaPendente(true);
   }, []);
 
   const handleRemoveFoto = useCallback((id: string) => {
@@ -791,6 +796,33 @@ export default function ModalCadastroPeca({
     ]
   );
 
+  // Agrupa as fotos soltas em sequência numa única leitura, para não disparar
+  // uma chamada de IA por arquivo.
+  useEffect(() => {
+    if (!isOpen || !leituraAutomaticaPendente) return;
+    if (fotos.length === 0) {
+      setLeituraAutomaticaPendente(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      // Se já existe uma leitura em andamento, mantém a pendência: o efeito
+      // roda de novo quando ela terminar e a ficha final inclui as duas fotos.
+      if (completandoFicha || loading) return;
+
+      setLeituraAutomaticaPendente(false);
+      void handleCompletarFichaComIa('auto');
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    completandoFicha,
+    fotos.length,
+    handleCompletarFichaComIa,
+    isOpen,
+    leituraAutomaticaPendente,
+    loading,
+  ]);
 
   const handlePublicar = useCallback(async () => {
     if (!pecaSalva || publicando) return;
@@ -855,6 +887,7 @@ export default function ModalCadastroPeca({
     setIaFonte('');
     setEstimadosIa([]);
     setCompletandoFicha(false);
+    setLeituraAutomaticaPendente(false);
     setPecaSalva(null);
     setPublicacao(null);
     setPublicando(false);
