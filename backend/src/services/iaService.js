@@ -2286,15 +2286,17 @@ export function normalizarFichaMl(ficha) {
       name: limparTexto(campo?.name, 200) || id,
       value_type: limparTexto(campo?.value_type, 40),
       tags,
+      // O frontend manda só os nomes, mas a ficha crua do Mercado Livre traz
+      // {id, name}; aceitar os dois formatos deixa a regra num lugar só.
       values: (Array.isArray(campo?.values) ? campo.values : [])
-        .map((valor) => limparTexto(valor, 120))
+        .map((valor) => limparTexto(valor?.name ?? valor, 120))
         .filter(Boolean)
         .slice(0, MAX_OPCOES_ATRIBUTO),
       allowed_units: (Array.isArray(campo?.allowed_units)
         ? campo.allowed_units
         : []
       )
-        .map((unidade) => limparTexto(unidade, 40))
+        .map((unidade) => limparTexto(unidade?.name ?? unidade, 40))
         .filter(Boolean)
         .slice(0, 20)
     };
@@ -2384,13 +2386,30 @@ function resolverValorMl(campo, bruto) {
   const direto = opcoes.find((opcao) => normalizarComparacao(opcao) === alvo);
   if (direto) return direto;
 
+  // Casamento por sinônimo: primeiro exato, depois contido no texto. O
+  // candidato com o sinônimo mais longo vence, para "dianteira direita" não
+  // cair em "Direita" só porque contém "direita".
+  let melhor = { nome: '', tamanho: 0 };
   for (const [nome, sinonimos] of Object.entries(ALIASES_ML[campo.id] || {})) {
     const opcao = opcoes.find(
       (item) => normalizarComparacao(item) === normalizarComparacao(nome)
     );
-    if (opcao && sinonimos.some((sinonimo) => normalizarComparacao(sinonimo) === alvo)) {
-      return opcao;
+    if (!opcao) continue;
+    for (const sinonimo of sinonimos) {
+      const normalizado = normalizarComparacao(sinonimo);
+      if (normalizado === alvo) return opcao;
+      if (normalizado.length > melhor.tamanho && alvo.includes(normalizado)) {
+        melhor = { nome, tamanho: normalizado.length };
+      }
     }
+  }
+  if (melhor.nome) {
+    return (
+      opcoes.find(
+        (item) =>
+          normalizarComparacao(item) === normalizarComparacao(melhor.nome)
+      ) || ''
+    );
   }
 
   const contem = opcoes.find((opcao) => alvo.includes(normalizarComparacao(opcao)));
@@ -2403,8 +2422,13 @@ export function completarAtributosMl(ficha, bruto) {
   const entrada = new Map();
   if (Array.isArray(bruto)) {
     for (const item of bruto) {
-      const chave = limparTexto(item?.id ?? item?.chave, 80);
-      if (chave) entrada.set(normalizarComparacao(chave), item?.value ?? item?.valor);
+      // A IA pode devolver o id ou o nome do campo; indexar os dois evita
+      // perder o valor por causa disso.
+      const valor = item?.value ?? item?.valor;
+      for (const chaveBruta of [item?.id, item?.chave, item?.name]) {
+        const chave = limparTexto(chaveBruta, 80);
+        if (chave) entrada.set(normalizarComparacao(chave), valor);
+      }
     }
   } else if (bruto && typeof bruto === 'object') {
     for (const [chave, valor] of Object.entries(bruto)) {
