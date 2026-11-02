@@ -982,8 +982,6 @@ body { background: linear-gradient(162deg, #0f123b 14%, #090d2e 56%, #020515 86%
   }
 }
 .peca-cadastro-compacto label { font-size: 12px; }
-.peca-cadastro-compacto section > div:first-child { margin-bottom: 12px; }
-.peca-cadastro-compacto section h3 { font-size: 14px; }
 .peca-cadastro-compacto .grid { gap: 12px; }
 .peca-cadastro-compacto section .mt-5 { margin-top: 12px; }
 .peca-cadastro-compacto section .p-4 { padding: 12px; }
@@ -1000,22 +998,6 @@ body { background: linear-gradient(162deg, #0f123b 14%, #090d2e 56%, #020515 86%
 
 @media (min-width: 1024px) {
   .peca-cadastro-compacto section > .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .peca-cadastro-compacto section[data-etapa='01']:not([hidden]) {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 20px;
-    align-content: start;
-    align-items: start;
-  }
-  .peca-cadastro-compacto section[data-etapa='01'] > div:first-child { grid-column: 1 / -1; margin-bottom: 0; }
-  .peca-cadastro-compacto .cadastro-titulo { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr); }
-  .peca-cadastro-compacto .cadastro-titulo > div { grid-column: 1 / -1; }
-  .peca-cadastro-compacto section > .cadastro-dados { grid-column: 1; grid-row: 3 / 6; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
-  .peca-cadastro-compacto .cadastro-ia { grid-column: 2; grid-row: 3; margin-top: 0; }
-  .peca-cadastro-compacto .cadastro-fotos { grid-column: 2; grid-row: 4; }
-  .peca-cadastro-compacto .cadastro-video { grid-column: 2; grid-row: 5; margin-top: 0; }
-  .peca-cadastro-compacto .cadastro-fotos .py-8 { padding-top: 12px; padding-bottom: 12px; }
-  .peca-cadastro-compacto .cadastro-fotos p.text-sm { font-size: 11px; }
 }
 @media (max-width: 639px) {
   .peca-cadastro-compacto section > .grid { grid-template-columns: minmax(0, 1fr); }
