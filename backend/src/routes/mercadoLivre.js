@@ -13,6 +13,7 @@ import {
   obterStatusMl,
   obterImagensAnuncioMl,
   obterDetalhesAnuncioMl,
+  publicarAnuncioPeca,
   salvarAnuncioPeca,
   processarCallback,
   processarWebhook,
@@ -340,6 +341,37 @@ router.post('/pecas/:id/atualizar-anuncio', async (req, res) => {
     });
 
     res.json(resultado);
+  } catch (error) {
+    res.status(statusErro(error)).json({ error: mensagemErro(error) });
+  }
+});
+
+// Publica direto o anúncio de uma peça recém-cadastrada. É o caminho do botão
+// "Publicar no Mercado Livre" da aba Nova peça, que dispensa a fila de aprovação.
+router.post('/pecas/:id/publicar', async (req, res) => {
+  try {
+    const protocolo = String(
+      req.headers['x-forwarded-proto'] || req.protocol
+    )
+      .split(',')[0]
+      .trim();
+    const publicBaseUrl =
+      process.env.BACKEND_PUBLIC_URL ||
+      process.env.API_PUBLIC_URL ||
+      `${protocolo}://${req.get('host')}`;
+
+    const resultado = await publicarAnuncioPeca(req.params.id, {
+      publicBaseUrl,
+      titulo: req.body?.titulo,
+      descricao: req.body?.descricao,
+      preco: req.body?.preco,
+      quantidade: req.body?.quantidade
+    });
+
+    res.json({
+      ...resultado,
+      mensagem: 'Anúncio publicado no Mercado Livre.'
+    });
   } catch (error) {
     res.status(statusErro(error)).json({ error: mensagemErro(error) });
   }

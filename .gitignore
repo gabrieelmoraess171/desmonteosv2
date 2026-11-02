@@ -34,3 +34,6 @@ backend/storage/
 .DS_Store
 .idea/
 .vscode/
+
+# Configuracao local de agentes de IA
+.claude/

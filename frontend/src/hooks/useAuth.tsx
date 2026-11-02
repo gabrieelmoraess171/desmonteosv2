@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { supabase, supabaseAuthConfigured } from '../config/supabase';
+import { obterSupabase, supabaseAuthConfigured } from '../config/supabase';
 
 export interface AuthUser {
   id: string;
@@ -49,37 +49,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
+    if (!supabaseAuthConfigured) {
       setIsLoading(false);
       return undefined;
     }
 
     let ativo = true;
+    let cancelarInscricao: (() => void) | null = null;
 
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!ativo) return;
-      if (error) console.error('Falha ao restaurar a sessão:', error);
-      setUser(mapUser(data.session?.user || null));
-      setIsLoading(false);
-    });
+    void obterSupabase()
+      .then((supabase) => {
+        if (!ativo || !supabase) return;
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (ativo) setUser(mapUser(session?.user || null));
-    });
+        void supabase.auth.getSession().then(({ data, error }) => {
+          if (!ativo) return;
+          if (error) console.error('Falha ao restaurar a sessão:', error);
+          setUser(mapUser(data.session?.user || null));
+          setIsLoading(false);
+
+          const { data: inscricao } = supabase.auth.onAuthStateChange(
+            (_event, session) => {
+              if (ativo) setUser(mapUser(session?.user || null));
+            }
+          );
+          cancelarInscricao = () => inscricao.subscription.unsubscribe();
+        });
+      })
+      .catch((error) => {
+        if (!ativo) return;
+        console.error('Falha ao carregar a autenticação:', error);
+        setIsLoading(false);
+      });
 
     return () => {
       ativo = false;
-      data.subscription.unsubscribe();
+      cancelarInscricao?.();
     };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!supabaseAuthConfigured || !supabase) {
+    if (!supabaseAuthConfigured) {
       throw authError('A autenticação ainda não foi configurada neste ambiente.');
     }
     if (!normalizedEmail || !password) {
       throw authError('Preencha o e-mail e a senha.');
+    }
+
+    const supabase = await obterSupabase();
+
+    if (!supabase) {
+      throw authError('A autenticação ainda não foi configurada neste ambiente.');
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -101,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const normalizedName = name.trim();
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!supabaseAuthConfigured || !supabase) {
+    if (!supabaseAuthConfigured) {
       throw authError('A autenticação ainda não foi configurada neste ambiente.');
     }
     if (!normalizedName || !normalizedEmail || !password) {
@@ -112,6 +132,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (password.length < 8) {
       throw authError('A senha precisa ter pelo menos 8 caracteres.');
+    }
+
+    const supabase = await obterSupabase();
+
+    if (!supabase) {
+      throw authError('A autenticação ainda não foi configurada neste ambiente.');
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -132,6 +158,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    const supabase = await obterSupabase();
+
     if (supabase) {
       const { error } = await supabase.auth.signOut();
       if (error) throw authError(error.message);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Loader2, Search } from 'lucide-react';
+import type { FichaMlCarregada } from '../config/atributosMl';
 
 export interface ConfigAnuncioMl {
   compatibilities?: Array<{ attributes: Record<string, string>; note?: string; positions?: Array<{ value_id: string; value_name: string }> }>;
@@ -40,11 +41,14 @@ function Campo({ campo, valor, onChange }: { campo: CampoMl; valor: string; onCh
   </label>;
 }
 
-export default function FichaMercadoLivre({ categoryId, titulo, atributos, config, onCategoria, onAtributos, onConfig }: {
+export default function FichaMercadoLivre({ categoryId, titulo, atributos, config, onCategoria, onAtributos, onConfig, onFicha }: {
   categoryId: string; titulo: string; atributos: Record<string, string>; config: ConfigAnuncioMl;
   onCategoria: (id: string, nome: string) => void;
   onAtributos: (atributos: Record<string, string>) => void;
   onConfig: (config: ConfigAnuncioMl) => void;
+  // A ficha da categoria é usada pelo modal para saber quais atributos são
+  // obrigatórios antes de publicar.
+  onFicha?: (ficha: FichaMlCarregada | null) => void;
 }) {
   const [busca, setBusca] = useState('');
   const [opcoes, setOpcoes] = useState<Array<{ category_id?: string; category_name?: string; id?: string; name?: string }>>([]);
@@ -55,14 +59,23 @@ export default function FichaMercadoLivre({ categoryId, titulo, atributos, confi
   const [mostrarAvancados, setMostrarAvancados] = useState(false);
   useEffect(() => {
     setFicha(null);
-    if (!categoryId) return;
+    if (!categoryId) {
+      onFicha?.(null);
+      return;
+    }
     const controller = new AbortController();
     setCarregando(true); setErro('');
     axios.get<FichaMl>(`/api/mercadolivre/cadastro/categorias/${categoryId}`, { signal: controller.signal })
-      .then(({ data }) => setFicha(data))
+      .then(({ data }) => {
+        setFicha(data);
+        onFicha?.(data as unknown as FichaMlCarregada);
+      })
       .catch((error) => { if (!controller.signal.aborted) setErro(error.response?.data?.error || 'Não foi possível consultar a ficha oficial.'); })
       .finally(() => { if (!controller.signal.aborted) setCarregando(false); });
     return () => controller.abort();
+    // onFicha é recriado a cada render pelo modal; incluí-lo reagendaria a
+    // consulta da ficha sem necessidade.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryId]);
   const pesquisar = async (raiz = false) => {
     setCarregando(true); setErro('');

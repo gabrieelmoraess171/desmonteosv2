@@ -396,25 +396,12 @@ function App() {
     return () => dashboardRequest.current?.abort();
   }, [fetchDashboard]);
 
-  // Atualiza o painel sozinho enquanto ele está aberto, para refletir venda,
-  // pergunta ou reclamação nova sem precisar clicar em Atualizar.
-  useEffect(() => {
-    let ativo = true;
-
-    const atualizar = () => {
-      if (!ativo || document.visibilityState !== 'visible') return;
-      if (activeView !== 'dashboard') return;
-      void fetchDashboard();
-    };
-
-    const intervalo = window.setInterval(atualizar, 30000);
-    document.addEventListener('visibilitychange', atualizar);
-
-    return () => {
-      ativo = false;
-      window.clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', atualizar);
-    };
+  // O painel e o sino andam no mesmo ciclo de 30s: um único intervalo evita
+  // duas rodadas de requisições simultâneas a cada meio minuto.
+  const atualizarPainel = useCallback(() => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (activeView !== 'dashboard') return;
+    void fetchDashboard();
   }, [activeView, fetchDashboard]);
 
   useEffect(() => {
@@ -605,8 +592,14 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 30000);
-    const aoVisivel = () => void checar();
+    const intervalo = window.setInterval(() => {
+      void checar();
+      atualizarPainel();
+    }, 30000);
+    const aoVisivel = () => {
+      void checar();
+      atualizarPainel();
+    };
     document.addEventListener('visibilitychange', aoVisivel);
 
     return () => {
@@ -614,7 +607,7 @@ function App() {
       window.clearInterval(intervalo);
       document.removeEventListener('visibilitychange', aoVisivel);
     };
-  }, []);
+  }, [atualizarPainel]);
 
   // O callback OAuth do Mercado Livre volta para a raiz com ?ml=...
   // A página de Marketplaces lê a mensagem e limpa a URL.

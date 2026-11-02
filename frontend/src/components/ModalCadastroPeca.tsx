@@ -1,7 +1,5 @@
 import {
   useCallback,
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -15,11 +13,13 @@ import {
   Camera,
   Car,
   Check,
+  ExternalLink,
   FileText,
   Loader2,
   Package,
   Ruler,
   Sparkles,
+  Store,
   Tag,
   Upload,
   Wand2,
@@ -41,6 +41,15 @@ import {
 } from '../config/categorias';
 import { STORAGE_KEYS } from '../config/app';
 import { prepararImagensParaIa } from '../utils/imagemIa';
+import {
+  derivarAtributosMl,
+  type FichaMlCarregada,
+} from '../config/atributosMl';
+import Bloco from './cadastro/Bloco';
+import FichaRevisaoIa, {
+  type ResumoFichaIa,
+} from './cadastro/FichaRevisaoIa';
+import { calcularPendencias, contarPorBloco } from './cadastro/pendenciasMl';
 
 export interface PecaCompleta {
   id: number;
@@ -109,16 +118,10 @@ interface FichaIaPeca {
   tipo_anuncio?: string;
   modo_compra?: string;
   atributos?: Record<string, string>;
+  atributos_ml?: Record<string, string>;
   confianca?: string;
   estimados?: string[];
   observacoes?: string;
-}
-
-interface RespostaIaPeca {
-  dados: FichaIaPeca;
-  fonte: string;
-  modelo?: string;
-  aviso?: string;
 }
 
 interface RespostaFichaCompletaIa {
@@ -316,39 +319,80 @@ function criarIdFoto(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const EtapaContext = createContext('01');
-const ETAPAS = ['Identificação e fotos', 'Aplicação da peça', 'Ficha Mercado Livre', 'Preço e estoque', 'Descrição'];
+type BlocoCadastro = 'fotos' | 'identificacao' | 'aplicacao' | 'fichaMl' | 'preco' | 'descricao';
 
-function Secao({
-  numero,
-  titulo,
-  descricao,
-  icone,
-  children,
-}: {
-  numero: string;
-  titulo: string;
-  descricao: string;
-  icone: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section data-etapa={numero} hidden={useContext(EtapaContext) !== numero} className="rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:p-4">
-      <div className="mb-5 flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accentSoft text-accent">
-          {icone}
-        </span>
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-            Etapa {numero}
-          </p>
-          <h3 className="mt-0.5 text-lg font-semibold text-ink">{titulo}</h3>
-          <p className="mt-1 text-xs leading-relaxed text-muted">{descricao}</p>
-        </div>
-      </div>
-      {children}
-    </section>
-  );
+const ORDEM_BLOCOS: Array<{ id: BlocoCadastro; rotulo: string }> = [
+  { id: 'fotos', rotulo: 'Fotos' },
+  { id: 'identificacao', rotulo: 'Identificação' },
+  { id: 'aplicacao', rotulo: 'Aplicação' },
+  { id: 'fichaMl', rotulo: 'Ficha ML' },
+  { id: 'preco', rotulo: 'Preço' },
+  { id: 'descricao', rotulo: 'Descrição' },
+];
+
+const BLOCOS_INICIAIS: Record<BlocoCadastro, boolean> = {
+  fotos: true,
+  identificacao: false,
+  aplicacao: false,
+  fichaMl: false,
+  preco: false,
+  descricao: false,
+};
+
+// O operador abre um bloco por vez: os resumos mostram o que já está preenchido
+// sem precisar reabrir cada etapa.
+function resumoDe(valores: Array<string | number | undefined | null>, vazio: string) {
+  const preenchidos = valores
+    .map((valor) => String(valor ?? '').trim())
+    .filter(Boolean);
+
+  return preenchidos.length > 0 ? preenchidos.join(' • ') : vazio;
+}
+
+function formatarMedidas(formData: PecaFormData): string {
+  const medidas = [formData.comprimento_cm, formData.largura_cm, formData.altura_cm]
+    .map((valor) => String(valor || '').trim())
+    .filter(Boolean);
+
+  return medidas.length === 3 ? `${medidas.join(' × ')} cm` : '';
+}
+
+// Resumo curto do que a IA leu, exibido acima dos blocos. A ideia é o operador
+// conferir a leitura inteira sem abrir cada campo.
+function montarResumoIa(dados: FichaIaPeca, estimados: string[]): ResumoFichaIa {
+  const estado = (valor?: string | number | null) => {
+    const texto = String(valor ?? '').trim();
+    return texto || 'Não informado';
+  };
+  const medidas = [dados.comprimento_cm, dados.largura_cm, dados.altura_cm]
+    .filter((valor) => Number(valor) > 0);
+
+  return {
+    nome: estado(dados.nome),
+    ml_titulo: estado(dados.titulo),
+    categoria: estado(dados.categoria),
+    categoria_ml: estado(dados.categoria_ml),
+    lado: estado(dados.atributos?.lado),
+    acionamento: estado(
+      dados.atributos?.acionamento || dados.atributos?.tipo_acionamento
+    ),
+    veiculo: estado(dados.carro),
+    marca: estado(dados.marca),
+    modelo: estado(dados.modelo),
+    ano: estado(dados.ano),
+    preco: Number(dados.preco_sugerido) > 0
+      ? Number(dados.preco_sugerido).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+      : 'Não sugerido',
+    peso: Number(dados.peso_kg) > 0 ? `${dados.peso_kg} kg` : 'Não informado',
+    medidas: medidas.length === 3 ? `${medidas.join(' × ')} cm` : 'Não informadas',
+    descricao: estado(dados.descricao),
+    numero_oem: estado(dados.numero_oem),
+    gtin: estado(dados.gtin),
+    atributosMl: Object.keys(dados.atributos || {}).length,
+  };
 }
 
 export default function ModalCadastroPeca({
@@ -358,13 +402,20 @@ export default function ModalCadastroPeca({
   peca = null,
 }: ModalCadastroPecaProps) {
   const editando = Boolean(peca);
-  const [etapa, setEtapa] = useState('01');
+  const [blocosAbertos, setBlocosAbertos] = useState(BLOCOS_INICIAIS);
+  const [fichaMl, setFichaMl] = useState<FichaMlCarregada | null>(null);
+  const [revisaoIa, setRevisaoIa] = useState<ResumoFichaIa | null>(null);
+  const [imagensAnalisadasIa, setImagensAnalisadasIa] = useState<number | undefined>();
   const [formData, setFormData] = useState<PecaFormData>(createInitialFormData);
   const [fotos, setFotos] = useState<FotoSelecionada[]>([]);
   const [loading, setLoading] = useState(false);
   const [classificando, setClassificando] = useState(false);
-  const [lendoFotos, setLendoFotos] = useState(false);
   const [completandoFicha, setCompletandoFicha] = useState(false);
+  // Liga quando o operador solta uma foto: o efeito abaixo chama a IA sozinho.
+  const [leituraAutomaticaPendente, setLeituraAutomaticaPendente] = useState(false);
+  const [pecaSalva, setPecaSalva] = useState<{ id: number; fotos: number } | null>(null);
+  const [publicando, setPublicando] = useState(false);
+  const [publicacao, setPublicacao] = useState<{ permalink: string | null; itemId: string | null } | null>(null);
   const [iaAviso, setIaAviso] = useState('');
   const [iaFonte, setIaFonte] = useState('');
   const [estimadosIa, setEstimadosIa] = useState<string[]>([]);
@@ -376,6 +427,18 @@ export default function ModalCadastroPeca({
   const [identificacaoIa, setIdentificacaoIa] = useState<{ peca?: string; lado?: string; marca?: string; modelos?: string[]; anos?: string; veiculos?: string[]; confianca?: string; observacao?: string; fonte?: string } | null>(null);
   const tituloInputRef = useRef<HTMLInputElement>(null);
   const fotosRef = useRef<FotoSelecionada[]>([]);
+
+  const alternarBloco = useCallback((id: BlocoCadastro, aberto: boolean) => {
+    setBlocosAbertos((atual) => ({ ...atual, [id]: aberto }));
+
+    if (aberto) {
+      window.setTimeout(() => {
+        document
+          .getElementById(`bloco-${id}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    }
+  }, []);
 
   useEffect(() => {
     fotosRef.current = fotos;
@@ -403,6 +466,10 @@ export default function ModalCadastroPeca({
     }));
 
     setFotos((atuais) => [...atuais, ...novas].slice(0, 20));
+
+    // A leitura com IA começa sozinha: o operador só escolhe a foto da peça.
+    // Fotos de medidas não disparam a leitura, pois costumam vir depois da ficha.
+    if (grupo !== 'medidas') setLeituraAutomaticaPendente(true);
   }, []);
 
   const handleRemoveFoto = useCallback((id: string) => {
@@ -568,7 +635,8 @@ export default function ModalCadastroPeca({
     });
   }, []);
 
-  const handleCompletarFichaComIa = useCallback(async () => {
+  const handleCompletarFichaComIa = useCallback(
+    async (origem: 'manual' | 'auto' = 'manual') => {
     if (completandoFicha || loading) return;
 
     const titulo = formData.ml_titulo.trim() || formData.nome.trim();
@@ -605,6 +673,27 @@ export default function ModalCadastroPeca({
           imagens,
           categorias: CATEGORIAS_PECA,
           camposPorCategoria: CAMPOS_CATEGORIA,
+          // A IA precisa saber os ids oficiais da categoria para devolver
+          // atributos_ml que o Mercado Livre aceite.
+          fichaMl: fichaMl
+            ? {
+                categoryId: fichaMl.categoria?.id || formData.ml_category_id,
+                atributos: (fichaMl.atributos || []).map((campo) => ({
+                  id: campo.id,
+                  name: campo.name,
+                  value_type: campo.value_type,
+                  tags: campo.tags,
+                  values: (campo.values || []).slice(0, 40).map((valor) => valor.name),
+                  allowed_units: (campo.allowed_units || []).map((unidade) => unidade.name),
+                })),
+                saleTerms: (fichaMl.termos || []).map((termo) => ({
+                  id: termo.id,
+                  name: termo.name,
+                  tags: termo.tags,
+                  values: (termo.values || []).slice(0, 40).map((valor) => valor.name),
+                })),
+              }
+            : null,
           contexto: {
             peca: {
               nome: formData.nome,
@@ -638,11 +727,10 @@ export default function ModalCadastroPeca({
       );
 
       if (data?.dados) aplicarFichaCompletaIa(data.dados);
-      // A ficha completa conduz o operador pelas cinco etapas para que o preenchimento
-      // da IA seja percebido como um fluxo contínuo, sem exigir cliques intermediários.
-      ['02', '03', '04', '05'].forEach((chave, indice) => {
-        window.setTimeout(() => setEtapa(chave), (indice + 1) * 850);
-      });
+
+      // A leitura preenche os blocos e mostra o resumo logo abaixo das fotos.
+      // Os blocos ficam fechados com o resumo preenchido, para o operador
+      // conferir só o que precisa.
 
       const estimados = Array.isArray(data?.estimados)
         ? data.estimados
@@ -651,6 +739,7 @@ export default function ModalCadastroPeca({
           : [];
 
       setEstimadosIa(estimados);
+      setImagensAnalisadasIa(data?.imagensAnalisadas);
       setIaFonte(data?.fonte || '');
       setIaAviso(
         data?.aviso ||
@@ -660,6 +749,8 @@ export default function ModalCadastroPeca({
               : ''
           }. Confira os campos antes de salvar.`
       );
+
+      if (data?.dados) setRevisaoIa(montarResumoIa(data.dados, estimados));
     } catch (err: unknown) {
       if (axios.isAxiosError<{ error?: string }>(err)) {
         setError(
@@ -674,87 +765,49 @@ export default function ModalCadastroPeca({
     } finally {
       setCompletandoFicha(false);
     }
-  }, [
-    aplicarFichaCompletaIa,
-    completandoFicha,
-    formData,
-    fotos,
-    loading,
-    peca,
-  ]);
+    },
+    [
+      aplicarFichaCompletaIa,
+      completandoFicha,
+      formData,
+      fotos,
+      loading,
+      peca,
+    ]
+  );
 
-  const handleLerFotosComIa = useCallback(async () => {
-    if (lendoFotos || loading) return;
 
-    if (fotos.length === 0) {
-      setError(
-        'Adicione as fotos da peça antes de usar a leitura com IA. A primeira foto deve ser a etiqueta com o SKU.'
-      );
-      return;
-    }
+  const handlePublicar = useCallback(async () => {
+    if (!pecaSalva || publicando) return;
 
-    setLendoFotos(true);
+    setPublicando(true);
     setError('');
-    setIaAviso('');
-    setIaFonte('');
 
     try {
-      const imagens = await prepararImagensParaIa(
-        ordemFotosParaEnvio(fotos).map((foto) => ({
-          file: foto.file,
-          nome: `[${foto.grupo?.toUpperCase() || 'PRODUTO'}] ${foto.file.name}`,
-        })),
-        20
-      );
+      const { data } = await axios.post<{
+        item_id?: string;
+        permalink?: string;
+        mensagem?: string;
+      }>(`/api/mercadolivre/pecas/${pecaSalva.id}/publicar`, {}, { timeout: 90000 });
 
-      if (imagens.length === 0) {
-        throw new Error(
-          'As fotos selecionadas não puderam ser lidas. Use JPG, PNG ou WEBP.'
-        );
-      }
-
-      const { data } = await axios.post<RespostaIaPeca>(
-        '/api/ia/analisar-fotos',
-        {
-          imagens,
-          contexto: {
-            categorias: CATEGORIAS_PECA,
-            peca: {
-              nome: formData.nome || formData.ml_titulo,
-              ml_titulo: formData.ml_titulo,
-              carro: formData.carro,
-              marca: formData.marca,
-              modelo: formData.modelo,
-              ano: expandirFaixaAnos(formData.ano),
-              categoria: formData.categoria,
-              descricao: formData.descricao,
-            },
-          },
-        },
-        { timeout: 120000 }
-      );
-
-      if (data?.dados) aplicarFichaIa(data.dados);
-      setIaFonte(data?.fonte || '');
-      setIaAviso(
-        data?.aviso ||
-          'Ficha preenchida com a leitura das fotos. Confira cada campo antes de salvar.'
-      );
+      setPublicacao({
+        permalink: data.permalink || null,
+        itemId: data.item_id || null,
+      });
+      onSuccess();
     } catch (err: unknown) {
       if (axios.isAxiosError<{ error?: string }>(err)) {
         setError(
           err.response?.data?.error ||
-            'Não foi possível ler as fotos com IA agora.'
+            'Não foi possível publicar o anúncio no Mercado Livre.'
         );
-      } else if (err instanceof Error) {
-        setError(err.message);
       } else {
-        setError('Não foi possível ler as fotos com IA agora.');
+        setError('Não foi possível publicar o anúncio no Mercado Livre.');
       }
     } finally {
-      setLendoFotos(false);
+      setPublicando(false);
     }
-  }, [aplicarFichaIa, formData, fotos, lendoFotos, loading]);
+  }, [onSuccess, pecaSalva, publicando]);
 
   const handleClose = useCallback(() => {
     if (loading) return;
@@ -765,8 +818,9 @@ export default function ModalCadastroPeca({
     setIaAviso('');
     setIaFonte('');
     setEstimadosIa([]);
-    setLendoFotos(false);
     setCompletandoFicha(false);
+    setPecaSalva(null);
+    setPublicacao(null);
     onClose();
   }, [limparFotos, loading, onClose]);
 
@@ -775,7 +829,9 @@ export default function ModalCadastroPeca({
     if (!isOpen) return;
 
     const dados = peca ? dadosDaPeca(peca) : createInitialFormData();
-    setEtapa('01');
+    setBlocosAbertos(BLOCOS_INICIAIS);
+    setRevisaoIa(null);
+    setImagensAnalisadasIa(undefined);
     setFormData(dados);
     limparFotos();
     setError('');
@@ -783,8 +839,10 @@ export default function ModalCadastroPeca({
     setIaAviso('');
     setIaFonte('');
     setEstimadosIa([]);
-    setLendoFotos(false);
     setCompletandoFicha(false);
+    setPecaSalva(null);
+    setPublicacao(null);
+    setPublicando(false);
 
     const timer = window.setTimeout(() => tituloInputRef.current?.focus(), 120);
 
@@ -1025,9 +1083,14 @@ export default function ModalCadastroPeca({
     const mensagem = validar();
     if (mensagem) {
       setError(mensagem);
-      if (!formData.ml_titulo.trim() || !formData.sku.trim() || !formData.categoria) setEtapa('01');
-      else if (!Number.isFinite(parsePreco(formData.preco)) || Number(formData.quantidade) < 0) setEtapa('04');
-      else if (!formData.descricao.trim()) setEtapa('05');
+      // Leva o operador direto ao bloco que impede o cadastro.
+      if (!formData.ml_titulo.trim() || !formData.sku.trim() || !formData.categoria) {
+        alternarBloco('identificacao', true);
+      } else if (!Number.isFinite(parsePreco(formData.preco)) || Number(formData.quantidade) < 0) {
+        alternarBloco('preco', true);
+      } else if (!formData.descricao.trim()) {
+        alternarBloco('descricao', true);
+      }
       return;
     }
 
@@ -1075,6 +1138,7 @@ export default function ModalCadastroPeca({
       }
 
       const response = await axios.request<{
+        id?: number;
         message: string;
         imagens?: number;
       }>({
@@ -1085,6 +1149,19 @@ export default function ModalCadastroPeca({
       });
 
       const totalFotos = response.data.imagens || 0;
+      const idSalvo = Number(response.data.id) || peca?.id || null;
+
+      // Na peça nova, o cadastro vira uma etapa da publicação: o operador
+      // confirma o anúncio no Mercado Livre com um clique, sem sair da tela.
+      if (!editando && idSalvo) {
+        setPecaSalva({ id: idSalvo, fotos: totalFotos });
+        setFormData(createInitialFormData());
+        limparFotos();
+        setError('');
+        onSuccess();
+        return;
+      }
+
       alert(
         `✅ ${response.data.message}${
           totalFotos > 0 ? ` ${totalFotos} foto(s) enviada(s).` : ''
@@ -1112,6 +1189,49 @@ export default function ModalCadastroPeca({
   const camposTecnicos = camposDaCategoria(formData.categoria);
   const precoAtual = parsePreco(formData.preco);
 
+  const pendencias = calcularPendencias({
+    formData,
+    fotos: fotos.length,
+    ficha: fichaMl,
+    editando,
+  });
+  const pendenciasPorBloco = contarPorBloco(pendencias);
+
+  const resumoIdentificacao = resumoDe(
+    [formData.ml_titulo, formData.sku, formData.categoria, formData.categoria_ml],
+    'Título, SKU e categorias ainda em branco'
+  );
+
+  const resumoAplicacao = resumoDe(
+    [formData.marca, formData.modelo, formData.ano, formData.carro],
+    'Marca, modelo e ano ainda em branco'
+  );
+
+  const resumoFicha = formData.ml_category_id
+    ? resumoDe(
+        [
+          formData.categoria_ml,
+          `${Object.keys(formData.atributos || {}).length} atributo(s)`,
+        ],
+        'Ficha oficial ainda não preenchida'
+      )
+    : 'Escolha a categoria oficial do Mercado Livre';
+
+  const resumoPreco = resumoDe(
+    [
+      precoAtual > 0
+        ? precoAtual.toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+          })
+        : '',
+      formData.quantidade ? `${formData.quantidade} un.` : '',
+      formData.peso_kg ? `${formData.peso_kg} kg` : '',
+      formatarMedidas(formData),
+    ],
+    'Preço, estoque e medidas ainda em branco'
+  );
+
   return createPortal(
     <div className="modal-backdrop overscroll-contain fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-2 backdrop-blur-md sm:p-4">
       <div
@@ -1132,7 +1252,7 @@ export default function ModalCadastroPeca({
             >
               {editando ? 'Editar peça e anúncio' : 'Cadastrar nova peça'}
             </h2>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 hidden text-xs text-muted sm:block">
               Cada peça tem o seu próprio anúncio. Complete a ficha para
               publicar com mais força no Mercado Livre.
             </p>
@@ -1148,13 +1268,34 @@ export default function ModalCadastroPeca({
           </button>
         </div>
 
-        <nav aria-label="Etapas do cadastro" className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/10 px-3 py-2">
-          {ETAPAS.map((nome, indice) => {
-            const chave = String(indice + 1).padStart(2, '0');
-            return <button key={chave} type="button" onClick={() => setEtapa(chave)} aria-current={etapa === chave ? 'step' : undefined} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${etapa === chave ? 'bg-accentSoft text-accent' : 'text-muted hover:bg-white/5'}`}>{indice + 1}. {nome}</button>;
-          })}
+        <nav
+          aria-label="Resumo do cadastro"
+          hidden={Boolean(pecaSalva)}
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/10 px-3 py-2"
+        >
+          {ORDEM_BLOCOS.map(({ id, rotulo }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => alternarBloco(id, true)}
+              aria-current={
+                pendenciasPorBloco[id] > 0 ? 'true' : undefined
+              }
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                pendenciasPorBloco[id] > 0
+                  ? 'bg-warningSoft text-warning'
+                  : 'text-muted hover:bg-white/5'
+              }`}
+            >
+              {rotulo}
+              {pendenciasPorBloco[id] > 0 && (
+                <span className="rounded-full bg-warning/25 px-1.5 text-[10px] font-bold">
+                  {pendenciasPorBloco[id]}
+                </span>
+              )}
+            </button>
+          ))}
         </nav>
-        <EtapaContext.Provider value={etapa}>
         <form
           id="peca-cadastro-form"
           onSubmit={handleSubmit}
@@ -1171,712 +1312,807 @@ export default function ModalCadastroPeca({
             </div>
           )}
 
-          <Secao
-            numero="01"
-            titulo="Título, fotos e identificação"
-            descricao="Comece pelo título do anúncio e envie as fotos. A IA lê a etiqueta, a peça e as medidas para preencher a ficha automaticamente."
-            icone={<Camera className="h-4 w-4" />}
-          >
-            <div className="cadastro-titulo grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <label htmlFor="peca-titulo-ml" className="text-sm font-medium">
-                    Título do anúncio no Mercado Livre *
-                  </label>
-                  <span
-                    className={`text-xs ${
-                      formData.ml_titulo.length > 60
-                        ? 'text-danger'
-                        : 'text-muted'
-                    }`}
-                  >
-                    {formData.ml_titulo.length}/60
-                  </span>
+          {pecaSalva && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+                    publicacao
+                      ? 'border-ml/40 bg-ml/15 text-ml'
+                      : 'border-success/30 bg-successSoft text-success'
+                  }`}
+                >
+                  {publicacao ? (
+                    <Store className="h-5 w-5" />
+                  ) : (
+                    <Check className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">
+                    {publicacao
+                      ? 'Anúncio publicado no Mercado Livre'
+                      : 'Peça cadastrada no estoque'}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted">
+                    {publicacao
+                      ? `A peça já está no ar${
+                          publicacao.itemId ? ` sob o código ${publicacao.itemId}` : ''
+                        }. Você pode acompanhar pelo painel.`
+                      : 'A ficha foi salva. Publique o anúncio agora ou continue o cadastro da próxima peça.'}
+                  </p>
+                  {publicacao?.permalink && (
+                    <a
+                      href={publicacao.permalink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline"
+                    >
+                      Abrir anúncio no Mercado Livre
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
                 </div>
-                <input
-                  ref={tituloInputRef}
-                  id="peca-titulo-ml"
-                  type="text"
-                  name="ml_titulo"
-                  value={formData.ml_titulo}
-                  onChange={handleChange}
-                  onBlur={handleTituloBlur}
-                  maxLength={60}
-                  className="w-full rounded-xl border p-3 text-base"
-                  placeholder="Ex: Retrovisor Elétrico Direito Onix 2020 a 2024 Original"
-                />
-                <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-                  Comece pelo título: é ele que aparece na busca do Mercado
-                  Livre. Use peça, lado/posição, veículo e ano em até 60
-                  caracteres.
-                </p>
               </div>
-
             </div>
+          )}
 
-            <div className="cadastro-ia mt-5 rounded-2xl border border-accent/25 bg-accentSoft/40 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accentSoft text-accent">
-                    <Wand2 className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
-                      Fotos do anúncio e leitura com IA
-                    </p>
-                    <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted">
-                      A IA verifica as fotos e o título para preencher todas as
-                      características do anúncio, sem deixar campos vazios.
-                      {editando
-                        ? ' Usa as fotos já cadastradas e, se preciso, a miniatura do Mercado Livre.'
-                        : ' Envie etiqueta com SKU, produto, medidas e peso.'}{' '}
-                      Confira os campos estimados antes de salvar.
-                    </p>
-                  </div>
-                </div>
+          <div hidden={Boolean(pecaSalva)} className="space-y-3">
+            <Bloco
+              id="fotos"
+              aberto={blocosAbertos.fotos}
+              onToggle={(aberto) => alternarBloco('fotos', aberto)}
+              titulo="1. Fotos do produto"
+              descricao="Solta as imagens aqui. A IA lê a etiqueta e a peça automaticamente e já preenche a ficha."
+              resumo={`${fotos.length} foto(s) selecionada(s)`}
+              pendencias={pendenciasPorBloco.fotos}
+              icone={<Camera className="h-4 w-4" />}
+            >
+              <div className="space-y-4">
+                {editando && peca ? (
+                  <PecaFotosEditor
+                    pecaId={peca.id}
+                    mlItemId={peca.ml_item_id}
+                    onChange={() => onSuccess()}
+                  />
+                ) : (
+                  <>
+                    <ProductPhotoPicker
+                      photos={fotos.filter((foto) => foto.grupo === 'sku')}
+                      onAddFiles={(arquivos) => handleAddFotos(arquivos, 'sku')}
+                      onRemove={handleRemoveFoto}
+                      onMakeCover={handleMakeCover}
+                      maxPhotos={1}
+                      maxFileSizeMB={10}
+                      heading="Etiqueta do SKU"
+                      description="Uma foto nítida da etiqueta ou código SKU."
+                      disabled={loading || completandoFicha}
+                    />
+                    <ProductPhotoPicker
+                      photos={fotos.filter((foto) => foto.grupo === 'produto')}
+                      onAddFiles={(arquivos) => handleAddFotos(arquivos, 'produto')}
+                      onRemove={handleRemoveFoto}
+                      onMakeCover={handleMakeCover}
+                      maxPhotos={12}
+                      maxFileSizeMB={10}
+                      heading="Produto"
+                      description="A peça por diferentes ângulos, até 12 imagens."
+                      disabled={loading || completandoFicha}
+                    />
+                    <ProductPhotoPicker
+                      photos={fotos.filter((foto) => foto.grupo === 'medidas')}
+                      onAddFiles={(arquivos) => handleAddFotos(arquivos, 'medidas')}
+                      onRemove={handleRemoveFoto}
+                      onMakeCover={handleMakeCover}
+                      maxPhotos={4}
+                      maxFileSizeMB={10}
+                      heading="Medidas e peso"
+                      description="Fotos mostrando medidas, dimensões e peso."
+                      disabled={loading || completandoFicha}
+                    />
+                    <ProductPhotoPicker
+                      photos={fotos.filter((foto) => foto.grupo === 'codigo')}
+                      onAddFiles={(arquivos) => handleAddFotos(arquivos, 'codigo')}
+                      onRemove={handleRemoveFoto}
+                      onMakeCover={handleMakeCover}
+                      maxPhotos={1}
+                      maxFileSizeMB={10}
+                      heading="Código da peça"
+                      description="Etiqueta do part number/OEM, quando existir."
+                      disabled={loading || completandoFicha}
+                    />
+                  </>
+                )}
 
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleCompletarFichaComIa()}
-                    disabled={
-                      completandoFicha ||
-                      loading ||
-                      (!peca &&
-                        fotos.length === 0 &&
-                        !formData.ml_titulo.trim() &&
-                        !formData.nome.trim())
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {completandoFicha ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-4 w-4" />
-                    )}
-                    {completandoFicha
-                      ? 'Completando ficha...'
-                      : 'Completar ficha com IA'}
-                  </button>
+                <div className="rounded-xl border border-accent/25 bg-accentSoft/40 p-3 sm:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accentSoft text-accent">
+                        <Wand2 className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">
+                          Identificar com IA
+                        </p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                          A IA lê as fotos e a etiqueta e preenche título,
+                          categoria, aplicação, atributos do Mercado Livre, peso,
+                          medidas e descrição. O que ela não comprovar fica
+                          marcado como estimado.
+                        </p>
+                      </div>
+                    </div>
 
-                  {!editando && (
                     <button
                       type="button"
-                      onClick={() => void handleLerFotosComIa()}
+                      onClick={() => void handleCompletarFichaComIa('manual')}
                       disabled={
-                        lendoFotos ||
                         completandoFicha ||
                         loading ||
-                        fotos.length === 0
+                        (!editando &&
+                          fotos.length === 0 &&
+                          !formData.ml_titulo.trim() &&
+                          !formData.nome.trim())
                       }
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2.5 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {lendoFotos ? (
+                      {completandoFicha ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Wand2 className="h-4 w-4" />
+                      )}
+                      {completandoFicha ? 'Lendo as fotos...' : 'Identificar com IA'}
+                    </button>
+                  </div>
+                  {!editando && fotos.length === 0 && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                      Adicione as fotos para liberar a leitura com IA.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Bloco>
+
+            {revisaoIa && (
+              <FichaRevisaoIa
+                resumo={revisaoIa}
+                estimados={estimadosIa}
+                fonte={iaFonte}
+                aviso={iaAviso}
+                imagensAnalisadas={imagensAnalisadasIa}
+                ocupado={completandoFicha}
+                onRepetir={() => void handleCompletarFichaComIa('auto')}
+                onRevisar={() => {
+                  alternarBloco('identificacao', true);
+                  window.setTimeout(
+                    () => document.getElementById('peca-titulo-ml')?.focus(),
+                    220
+                  );
+                }}
+              />
+            )}
+
+            {!revisaoIa && iaAviso && (
+              <p className="rounded-xl border border-success/25 bg-successSoft px-3 py-2.5 text-xs leading-relaxed text-success">
+                {iaAviso}
+              </p>
+            )}
+
+            <Bloco
+              id="identificacao"
+              aberto={blocosAbertos.identificacao}
+              onToggle={(aberto) => alternarBloco('identificacao', aberto)}
+              titulo="2. Identificação do anúncio"
+              descricao="Título, SKU e as duas categorias: a interna e a oficial do Mercado Livre."
+              resumo={resumoIdentificacao}
+              pendencias={pendenciasPorBloco.identificacao}
+              icone={<Tag className="h-4 w-4" />}
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <label htmlFor="peca-titulo-ml" className="text-sm font-medium">
+                      Título do anúncio no Mercado Livre *
+                    </label>
+                    <span
+                      className={`text-xs ${
+                        formData.ml_titulo.length > 60 ? 'text-danger' : 'text-muted'
+                      }`}
+                    >
+                      {formData.ml_titulo.length}/60
+                    </span>
+                  </div>
+                  <input
+                    ref={tituloInputRef}
+                    id="peca-titulo-ml"
+                    type="text"
+                    name="ml_titulo"
+                    value={formData.ml_titulo}
+                    onChange={handleChange}
+                    onBlur={handleTituloBlur}
+                    maxLength={60}
+                    className="w-full rounded-xl border p-3 text-base"
+                    placeholder="Ex: Retrovisor Elétrico Direito Onix 2020 a 2024 Original"
+                  />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                    É o que aparece na busca do Mercado Livre. Use peça,
+                    lado/posição, veículo e ano em até 60 caracteres.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <label htmlFor="peca-categoria" className="text-sm font-medium">
+                      Categoria da peça *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void detectarCategoria(false)}
+                      disabled={classificando}
+                      className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50"
+                    >
+                      {classificando ? 'Detectando...' : 'Detectar'}
+                    </button>
+                  </div>
+                  <select
+                    id="peca-categoria"
+                    name="categoria"
+                    value={formData.categoria}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3"
+                    required
+                  >
+                    <option value="">Selecione ou detecte automaticamente</option>
+                    {CATEGORIAS_PECA.map((categoria) => (
+                      <option key={categoria} value={categoria}>
+                        {categoria}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    Agrupa o ranking e libera a ficha técnica local.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="peca-sku" className="mb-1.5 block text-sm font-medium">
+                    SKU *
+                  </label>
+                  <input
+                    id="peca-sku"
+                    type="text"
+                    name="sku"
+                    value={formData.sku}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3 font-mono uppercase"
+                    placeholder="SKU G001"
+                    required
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    {skuSugerido
+                      ? `Sugestão automática: ${skuSugerido} (inicial do seu nome).`
+                      : 'Pré-preenchido com a inicial do nome em Configurações.'}
+                  </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label htmlFor="peca-categoria-ml" className="mb-1.5 block text-sm font-medium">
+                    Categoria no Mercado Livre
+                  </label>
+                  <input
+                    id="peca-categoria-ml"
+                    type="text"
+                    name="categoria_ml"
+                    value={formData.categoria_ml}
+                    readOnly
+                    className="w-full rounded-xl border p-3 text-sm"
+                    placeholder="Escolhida no bloco Ficha Mercado Livre"
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    É a categoria oficial (MLB) — ela define quais atributos o
+                    Mercado Livre exige. Escolha no bloco 4.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="peca-oem" className="mb-1.5 block text-sm font-medium">
+                    Número OEM / part number
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="peca-oem"
+                      type="text"
+                      name="numero_oem"
+                      value={formData.numero_oem}
+                      onChange={handleChange}
+                      onBlur={() => void consultarPartNumber()}
+                      className="min-w-0 flex-1 rounded-xl border p-3 font-mono"
+                      placeholder="Digite o número da peça para consultar os catálogos"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void consultarPartNumber()}
+                      disabled={consultandoOem || formData.numero_oem.trim().length < 3}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-accent/30 px-3 text-xs font-semibold text-accent disabled:opacity-50"
+                    >
+                      {consultandoOem ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <Sparkles className="h-4 w-4" />
                       )}
-                      {lendoFotos ? 'Lendo fotos...' : 'Ler fotos com IA'}
+                      Consultar
                     </button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    Consulta automática no plan.parts, 7zap e Mercado Livre.
+                    Quando a chave do plan.parts estiver ativa, ele será
+                    priorizado para identificar o código OEM, marca e aplicação.
+                  </p>
+                  {(referenciasOem.length > 0 || fontesOem.length > 0) && (
+                    <div className="mt-2 rounded-xl border border-accent/20 bg-accentSoft p-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold text-accent">Identificação automática</p>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {fontesOem.map((fonte) => (
+                            <span
+                              key={fonte.nome}
+                              className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                                fonte.status === 'encontrado'
+                                  ? 'border-success/40 text-success'
+                                  : 'border-white/10 text-muted'
+                              }`}
+                            >
+                              {fonte.nome} · {fonte.status}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {!!referenciasOem.length && (
+                        <div className="mt-2 space-y-2">
+                          {referenciasOem.slice(0, 8).map((referencia, indice) => (
+                            <div
+                              key={`${referencia.numero || referencia.url}-${indice}`}
+                              className="rounded-lg border border-white/10 bg-black/10 p-2"
+                            >
+                              <p className="font-semibold text-ink">{referencia.titulo}</p>
+                              <p className="mt-0.5 text-muted">
+                                {referencia.numero || 'Código não informado'}
+                                {referencia.marca ? ` · ${referencia.marca}` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {!editando && fotos.length === 0 && (
-                <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-muted">
-                  Adicione fotos abaixo ou informe o título para liberar a
-                  leitura com IA.
-                </p>
-              )}
-
-              {iaAviso && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg border border-success/25 bg-successSoft px-3 py-2.5 text-xs leading-relaxed text-success">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <p>{iaAviso}</p>
-                    {iaFonte && (
-                      <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-success/80">
-                        Fonte: {iaFonte}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {estimadosIa.length > 0 && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/25 bg-warningSoft px-3 py-2.5 text-xs leading-relaxed text-warning">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <p className="font-semibold">
-                      Campos preenchidos por estimativa
-                    </p>
-                    <p className="mt-1">{estimadosIa.join(', ')}.</p>
-                    <p className="mt-1">
-                      A IA não confirmou esses dados nas fotos ou no título.
-                      Revise antes de salvar.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="cadastro-fotos space-y-4">
-            {editando && peca ? <PecaFotosEditor pecaId={peca.id} mlItemId={peca.ml_item_id} onChange={() => onSuccess()} /> : <>
-              <ProductPhotoPicker
-                photos={fotos.filter((foto) => foto.grupo === 'sku')}
-                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'sku')}
-                onRemove={handleRemoveFoto}
-                onMakeCover={handleMakeCover}
-                maxPhotos={1}
-                maxFileSizeMB={10}
-                heading="1. Foto do SKU"
-                description="Envie somente uma foto nítida da etiqueta ou código SKU."
-                disabled={loading || lendoFotos}
-              />
-              <ProductPhotoPicker
-                photos={fotos.filter((foto) => foto.grupo === 'produto')}
-                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'produto')}
-                onRemove={handleRemoveFoto}
-                onMakeCover={handleMakeCover}
-                maxPhotos={12}
-                maxFileSizeMB={10}
-                heading="2. Fotos do produto"
-                description="Mostre a peça por diferentes ângulos, até 12 imagens."
-                disabled={loading || lendoFotos}
-              />
-              <ProductPhotoPicker
-                photos={fotos.filter((foto) => foto.grupo === 'medidas')}
-                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'medidas')}
-                onRemove={handleRemoveFoto}
-                onMakeCover={handleMakeCover}
-                maxPhotos={4}
-                maxFileSizeMB={10}
-                heading="3. Medidas e peso"
-                description="Envie até 4 imagens mostrando medidas, dimensões e peso."
-                disabled={loading || lendoFotos}
-              />
-              <ProductPhotoPicker
-                photos={fotos.filter((foto) => foto.grupo === 'codigo')}
-                onAddFiles={(arquivos) => handleAddFotos(arquivos, 'codigo')}
-                onRemove={handleRemoveFoto}
-                onMakeCover={handleMakeCover}
-                maxPhotos={1}
-                maxFileSizeMB={10}
-                heading="4. Foto do código da peça"
-                description="A última foto será usada para identificar o part number/OEM."
-                disabled={loading || lendoFotos}
-              />
-            </>}
-            </div>
-
-            <div className="cadastro-dados mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label htmlFor="peca-categoria" className="text-sm font-medium">
-                    Categoria da peça *
+                <div>
+                  <label htmlFor="peca-gtin" className="mb-1.5 block text-sm font-medium">
+                    GTIN / EAN
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => void detectarCategoria(false)}
-                    disabled={classificando}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-cyan disabled:opacity-50"
-                  >
-                    {classificando ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3.5 w-3.5" />
-                    )}
-                    Detectar
-                  </button>
-                </div>
-                <select
-                  id="peca-categoria"
-                  name="categoria"
-                  value={formData.categoria}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  required
-                >
-                  <option value="">Selecione ou detecte automaticamente</option>
-                  {CATEGORIAS_PECA.map((categoria) => (
-                    <option key={categoria} value={categoria}>
-                      {categoria}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-[11px] text-muted">
-                  A categoria agrupa o ranking e libera a ficha técnica certa.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="peca-sku" className="mb-1.5 block text-sm font-medium">
-                  SKU *
-                </label>
-                <input
-                  id="peca-sku"
-                  type="text"
-                  name="sku"
-                  value={formData.sku}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3 font-mono uppercase"
-                  placeholder="SKU G001"
-                  required
-                />
-                <p className="mt-1.5 text-[11px] text-muted">
-                  {skuSugerido
-                    ? `Sugestão automática: ${skuSugerido} (inicial do seu nome).`
-                    : 'Pré-preenchido com a inicial do nome em Configurações.'}
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="peca-categoria-ml" className="mb-1.5 block text-sm font-medium">
-                  Categoria no Mercado Livre
-                </label>
-                <input
-                  id="peca-categoria-ml"
-                  type="text"
-                  name="categoria_ml"
-                  value={formData.categoria_ml}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3 text-xs"
-                  placeholder="Preenchida ao escolher a categoria"
-                />
-                <button type="button" onClick={() => setEtapa('03')} className="mt-1 text-[11px] text-accent hover:underline">Selecionar categoria oficial e características →</button>
-              </div>
-
-              <div>
-                <label htmlFor="peca-tipo" className="mb-1.5 block text-sm font-medium">
-                  Tipo de anúncio
-                </label>
-                <select
-                  id="peca-tipo"
-                  name="tipo_anuncio"
-                  value={formData.tipo_anuncio}
-                  onChange={handleChange}
-                  disabled
-                  className="w-full rounded-xl border p-3"
-                >
-                  <option value="clássico">Clássico</option>
-                  <option value="premium">Premium</option>
-                  <option value="grátis">Grátis</option>
-                </select>
-              </div>
-
-              <div className="md:col-span-2">
-                <label htmlFor="peca-oem" className="mb-1.5 block text-sm font-medium">
-                  Part number / código OEM
-                </label>
-                <div className="flex gap-2">
                   <input
-                    id="peca-oem"
+                    id="peca-gtin"
                     type="text"
-                    name="numero_oem"
-                    value={formData.numero_oem}
+                    name="gtin"
+                    value={formData.gtin}
                     onChange={handleChange}
-                    onBlur={() => void consultarPartNumber()}
-                    className="min-w-0 flex-1 rounded-xl border p-3 font-mono"
-                    placeholder="Digite o número da peça para consultar os catálogos"
+                    className="w-full rounded-xl border p-3 font-mono"
+                    placeholder="Código de barras do fabricante"
                   />
-                  <button type="button" onClick={() => void consultarPartNumber()} disabled={consultandoOem || formData.numero_oem.trim().length < 3} className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-accent/30 px-3 text-xs font-semibold text-accent disabled:opacity-50">
-                    {consultandoOem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Consultar
-                  </button>
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    Preencha quando a peça tiver código de barras. Sem GTIN, o ML
+                    usa a categoria e a ficha técnica.
+                  </p>
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted">Consulta automática no plan.parts, 7zap e Mercado Livre. Quando a chave do plan.parts estiver ativa, ele será priorizado para identificar o código OEM, marca e aplicação.</p>
-                {(referenciasOem.length > 0 || fontesOem.length > 0) && <div className="mt-2 rounded-xl border border-accent/20 bg-accentSoft p-3 text-xs">
-                  <div className="flex items-center justify-between gap-2"><p className="font-semibold text-accent">Identificação automática</p><div className="flex flex-wrap justify-end gap-1">{fontesOem.map((fonte) => <span key={fonte.nome} className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${fonte.status === 'encontrado' ? 'border-success/40 text-success' : 'border-white/10 text-muted'}`}>{fonte.nome} · {fonte.status}</span>)}</div></div>
-                  {!!referenciasOem.length && <div className="mt-2 space-y-2">{referenciasOem.slice(0, 8).map((referencia, indice) => <div key={`${referencia.numero || referencia.url}-${indice}`} className="rounded-lg border border-white/10 bg-black/10 p-2"><p className="font-semibold text-ink">{referencia.titulo}</p><p className="mt-0.5 text-muted">{referencia.numero || 'Código não informado'}{referencia.marca ? ` · ${referencia.marca}` : ''}{referencia.aplicacoes ? ` · ${referencia.aplicacoes}` : ''}</p></div>)}</div>}
-                  {!!identificacaoIa && <div className="mt-2 rounded-lg border border-violet-400/20 bg-violet-400/5 p-2.5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-violet-200">Aplicação sugerida pela IA do Google</p><p className="mt-1 text-muted">{identificacaoIa.veiculos?.length ? identificacaoIa.veiculos.join(' · ') : identificacaoIa.modelos?.join(' · ') || 'Modelo não identificado com segurança'}{identificacaoIa.anos ? ` · ${identificacaoIa.anos}` : ''}</p></div><button type="button" onClick={aplicarIdentificacaoIa} className="shrink-0 rounded-lg border border-violet-300/40 bg-violet-300/10 px-2.5 py-1.5 text-[10px] font-semibold text-violet-100 transition hover:bg-violet-300/20">Aplicar dados</button></div><p className="mt-1 text-[10px] text-muted">Confiança: {identificacaoIa.confianca || 'baixa'}{identificacaoIa.observacao ? ` · ${identificacaoIa.observacao}` : ''}</p></div>}
-                </div>}
               </div>
+            </Bloco>
 
-              <div>
-                <label htmlFor="peca-gtin" className="mb-1.5 block text-sm font-medium">
-                  GTIN / EAN
-                </label>
-                <input
-                  id="peca-gtin"
-                  type="text"
-                  name="gtin"
-                  value={formData.gtin}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3 font-mono"
-                  placeholder="Código de barras do fabricante"
-                />
-                <p className="mt-1.5 text-[11px] text-muted">
-                  Preencha quando a peça tiver código de barras. Sem GTIN, o ML
-                  usa a categoria e a ficha técnica.
-                </p>
-              </div>
-            </div>
-          </Secao>
-
-          <Secao
-            numero="02"
-            titulo="Compatibilidade"
-            descricao="Aplique a peça ao veículo certo e evite perguntas e devoluções."
-            icone={<Car className="h-4 w-4" />}
-          >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label htmlFor="peca-carro" className="mb-1.5 block text-sm font-medium">
-                  Veículo / aplicação
-                </label>
-                <input
-                  id="peca-carro"
-                  type="text"
-                  name="carro"
-                  value={formData.carro}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: Onix 2021"
-                />
-              </div>
-              <div>
-                <label htmlFor="peca-marca" className="mb-1.5 block text-sm font-medium">
-                  Marca
-                </label>
-                <input
-                  id="peca-marca"
-                  type="text"
-                  name="marca"
-                  value={formData.marca}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: Chevrolet"
-                />
-              </div>
-              <div>
-                <label htmlFor="peca-modelo" className="mb-1.5 block text-sm font-medium">
-                  Modelo
-                </label>
-                <input
-                  id="peca-modelo"
-                  type="text"
-                  name="modelo"
-                  value={formData.modelo}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: Onix LT"
-                />
-              </div>
-              <div>
-                <label htmlFor="peca-ano" className="mb-1.5 block text-sm font-medium">
-                  Ano / faixa de anos
-                </label>
-                <input
-                  id="peca-ano"
-                  type="text"
-                  name="ano"
-                  value={formData.ano}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: 2020 a 2024"
-                />
-              </div>
-              <div>
-                <label htmlFor="peca-condicao" className="mb-1.5 block text-sm font-medium">
-                  Condição
-                </label>
-                <select
-                  id="peca-condicao"
-                  name="condicao"
-                  value={formData.condicao}
-                  onChange={handleChange}
-                  disabled
-                  className="w-full rounded-xl border p-3"
-                >
-                  <option value="usado">Usado</option>
-                  <option value="novo">Novo</option>
-                  <option value="recondicionado">Recondicionado</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="peca-garantia" className="mb-1.5 block text-sm font-medium">
-                  Garantia
-                </label>
-                <input
-                  id="peca-garantia"
-                  type="text"
-                  name="garantia"
-                  value={formData.garantia}
-                  onChange={handleChange}
-                  readOnly
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: 90 dias"
-                />
-              </div>
-            </div>
-          </Secao>
-
-          <Secao
-            numero="03"
-            titulo="Ficha técnica da categoria"
-            descricao={
-              formData.categoria
-                ? `Atributos específicos de ${formData.categoria} usados pelos filtros do Mercado Livre.`
-                : 'Escolha a categoria para liberar os atributos específicos do anúncio.'
-            }
-            icone={<FileText className="h-4 w-4" />}
-          >
-            <FichaMercadoLivre categoryId={formData.ml_category_id} titulo={formData.ml_titulo}
-              atributos={formData.atributos} config={formData.ml_config}
-              onCategoria={(id, nome) => setFormData((atual) => ({ ...atual, ml_category_id: id, categoria_ml: nome, atributos: {}, ml_config: { ...atual.ml_config, sale_terms: {} } }))}
-              onAtributos={(atributos) => setFormData((atual) => ({ ...atual, atributos }))}
-              onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))} />
-            <CompatibilidadeMl categoryId={formData.ml_category_id} config={formData.ml_config} onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))} />
-            {!formData.ml_category_id && <details className="mt-4 text-xs"><summary className="cursor-pointer text-muted">Ficha local por tipo de peça</summary>
-            {!formData.categoria ? (
-              <div className="rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-5 text-sm text-muted">
-                Selecione a categoria na etapa 01 para ver os campos técnicos.
-              </div>
-            ) : (
+            <Bloco
+              id="aplicacao"
+              aberto={blocosAbertos.aplicacao}
+              onToggle={(aberto) => alternarBloco('aplicacao', aberto)}
+              titulo="3. Aplicação e condição"
+              descricao="Veículo, marca, modelo, ano, condição e garantia que o comprador vê no anúncio."
+              resumo={resumoAplicacao}
+              pendencias={pendenciasPorBloco.aplicacao}
+              icone={<Car className="h-4 w-4" />}
+            >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {camposTecnicos.map((campo) => (
-                  <div key={campo.key}>
+                <div>
+                  <label htmlFor="peca-carro" className="mb-1.5 block text-sm font-medium">
+                    Veículo / aplicação
+                  </label>
+                  <input
+                    id="peca-carro"
+                    type="text"
+                    name="carro"
+                    value={formData.carro}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Ex: Onix 2021"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="peca-marca" className="mb-1.5 block text-sm font-medium">
+                    Marca
+                  </label>
+                  <input
+                    id="peca-marca"
+                    type="text"
+                    name="marca"
+                    value={formData.marca}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Ex: Chevrolet"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="peca-modelo" className="mb-1.5 block text-sm font-medium">
+                    Modelo
+                  </label>
+                  <input
+                    id="peca-modelo"
+                    type="text"
+                    name="modelo"
+                    value={formData.modelo}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Ex: Onix"
+                  />
+                </div>
+                {[
+                  { name: 'ano', label: 'Ano', placeholder: 'Ex: 2020 a 2024' },
+                  { name: 'garantia', label: 'Garantia', placeholder: 'Ex: 90 dias' },
+                ].map((campo) => (
+                  <div key={campo.name}>
                     <label
-                      htmlFor={`atributo-${campo.key}`}
+                      htmlFor={`peca-${campo.name}`}
                       className="mb-1.5 block text-sm font-medium"
                     >
                       {campo.label}
                     </label>
-                    {campo.tipo === 'select' ? (
-                      <select
-                        id={`atributo-${campo.key}`}
-                        value={formData.atributos[campo.key] || ''}
-                        onChange={(event) =>
-                          handleAtributoChange(campo.key, event.target.value)
-                        }
-                        className="w-full rounded-xl border p-3"
-                      >
-                        <option value="">Selecione</option>
-                        {(campo.opcoes || []).map((opcao) => (
-                          <option key={opcao} value={opcao}>
-                            {opcao}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        id={`atributo-${campo.key}`}
-                        type="text"
-                        value={formData.atributos[campo.key] || ''}
-                        onChange={(event) =>
-                          handleAtributoChange(campo.key, event.target.value)
-                        }
-                        className="w-full rounded-xl border p-3"
-                        placeholder={campo.placeholder}
-                      />
-                    )}
+                    <input
+                      id={`peca-${campo.name}`}
+                      type="text"
+                      name={campo.name}
+                      value={campo.name === 'ano' ? formData.ano : formData.garantia}
+                      onChange={handleChange}
+                      readOnly={campo.name === 'garantia'}
+                      className="w-full rounded-xl border p-3"
+                      placeholder={campo.placeholder}
+                    />
                   </div>
                 ))}
               </div>
-            )}
-            </details>}
-          </Secao>
+            </Bloco>
 
-          <Secao
-            numero="04"
-            titulo="Preço, estoque e logística"
-            descricao="Preço, quantidade, peso e medidas corretos evitam cobrança errada de frete e atrasos no envio."
-            icone={<Ruler className="h-4 w-4" />}
-          >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label htmlFor="peca-preco" className="mb-1.5 block text-sm font-medium">
-                  Preço (R$) *
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-3 text-sm text-muted">R$</span>
-                  <input
-                    id="peca-preco"
-                    type="text"
-                    name="preco"
-                    value={formData.preco}
-                    onChange={handleChange}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    className="w-full rounded-xl border p-3 pl-10"
-                    placeholder="0,00"
-                    required
-                  />
+            <Bloco
+              id="fichaMl"
+              aberto={blocosAbertos.fichaMl}
+              onToggle={(aberto) => alternarBloco('fichaMl', aberto)}
+              titulo="4. Ficha oficial do Mercado Livre"
+              descricao={
+                formData.categoria
+                  ? `Categoria oficial, atributos obrigatórios e termos de venda da ${formData.categoria}.`
+                  : 'Categoria oficial, atributos obrigatórios e termos de venda do Mercado Livre.'
+              }
+              resumo={resumoFicha}
+              pendencias={pendenciasPorBloco.fichaMl}
+              icone={<FileText className="h-4 w-4" />}
+            >
+              <FichaMercadoLivre
+                categoryId={formData.ml_category_id}
+                titulo={formData.ml_titulo}
+                atributos={formData.atributos}
+                config={formData.ml_config}
+                onCategoria={(id, nome) =>
+                  setFormData((atual) => ({
+                    ...atual,
+                    ml_category_id: id,
+                    categoria_ml: nome,
+                    atributos: {},
+                    ml_config: { ...atual.ml_config, sale_terms: {} },
+                  }))
+                }
+                onAtributos={(atributos) =>
+                  setFormData((atual) => ({ ...atual, atributos }))
+                }
+                onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))}
+                onFicha={setFichaMl}
+              />
+              <CompatibilidadeMl
+                categoryId={formData.ml_category_id}
+                config={formData.ml_config}
+                onConfig={(ml_config) => setFormData((atual) => ({ ...atual, ml_config }))}
+              />
+              {!formData.ml_category_id && (
+                <details className="mt-4 text-xs">
+                  <summary className="cursor-pointer text-muted">
+                    Ficha local por tipo de peça
+                  </summary>
+                  {!formData.categoria ? (
+                    <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-5 text-sm text-muted">
+                      Selecione a categoria no bloco 2 para ver os campos técnicos.
+                    </div>
+                  ) : (
+                    <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {camposTecnicos.map((campo) => (
+                        <div key={campo.key}>
+                          <label
+                            htmlFor={`atributo-${campo.key}`}
+                            className="mb-1.5 block text-sm font-medium"
+                          >
+                            {campo.label}
+                          </label>
+                          {campo.tipo === 'select' ? (
+                            <select
+                              id={`atributo-${campo.key}`}
+                              value={formData.atributos[campo.key] || ''}
+                              onChange={(event) =>
+                                handleAtributoChange(campo.key, event.target.value)
+                              }
+                              className="w-full rounded-xl border p-3"
+                            >
+                              <option value="">Selecione</option>
+                              {(campo.opcoes || []).map((opcao) => (
+                                <option key={opcao} value={opcao}>
+                                  {opcao}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              id={`atributo-${campo.key}`}
+                              type="text"
+                              value={formData.atributos[campo.key] || ''}
+                              onChange={(event) =>
+                                handleAtributoChange(campo.key, event.target.value)
+                              }
+                              className="w-full rounded-xl border p-3"
+                              placeholder={campo.placeholder}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </details>
+              )}
+            </Bloco>
+
+            <Bloco
+              id="preco"
+              aberto={blocosAbertos.preco}
+              onToggle={(aberto) => alternarBloco('preco', aberto)}
+              titulo="5. Preço, estoque e logística"
+              descricao="Preço, quantidade, peso e medidas evitam frete errado e atraso no envio."
+              resumo={resumoPreco}
+              pendencias={pendenciasPorBloco.preco}
+              icone={<Ruler className="h-4 w-4" />}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label htmlFor="peca-preco" className="mb-1.5 block text-sm font-medium">
+                    Preço (R$) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-sm text-muted">R$</span>
+                    <input
+                      id="peca-preco"
+                      type="text"
+                      name="preco"
+                      value={formData.preco}
+                      onChange={handleChange}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-xl border p-3 pl-10"
+                      placeholder="0,00"
+                      required
+                    />
+                  </div>
+                  {Number.isFinite(precoAtual) && precoAtual > 0 && (
+                    <p className="mt-1.5 text-[11px] text-muted">
+                      Valor formatado:{' '}
+                      {precoAtual.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </p>
+                  )}
                 </div>
-                {Number.isFinite(precoAtual) && precoAtual > 0 && (
-                  <p className="mt-1.5 text-[11px] text-muted">
-                    Valor formatado: {precoAtual.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                  </p>
-                )}
-              </div>
 
-              <div>
-                <label htmlFor="peca-quantidade" className="mb-1.5 block text-sm font-medium">
-                  Quantidade *
-                </label>
-                <input
-                  id="peca-quantidade"
-                  type="number"
-                  name="quantidade"
-                  value={formData.quantidade}
-                  onChange={handleChange}
-                  min="0"
-                  step="1"
-                  inputMode="numeric"
-                  className="w-full rounded-xl border p-3"
-                  required
-                />
-                <p className="mt-1.5 text-[11px] text-muted">
-                  Cada peça é um anúncio individual no Mercado Livre.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="peca-peso" className="mb-1.5 block text-sm font-medium">
-                  Peso (kg)
-                </label>
-                <input
-                  id="peca-peso"
-                  type="number"
-                  name="peso_kg"
-                  value={formData.peso_kg}
-                  onChange={handleChange}
-                  min="0"
-                  step="0.01"
-                  className="w-full rounded-xl border p-3"
-                  placeholder="Ex: 2.4"
-                />
-              </div>
-
-              {[
-                { name: 'comprimento_cm', label: 'Comprimento (cm)', placeholder: 'Ex: 45' },
-                { name: 'largura_cm', label: 'Largura (cm)', placeholder: 'Ex: 30' },
-                { name: 'altura_cm', label: 'Altura (cm)', placeholder: 'Ex: 20' },
-              ].map((campo) => (
-                <div key={campo.name}>
-                  <label
-                    htmlFor={`peca-${campo.name}`}
-                    className="mb-1.5 block text-sm font-medium"
-                  >
-                    {campo.label}
+                <div>
+                  <label htmlFor="peca-quantidade" className="mb-1.5 block text-sm font-medium">
+                    Quantidade *
                   </label>
                   <input
-                    id={`peca-${campo.name}`}
+                    id="peca-quantidade"
                     type="number"
-                    name={campo.name}
-                    value={String(formData[campo.name as keyof PecaFormData] || '')}
+                    name="quantidade"
+                    value={formData.quantidade}
                     onChange={handleChange}
                     min="0"
-                    step="0.1"
+                    step="1"
+                    inputMode="numeric"
                     className="w-full rounded-xl border p-3"
-                    placeholder={campo.placeholder}
+                    required
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    Cada peça é um anúncio individual no Mercado Livre.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="peca-peso" className="mb-1.5 block text-sm font-medium">
+                    Peso (kg)
+                  </label>
+                  <input
+                    id="peca-peso"
+                    type="number"
+                    name="peso_kg"
+                    value={formData.peso_kg}
+                    onChange={handleChange}
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Ex: 2.4"
                   />
                 </div>
-              ))}
 
-              <div>
-                <label htmlFor="peca-modo-compra" className="mb-1.5 block text-sm font-medium">
-                  Modo de compra
-                </label>
-                <select
-                  id="peca-modo-compra"
-                  name="modo_compra"
-                  value={formData.modo_compra}
-                  onChange={handleChange}
-                  className="w-full rounded-xl border p-3"
-                >
-                  <option value="buy_it_now">Comprar agora</option>
-                  <option value="auction">Somente anúncio</option>
-                </select>
+                {[
+                  { name: 'comprimento_cm', label: 'Comprimento (cm)', placeholder: 'Ex: 45' },
+                  { name: 'largura_cm', label: 'Largura (cm)', placeholder: 'Ex: 30' },
+                  { name: 'altura_cm', label: 'Altura (cm)', placeholder: 'Ex: 20' },
+                ].map((campo) => (
+                  <div key={campo.name}>
+                    <label
+                      htmlFor={`peca-${campo.name}`}
+                      className="mb-1.5 block text-sm font-medium"
+                    >
+                      {campo.label}
+                    </label>
+                    <input
+                      id={`peca-${campo.name}`}
+                      type="number"
+                      name={campo.name}
+                      value={
+                        campo.name === 'comprimento_cm'
+                          ? formData.comprimento_cm
+                          : campo.name === 'largura_cm'
+                            ? formData.largura_cm
+                            : formData.altura_cm
+                      }
+                      onChange={handleChange}
+                      min="0"
+                      step="0.1"
+                      className="w-full rounded-xl border p-3"
+                      placeholder={campo.placeholder}
+                    />
+                  </div>
+                ))}
+
+                <div>
+                  <label htmlFor="peca-modo-compra" className="mb-1.5 block text-sm font-medium">
+                    Modo de compra
+                  </label>
+                  <select
+                    id="peca-modo-compra"
+                    name="modo_compra"
+                    value={formData.modo_compra}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border p-3"
+                  >
+                    <option value="buy_it_now">Comprar agora</option>
+                    <option value="auction">Somente anúncio</option>
+                  </select>
+                </div>
               </div>
 
-            </div>
-
-            <label
-              htmlFor="peca-ml-ativo"
-              className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4"
-            >
-              <input
-                type="checkbox"
-                name="ml_ativo"
-                checked={formData.ml_ativo}
-                onChange={handleChange}
-                id="peca-ml-ativo"
-                className="h-5 w-5"
-              />
-              <span>
-                <span className="block text-sm font-medium">Publicar no Mercado Livre</span>
-                <span className="block text-xs text-muted">
-                  Anúncios novos são publicados no Mercado Livre após aprovação.
+              <label
+                htmlFor="peca-ml-ativo"
+                className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4"
+              >
+                <input
+                  type="checkbox"
+                  name="ml_ativo"
+                  checked={formData.ml_ativo}
+                  onChange={handleChange}
+                  id="peca-ml-ativo"
+                  className="h-5 w-5"
+                />
+                <span>
+                  <span className="block text-sm font-medium">Publicar no Mercado Livre</span>
+                  <span className="block text-xs text-muted">
+                    Anúncios novos são publicados no Mercado Livre após aprovação.
+                  </span>
                 </span>
-              </span>
-            </label>
-          </Secao>
+              </label>
+            </Bloco>
 
-          <Secao
-            numero="05"
-            titulo="Descrição do anúncio"
-            descricao="Explique aplicação, condição, o que acompanha e garantia. Textos completos convertem mais."
-            icone={<Package className="h-4 w-4" />}
-          >
-            <textarea
-              id="peca-descricao"
-              name="descricao"
-              value={formData.descricao}
-              onChange={handleChange}
-              rows={6}
-              maxLength={5000}
-              className="w-full resize-y rounded-xl border p-3"
-              placeholder="Ex: Retrovisor elétrico direito original, com carcaça preta e lente em bom estado. Acompanha motor e conectores. Garantia de 90 dias."
-              required
-            />
-            <div className="mt-1.5 flex justify-between text-[11px] text-muted">
-              <span>Use no mínimo 40 caracteres.</span>
-              <span>{formData.descricao.length}/5000</span>
-            </div>
-          </Secao>
+            <Bloco
+              id="descricao"
+              aberto={blocosAbertos.descricao}
+              onToggle={(aberto) => alternarBloco('descricao', aberto)}
+              titulo="6. Descrição do anúncio"
+              descricao="Aplicação, condição, o que acompanha e garantia. Textos completos convertem mais."
+              resumo={`${formData.descricao.length} caracteres`}
+              pendencias={pendenciasPorBloco.descricao}
+              icone={<Package className="h-4 w-4" />}
+            >
+              <textarea
+                id="peca-descricao"
+                name="descricao"
+                value={formData.descricao}
+                onChange={handleChange}
+                rows={8}
+                maxLength={5000}
+                className="w-full resize-y rounded-xl border p-3"
+                placeholder="Ex: Retrovisor elétrico direito original, com carcaça preta e lente em bom estado. Acompanha motor e conectores. Garantia de 90 dias."
+                required
+              />
+              <div className="mt-1.5 flex justify-between text-[11px] text-muted">
+                <span>Use no mínimo 40 caracteres.</span>
+                <span>{formData.descricao.length}/5000</span>
+              </div>
+            </Bloco>
+          </div>
 
         </form>
-        </EtapaContext.Provider>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#07111f]/55 px-4 py-2.5 backdrop-blur-xl">
+        <div className="modal-rodape flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#07111f]/55 px-4 py-2.5 backdrop-blur-xl">
           <p className="hidden text-xs text-muted sm:block">
             <Check className="mr-1 inline h-3.5 w-3.5 text-success" />
-            Salvo no estoque local, pronto para revisão e publicação
+            {pecaSalva && !publicacao
+              ? 'Peça salva no estoque. Falta publicar o anúncio.'
+              : 'Salvo no estoque local, pronto para revisão e publicação'}
           </p>
           <div className="flex w-full gap-3 sm:w-auto">
-            {etapa !== '01' && <button type="button" onClick={() => setEtapa(String(Number(etapa) - 1).padStart(2, '0'))} className="rounded-lg border border-line px-3 py-2 text-xs">Anterior</button>}
-            {etapa !== '05' && <button type="button" onClick={() => setEtapa(String(Number(etapa) + 1).padStart(2, '0'))} className="rounded-lg border border-accent/30 px-3 py-2 text-xs text-accent">Próxima etapa</button>}
             <button
               type="button"
               onClick={handleClose}
-              disabled={loading}
+              disabled={loading || publicando}
               className="flex-1 rounded-xl border border-white/10 px-5 py-3 text-sm font-medium text-muted transition-colors hover:bg-white/[0.06] hover:text-ink disabled:opacity-50 sm:flex-none"
             >
-              Cancelar
+              {pecaSalva && !publicacao ? 'Fechar sem publicar' : 'Cancelar'}
             </button>
-            <button
-              type="submit"
-              form="peca-cadastro-form"
-              disabled={loading}
-              aria-busy={loading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : editando ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              {loading
-                ? 'Salvando...'
-                : editando
-                  ? 'Salvar alterações'
-                  : 'Cadastrar peça'}
-            </button>
+            {pecaSalva && !publicacao ? (
+              <button
+                type="button"
+                onClick={() => void handlePublicar()}
+                disabled={publicando}
+                aria-busy={publicando}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-ml px-6 py-3 text-sm font-bold text-[#0b1233] transition-all hover:-translate-y-0.5 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+              >
+                {publicando ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Store className="h-4 w-4" />
+                )}
+                {publicando ? 'Publicando...' : 'Publicar no Mercado Livre'}
+              </button>
+            ) : (
+              <button
+                type="submit"
+                form="peca-cadastro-form"
+                disabled={loading || publicacao !== null}
+                aria-busy={loading}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : editando ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {loading
+                  ? 'Salvando...'
+                  : editando
+                    ? 'Salvar alterações'
+                    : 'Cadastrar peça'}
+              </button>
+            )}
           </div>
         </div>
       </div>

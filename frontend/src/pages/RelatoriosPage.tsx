@@ -1084,7 +1084,61 @@ export default function RelatoriosPage({
             Não há vendas neste indicador para o período selecionado.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line bg-card">
+          <>
+          <ul className="divide-y divide-line/70 overflow-hidden rounded-2xl border border-line bg-card lg:hidden">
+            {linhasIndicador.map((venda) => (
+              <li key={venda.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[11px] text-accent">
+                      {venda.order_id || `#${venda.id}`}
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {venda.peca_nome || venda.itens[0]?.descricao || 'Venda'}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {venda.peca_sku || venda.itens[0]?.sku || 'Sem SKU'}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-success">
+                    {formatarMoeda(venda.valor_liquido)}
+                  </p>
+                </div>
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                  <div>
+                    <dt className="text-muted">Comprador</dt>
+                    <dd className="mt-0.5 text-ink">
+                      {venda.cliente || 'Não informado'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted">Status</dt>
+                    <dd className="mt-0.5 text-ink">{venda.status}</dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="text-muted">
+                      {chaveIndicador === 'a-receber'
+                        ? 'Previsão Mercado Livre'
+                        : 'Data da venda'}
+                    </dt>
+                    <dd className="mt-0.5 text-ink">
+                      {chaveIndicador === 'a-receber'
+                        ? venda.data_prevista_recebimento
+                          ? formatarData(venda.data_prevista_recebimento)
+                          : 'Não informada pelo Mercado Livre'
+                        : formatarData(
+                            chaveIndicador === 'recebido'
+                              ? venda.data_recebimento || venda.data_venda
+                              : venda.data_venda
+                          )}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b border-line bg-white/[0.03] text-[10px] uppercase tracking-wide text-muted">
                 <tr>
@@ -1136,6 +1190,7 @@ export default function RelatoriosPage({
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     );
@@ -1797,7 +1852,51 @@ export default function RelatoriosPage({
                 Nenhuma venda no período.
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <ul className="divide-y divide-line/60 lg:hidden">
+                {relatorio.plataformas.map((plataforma) => (
+                  <li key={plataforma.plataforma} className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium text-ink">{plataforma.plataforma}</p>
+                      <p className="text-right text-sm font-semibold text-success">
+                        {formatarMoeda(plataforma.faturamentoLiquido)}
+                      </p>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                      <div>
+                        <dt className="text-muted">Vendas válidas</dt>
+                        <dd className="mt-0.5 text-ink">
+                          {Math.max(0, plataforma.vendas - plataforma.cancelamentos)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted">Bruto</dt>
+                        <dd className="mt-0.5 text-ink">
+                          {formatarMoeda(plataforma.faturamentoBruto)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted">Taxa ML</dt>
+                        <dd className="mt-0.5 text-warning">
+                          {formatarMoeda(plataforma.taxaMl)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted">Cancelado</dt>
+                        <dd className="mt-0.5 text-danger">
+                          {plataforma.cancelamentos > 0
+                            ? `${plataforma.cancelamentos} • ${formatarMoeda(
+                                plataforma.valorCancelado
+                              )}`
+                            : '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead>
                     <tr className="border-b border-line text-left text-[10px] uppercase tracking-[0.12em] text-muted print:text-[#777]">
@@ -1847,6 +1946,7 @@ export default function RelatoriosPage({
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </section>
 

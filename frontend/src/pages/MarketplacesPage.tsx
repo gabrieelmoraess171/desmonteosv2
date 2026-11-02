@@ -821,7 +821,44 @@ export default function MarketplacesPage({
               </p>
             </div>
           ) : (
-            <div className="mt-4 overflow-x-auto">
+            <>
+            <ul className="mt-4 divide-y divide-white/5 lg:hidden">
+              {status.historico.map((item) => (
+                <li key={item.id} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 font-medium text-ink">
+                      {LABEL_RECURSO[item.recurso] || item.recurso}
+                    </p>
+                    <BadgeStatus status={item.status} />
+                  </div>
+                  <dl className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1.5 text-[11px]">
+                    <div>
+                      <dt className="text-muted">Itens</dt>
+                      <dd className="mt-0.5 font-semibold text-ink">
+                        {formatarNumero(item.itens)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">Novos</dt>
+                      <dd className="mt-0.5 font-semibold text-success">
+                        {formatarNumero(item.criados)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">Atualizados</dt>
+                      <dd className="mt-0.5 font-semibold text-accent">
+                        {formatarNumero(item.atualizados)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    {formatarData(item.finalizado_em || item.iniciado_em)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-4 hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[520px] text-left text-xs">
                 <thead>
                   <tr className="border-b border-line text-[10px] uppercase tracking-[0.12em] text-muted">
@@ -864,6 +901,7 @@ export default function MarketplacesPage({
                 </tbody>
               </table>
             </div>
+            </>
           )}
 
           {status.ultimaSincronizacao?.mensagem && (
