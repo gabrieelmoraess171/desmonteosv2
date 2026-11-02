@@ -2262,7 +2262,7 @@ function fichaCompletaFallback(peca = {}, categoria = '', campos = []) {
 const MAX_ATRIBUTOS_ML = 80;
 const MAX_OPCOES_ATRIBUTO = 200;
 
-function normalizarFichaMl(ficha) {
+export function normalizarFichaMl(ficha) {
   if (!ficha || typeof ficha !== 'object' || Array.isArray(ficha)) return null;
 
   const categoryId = limparTexto(ficha.categoryId, 40);
@@ -2347,6 +2347,28 @@ function montarBlocoFichaMl(ficha) {
   return linhas.join('\n');
 }
 
+// Sinônimos que o operador escreve para as opções oficiais. Sem isto, "lado
+// esquerdo" não casa com a opção "Esquerda" e o atributo se perde.
+const ALIASES_ML = {
+  POSITION: {
+    Direita: ['direita', 'direito', 'lado direito', 'right'],
+    Esquerda: ['esquerda', 'esquerdo', 'lado esquerdo', 'left'],
+    'Dianteira Direita': ['dianteira direita', 'frontal direita', 'front right'],
+    'Dianteira Esquerda': ['dianteira esquerda', 'frontal esquerda', 'front left'],
+    'Traseira Direita': ['traseira direita', 'rear right'],
+    'Traseira Esquerda': ['traseira esquerda', 'rear left']
+  },
+  SIDE: {
+    Direita: ['direita', 'direito', 'lado direito', 'right'],
+    Esquerda: ['esquerda', 'esquerdo', 'lado esquerdo', 'left']
+  },
+  ITEM_CONDITION: {
+    Novo: ['novo', 'new'],
+    Usado: ['usado', 'used'],
+    Recondicionado: ['recondicionado', 'refurbished']
+  }
+};
+
 function resolverValorMl(campo, bruto) {
   const valor = limparTexto(bruto, 240);
   if (!valor) return '';
@@ -2362,11 +2384,20 @@ function resolverValorMl(campo, bruto) {
   const direto = opcoes.find((opcao) => normalizarComparacao(opcao) === alvo);
   if (direto) return direto;
 
+  for (const [nome, sinonimos] of Object.entries(ALIASES_ML[campo.id] || {})) {
+    const opcao = opcoes.find(
+      (item) => normalizarComparacao(item) === normalizarComparacao(nome)
+    );
+    if (opcao && sinonimos.some((sinonimo) => normalizarComparacao(sinonimo) === alvo)) {
+      return opcao;
+    }
+  }
+
   const contem = opcoes.find((opcao) => alvo.includes(normalizarComparacao(opcao)));
   return contem || '';
 }
 
-function completarAtributosMl(ficha, bruto) {
+export function completarAtributosMl(ficha, bruto) {
   if (!ficha) return {};
 
   const entrada = new Map();
@@ -2409,7 +2440,7 @@ const ORIGEM_ATRIBUTO_ML = {
   SELLER_SKU: ['sku']
 };
 
-function derivarAtributosMl(dados, ficha) {
+export function derivarAtributosMl(dados, ficha) {
   if (!ficha) return {};
 
   const resultado = {};

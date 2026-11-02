@@ -391,7 +391,9 @@ function montarResumoIa(dados: FichaIaPeca, estimados: string[]): ResumoFichaIa 
     descricao: estado(dados.descricao),
     numero_oem: estado(dados.numero_oem),
     gtin: estado(dados.gtin),
-    atributosMl: Object.keys(dados.atributos || {}).length,
+    atributosMl: Object.values(dados.atributos_ml || {}).filter((valor) =>
+      String(valor ?? '').trim()
+    ).length,
   };
 }
 
@@ -411,8 +413,6 @@ export default function ModalCadastroPeca({
   const [loading, setLoading] = useState(false);
   const [classificando, setClassificando] = useState(false);
   const [completandoFicha, setCompletandoFicha] = useState(false);
-  // Liga quando o operador solta uma foto: o efeito abaixo chama a IA sozinho.
-  const [leituraAutomaticaPendente, setLeituraAutomaticaPendente] = useState(false);
   const [pecaSalva, setPecaSalva] = useState<{ id: number; fotos: number } | null>(null);
   const [publicando, setPublicando] = useState(false);
   const [publicacao, setPublicacao] = useState<{ permalink: string | null; itemId: string | null } | null>(null);
@@ -465,11 +465,9 @@ export default function ModalCadastroPeca({
       grupo,
     }));
 
+    // A leitura com IA só começa no clique de "Identificar com IA": soltar
+    // fotos nunca dispara chamada sozinho.
     setFotos((atuais) => [...atuais, ...novas].slice(0, 20));
-
-    // A leitura com IA começa sozinha: o operador só escolhe a foto da peça.
-    // Fotos de medidas não disparam a leitura, pois costumam vir depois da ficha.
-    if (grupo !== 'medidas') setLeituraAutomaticaPendente(true);
   }, []);
 
   const handleRemoveFoto = useCallback((id: string) => {
@@ -571,6 +569,19 @@ export default function ModalCadastroPeca({
                 .filter(([chave, valor]) => chave && valor)
             )
           : {};
+      // Atributos oficiais devolvidos pela IA. A chave já é o id do Mercado
+      // Livre, então basta limpar o que vier vazio.
+      const atributosMlIa =
+        dados.atributos_ml && typeof dados.atributos_ml === 'object'
+          ? Object.fromEntries(
+              Object.entries(dados.atributos_ml)
+                .map(([chave, valor]) => [
+                  String(chave || '').trim(),
+                  String(valor ?? '').trim(),
+                ])
+                .filter(([chave, valor]) => chave && valor)
+            )
+          : {};
       const atributosAtuais = Object.fromEntries(
         Object.entries(atual.atributos || {}).filter(([, valor]) =>
           String(valor ?? '').trim()
@@ -630,7 +641,11 @@ export default function ModalCadastroPeca({
           (['buy_it_now', 'auction'].includes(modoInformado)
             ? modoInformado
             : 'buy_it_now'),
-        atributos: { ...atributosIa, ...atributosAtuais },
+        atributos: {
+          ...atributosIa,
+          ...atributosMlIa,
+          ...atributosAtuais,
+        },
       };
     });
   }, []);
@@ -1098,6 +1113,15 @@ export default function ModalCadastroPeca({
     setLoading(true);
 
     try {
+      // O que foi derivado de marca/modelo/ano/lado também precisa ser salvo:
+      // é o que faz o anúncio passar na validação de atributos do ML.
+      const atributosParaSalvar = {
+        ...derivarAtributosMl(
+          { ...formData, atributos: formData.atributos },
+          fichaMl
+        ),
+        ...formData.atributos,
+      };
       const payload = new FormData();
       const fotosParaEnviar = ordemFotosParaEnvio(fotos);
       payload.append(
@@ -1123,7 +1147,7 @@ export default function ModalCadastroPeca({
       payload.append('comprimento_cm', formData.comprimento_cm || '0');
       payload.append('largura_cm', formData.largura_cm || '0');
       payload.append('altura_cm', formData.altura_cm || '0');
-      payload.append('atributos', JSON.stringify(formData.atributos));
+      payload.append('atributos', JSON.stringify(atributosParaSalvar));
       payload.append('tipo_anuncio', 'premium');
       payload.append('gtin', formData.gtin.trim());
       payload.append('localizacao', '');
@@ -1189,8 +1213,16 @@ export default function ModalCadastroPeca({
   const camposTecnicos = camposDaCategoria(formData.categoria);
   const precoAtual = parsePreco(formData.preco);
 
+  // Marca, modelo, ano, lado e OEM já viram os ids oficiais sozinhos. O que o
+  // operador digitou tem prioridade e nunca é sobrescrito.
+  const atributosDerivados = derivarAtributosMl(
+    { ...formData, atributos: formData.atributos },
+    fichaMl
+  );
+  const atributosEfetivos = { ...atributosDerivados, ...formData.atributos };
+
   const pendencias = calcularPendencias({
-    formData,
+    formData: { ...formData, atributos: atributosEfetivos },
     fotos: fotos.length,
     ficha: fichaMl,
     editando,
@@ -1211,7 +1243,7 @@ export default function ModalCadastroPeca({
     ? resumoDe(
         [
           formData.categoria_ml,
-          `${Object.keys(formData.atributos || {}).length} atributo(s)`,
+          `${Object.keys(atributosEfetivos).length} atributo(s)`,
         ],
         'Ficha oficial ainda não preenchida'
       )
@@ -1804,7 +1836,7 @@ export default function ModalCadastroPeca({
               <FichaMercadoLivre
                 categoryId={formData.ml_category_id}
                 titulo={formData.ml_titulo}
-                atributos={formData.atributos}
+                atributos={atributosEfetivos}
                 config={formData.ml_config}
                 onCategoria={(id, nome) =>
                   setFormData((atual) => ({
