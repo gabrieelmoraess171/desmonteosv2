@@ -7,148 +7,191 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { supabase, supabaseAuthConfigured } from '../config/supabase';
+import axios from 'axios';
+import { OWNER_HEADER, SESSION_KEYS } from '../config/app';
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  username: string;
+interface StatusProprietario {
+  configurado: boolean;
+  autenticado: boolean;
 }
 
 interface AuthContextValue {
-  user: AuthUser | null;
+  token: string;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<boolean>;
+  pinConfigurado: boolean | null;
+  login: (pin: string) => Promise<void>;
+  criarPin: (pin: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function mapUser(user: User | null): AuthUser | null {
-  if (!user?.id || !user.email) return null;
-
-  const metadata = user.user_metadata || {};
-  const name = String(metadata.full_name || metadata.name || '').trim();
-
-  return {
-    id: user.id,
-    email: user.email,
-    username: name || user.email.split('@')[0],
-  };
+function lerToken(): string {
+  try {
+    return window.sessionStorage.getItem(SESSION_KEYS.ownerToken) || '';
+  } catch {
+    return '';
+  }
 }
 
-function authError(message: string): Error {
-  return new Error(message);
+function salvarToken(token: string) {
+  try {
+    if (token) {
+      window.sessionStorage.setItem(SESSION_KEYS.ownerToken, token);
+    } else {
+      window.sessionStorage.removeItem(SESSION_KEYS.ownerToken);
+    }
+  } catch {
+    // A sessão continua válida mesmo sem sessionStorage.
+  }
+}
+
+export function normalizarPin(valor: string): string {
+  return valor.replace(/\D/g, '').slice(0, 8);
+}
+
+export function pinTemTamanhoValido(pin: string): boolean {
+  return /^\d{4,8}$/.test(pin);
+}
+
+function mensagemDoErro(error: unknown, padrao: string): string {
+  if (axios.isAxiosError<{ error?: string }>(error)) {
+    return error.response?.data?.error || padrao;
+  }
+  return padrao;
+}
+
+async function chamarRota<T>(rota: string, dados: unknown, token = '') {
+  const { data } = await axios.post<T>(rota, dados, {
+    headers: token ? { [OWNER_HEADER]: token } : undefined,
+    timeout: 15000,
+  });
+  return data;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState(lerToken);
   const [isLoading, setIsLoading] = useState(true);
+  const [pinConfigurado, setPinConfigurado] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!supabase) {
-      setIsLoading(false);
-      return undefined;
-    }
-
     let ativo = true;
+    const atual = lerToken();
 
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!ativo) return;
-      if (error) console.error('Falha ao restaurar a sessão:', error);
-      setUser(mapUser(data.session?.user || null));
-      setIsLoading(false);
-    });
+    axios
+      .get<StatusProprietario>('/api/proprietario/status', {
+        headers: atual ? { [OWNER_HEADER]: atual } : undefined,
+        timeout: 15000,
+      })
+      .then(({ data }) => {
+        if (!ativo) return;
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (ativo) setUser(mapUser(session?.user || null));
-    });
+        setPinConfigurado(data.configurado);
+
+        if (data.autenticado && atual) {
+          setToken(atual);
+        } else {
+          setToken('');
+          salvarToken('');
+        }
+      })
+      .catch(() => {
+        // Sem resposta do servidor a sessão guardada é descartada:
+        // o token só vale enquanto o backend confirmar que está ativo.
+        if (!ativo) return;
+        setToken('');
+        salvarToken('');
+      })
+      .finally(() => {
+        if (ativo) setIsLoading(false);
+      });
 
     return () => {
       ativo = false;
-      data.subscription.unsubscribe();
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!supabaseAuthConfigured || !supabase) {
-      throw authError('A autenticação ainda não foi configurada neste ambiente.');
-    }
-    if (!normalizedEmail || !password) {
-      throw authError('Preencha o e-mail e a senha.');
+  const login = useCallback(async (pin: string) => {
+    const limpo = normalizarPin(pin);
+
+    if (!pinTemTamanhoValido(limpo)) {
+      throw new Error('O PIN precisa ter de 4 a 8 dígitos.');
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    });
+    try {
+      const data = await chamarRota<{ token: string }>(
+        '/api/proprietario/entrar',
+        { pin: limpo }
+      );
 
-    if (error) {
-      if (/invalid login credentials/i.test(error.message)) {
-        throw authError('E-mail ou senha inválidos.');
+      setToken(data.token);
+      salvarToken(data.token);
+      setPinConfigurado(true);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        setPinConfigurado(false);
       }
-      throw authError(error.message);
+      throw new Error(
+        mensagemDoErro(error, 'Não foi possível validar o PIN agora.')
+      );
     }
-
-    setUser(mapUser(data.user));
   }, []);
 
-  const signUp = useCallback(async (name: string, email: string, password: string) => {
-    const normalizedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
+  const criarPin = useCallback(async (pin: string) => {
+    const limpo = normalizarPin(pin);
 
-    if (!supabaseAuthConfigured || !supabase) {
-      throw authError('A autenticação ainda não foi configurada neste ambiente.');
-    }
-    if (!normalizedName || !normalizedEmail || !password) {
-      throw authError('Preencha nome, e-mail e senha.');
-    }
-    if (normalizedName.length < 2) {
-      throw authError('Digite seu nome completo.');
-    }
-    if (password.length < 8) {
-      throw authError('A senha precisa ter pelo menos 8 caracteres.');
+    if (!pinTemTamanhoValido(limpo)) {
+      throw new Error('O PIN precisa ter de 4 a 8 dígitos.');
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: { data: { full_name: normalizedName } },
-    });
+    try {
+      const data = await chamarRota<{ token: string }>(
+        '/api/proprietario/configurar',
+        { pin: limpo }
+      );
 
-    if (error) {
-      if (/already registered|already exists/i.test(error.message)) {
-        throw authError('Este e-mail já está cadastrado.');
+      setToken(data.token);
+      salvarToken(data.token);
+      setPinConfigurado(true);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        setPinConfigurado(true);
       }
-      throw authError(error.message);
+      throw new Error(
+        mensagemDoErro(error, 'Não foi possível criar o PIN agora.')
+      );
     }
-
-    setUser(mapUser(data.user));
-    return !data.session;
   }, []);
 
   const logout = useCallback(async () => {
-    if (supabase) {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw authError(error.message);
+    const atual = lerToken();
+
+    // A sessão local sai antes da rede: o painel não pode ficar preso
+    // esperando o servidor para sair.
+    setToken('');
+    salvarToken('');
+
+    if (!atual) return;
+
+    try {
+      await chamarRota('/api/proprietario/sair', {}, atual);
+    } catch {
+      // O token expira sozinho no servidor; localmente já saiu.
     }
-    setUser(null);
   }, []);
 
   const value = useMemo(
     () => ({
-      user,
-      isAuthenticated: user !== null,
+      token,
+      isAuthenticated: token !== '',
       isLoading,
+      pinConfigurado,
       login,
-      signUp,
+      criarPin,
       logout,
     }),
-    [user, isLoading, login, signUp, logout],
+    [token, isLoading, pinConfigurado, login, criarPin, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

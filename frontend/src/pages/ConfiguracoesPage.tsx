@@ -6,23 +6,18 @@ import {
   ExternalLink,
   KeyRound,
   Loader2,
-  Lock,
   MessageCircle,
   MonitorSmartphone,
   Phone,
   ShieldCheck,
   Sparkles,
   Store,
-  Unlock,
   UserRound,
 } from 'lucide-react';
 import axios from 'axios';
 import { getGreetingPeriod, getInitials } from '../utils/greeting';
-import {
-  DEFAULT_COMPANY_NAME,
-  OWNER_HEADER,
-  SESSION_KEYS,
-} from '../config/app';
+import { DEFAULT_COMPANY_NAME, OWNER_HEADER } from '../config/app';
+import { useAuth } from '../hooks/useAuth';
 
 interface ConfiguracoesPageProps {
   userName: string;
@@ -34,11 +29,6 @@ interface ConfiguracoesPageProps {
     financeWhatsApp: string;
   }) => void;
   onOpenMarketplaces?: () => void;
-}
-
-interface StatusProprietario {
-  configurado: boolean;
-  autenticado: boolean;
 }
 
 interface StatusMercadoLivreConfig {
@@ -64,26 +54,6 @@ const ML_FORM_INICIAL = {
   siteId: 'MLB',
 };
 
-function lerToken(): string {
-  try {
-    return window.sessionStorage.getItem(SESSION_KEYS.ownerToken) || '';
-  } catch {
-    return '';
-  }
-}
-
-function salvarToken(token: string) {
-  try {
-    if (token) {
-      window.sessionStorage.setItem(SESSION_KEYS.ownerToken, token);
-    } else {
-      window.sessionStorage.removeItem(SESSION_KEYS.ownerToken);
-    }
-  } catch {
-    // A sessão continua válida mesmo sem sessionStorage.
-  }
-}
-
 export default function ConfiguracoesPage({
   userName,
   companyName,
@@ -95,16 +65,12 @@ export default function ConfiguracoesPage({
   const [empresa, setEmpresa] = useState(companyName);
   const [whatsapp, setWhatsapp] = useState(financeWhatsApp);
   const [saved, setSaved] = useState(false);
-  const [ownerToken, setOwnerToken] = useState(lerToken);
-  const [ownerStatus, setOwnerStatus] = useState<StatusProprietario>({
-    configurado: false,
-    autenticado: false,
-  });
-  const [ownerLoading, setOwnerLoading] = useState(true);
-  const [ownerPin, setOwnerPin] = useState('');
-  const [ownerErro, setOwnerErro] = useState('');
-  const [ownerAviso, setOwnerAviso] = useState('');
-  const [ownerEnviando, setOwnerEnviando] = useState(false);
+  const { token: ownerToken, logout } = useAuth();
+  const [pinAtual, setPinAtual] = useState('');
+  const [pinNovo, setPinNovo] = useState('');
+  const [pinErro, setPinErro] = useState('');
+  const [pinAviso, setPinAviso] = useState('');
+  const [pinEnviando, setPinEnviando] = useState(false);
   const [mlStatus, setMlStatus] = useState<StatusMercadoLivreConfig | null>(
     null
   );
@@ -118,56 +84,17 @@ export default function ConfiguracoesPage({
   const cleanName = name.replace(/\s+/g, ' ').trim().slice(0, 40);
   const cleanEmpresa = empresa.replace(/\s+/g, ' ').trim().slice(0, 60);
   const cleanWhatsapp = whatsapp.trim().slice(0, 30);
-  const ownerUnlocked = ownerStatus.autenticado;
-  const sensitiveChanges =
-    cleanEmpresa !== companyName.trim() ||
-    cleanWhatsapp !== financeWhatsApp.trim();
   const hasChanges =
     cleanName !== userName.trim() ||
     cleanEmpresa !== companyName.trim() ||
     cleanWhatsapp !== financeWhatsApp.trim();
-  const canSave = hasChanges && (!sensitiveChanges || ownerUnlocked);
+  const canSave = hasChanges;
 
   useEffect(() => {
     setName(userName);
     setEmpresa(companyName);
     setWhatsapp(financeWhatsApp);
   }, [userName, companyName, financeWhatsApp]);
-
-  useEffect(() => {
-    let ativo = true;
-    setOwnerLoading(true);
-
-    axios
-      .get<StatusProprietario>('/api/proprietario/status', {
-        headers: ownerToken ? { [OWNER_HEADER]: ownerToken } : undefined,
-        timeout: 10000,
-      })
-      .then(({ data }) => {
-        if (!ativo) return;
-
-        setOwnerStatus(data);
-
-        if (!data.autenticado && ownerToken) {
-          setOwnerToken('');
-          salvarToken('');
-        }
-      })
-      .catch(() => {
-        if (!ativo) return;
-        setOwnerErro(
-          'Não foi possível verificar o acesso do proprietário agora.'
-        );
-      })
-      .finally(() => {
-        if (ativo) setOwnerLoading(false);
-      });
-
-    return () => {
-      ativo = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const carregarMercadoLivre = useCallback(async () => {
     setMlLoading(true);
@@ -211,14 +138,6 @@ export default function ConfiguracoesPage({
     event: FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
-
-    if (!ownerUnlocked) {
-      setMlErro(
-        'Desbloqueie o acesso do proprietário para alterar as credenciais do Mercado Livre.'
-      );
-      return;
-    }
-
     setMlSalvando(true);
     setMlErro('');
     setMlAviso('');
@@ -250,9 +169,7 @@ export default function ConfiguracoesPage({
         );
 
         if (error.response?.status === 401) {
-          setOwnerToken('');
-          salvarToken('');
-          setOwnerStatus((atual) => ({ ...atual, autenticado: false }));
+          void logout();
         }
       } else {
         setMlErro(
@@ -264,91 +181,48 @@ export default function ConfiguracoesPage({
     }
   };
 
-  const autenticarProprietario = async (event: FormEvent<HTMLFormElement>) => {
+  const alterarPin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const pin = ownerPin.replace(/\D/g, '').slice(0, 8);
+    setPinErro('');
+    setPinAviso('');
 
-    if (pin.length < 4) {
-      setOwnerErro('O PIN precisa ter de 4 a 8 dígitos.');
+    if (!/^\d{4,8}$/.test(pinAtual) || !/^\d{4,8}$/.test(pinNovo)) {
+      setPinErro('Os dois PINs precisam ter de 4 a 8 dígitos.');
       return;
     }
 
-    setOwnerEnviando(true);
-    setOwnerErro('');
-    setOwnerAviso('');
-
-    try {
-      const rota = ownerStatus.configurado
-        ? '/api/proprietario/entrar'
-        : '/api/proprietario/configurar';
-      const { data } = await axios.post<{ token: string; mensagem?: string }>(
-        rota,
-        { pin },
-        { timeout: 12000 }
-      );
-
-      setOwnerToken(data.token);
-      salvarToken(data.token);
-      setOwnerStatus({ configurado: true, autenticado: true });
-      setOwnerPin('');
-      setOwnerAviso(
-        data.mensagem ||
-          (rota.endsWith('/configurar')
-            ? 'PIN criado. Edição do proprietário liberada.'
-            : 'Acesso do proprietário liberado.')
-      );
-    } catch (error) {
-      if (axios.isAxiosError<{ error?: string }>(error)) {
-        setOwnerErro(
-          error.response?.data?.error ||
-            'Não foi possível validar o PIN do proprietário.'
-        );
-      } else {
-        setOwnerErro('Não foi possível validar o PIN do proprietário.');
-      }
-    } finally {
-      setOwnerEnviando(false);
-    }
-  };
-
-  const bloquearProprietario = async () => {
-    setOwnerEnviando(true);
-    setOwnerErro('');
-    setOwnerAviso('');
+    setPinEnviando(true);
 
     try {
       await axios.post(
-        '/api/proprietario/sair',
-        {},
+        '/api/proprietario/alterar-pin',
+        { pin_atual: pinAtual, pin_novo: pinNovo },
         {
           headers: ownerToken ? { [OWNER_HEADER]: ownerToken } : undefined,
-          timeout: 10000,
+          timeout: 15000,
         }
       );
-    } catch {
-      // O token local é removido mesmo se o servidor estiver offline.
+
+      setPinAtual('');
+      setPinNovo('');
+      setPinAviso('PIN atualizado. Use o novo PIN no próximo acesso.');
+    } catch (error) {
+      if (axios.isAxiosError<{ error?: string }>(error)) {
+        setPinErro(
+          error.response?.data?.error || 'Não foi possível alterar o PIN.'
+        );
+      } else {
+        setPinErro('Não foi possível alterar o PIN.');
+      }
     } finally {
-      setOwnerToken('');
-      salvarToken('');
-      setOwnerStatus((atual) => ({ ...atual, autenticado: false }));
-      setEmpresa(companyName);
-      setWhatsapp(financeWhatsApp);
-      setOwnerAviso('Acesso do proprietário bloqueado.');
-      setOwnerEnviando(false);
+      setPinEnviando(false);
     }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!canSave) {
-      if (sensitiveChanges && !ownerUnlocked) {
-        setOwnerErro(
-          'Desbloqueie o acesso do proprietário para alterar empresa ou WhatsApp.'
-        );
-      }
-      return;
-    }
+    if (!canSave) return;
 
     onSaveSettings({
       userName: cleanName,
@@ -356,7 +230,6 @@ export default function ConfiguracoesPage({
       financeWhatsApp: cleanWhatsapp,
     });
     setSaved(true);
-    setOwnerErro('');
   };
 
   const handleResetName = () => {
@@ -395,116 +268,82 @@ export default function ConfiguracoesPage({
       </div>
 
       <section className="glass-panel overflow-hidden rounded-3xl p-5 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-3">
-            <span
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${
-                ownerUnlocked
-                  ? 'border-success/25 bg-successSoft text-success'
-                  : 'border-white/10 bg-white/[0.05] text-muted'
-              }`}
-            >
-              {ownerUnlocked ? (
-                <Unlock className="h-5 w-5" />
-              ) : (
-                <Lock className="h-5 w-5" />
-              )}
-            </span>
-            <div>
-              <h3 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-ink">
-                Acesso do proprietário
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                    ownerUnlocked
-                      ? 'border-success/25 bg-successSoft text-success'
-                      : 'border-white/10 bg-white/[0.05] text-muted'
-                  }`}
-                >
-                  {ownerUnlocked ? 'Liberado' : 'Bloqueado'}
-                </span>
-              </h3>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
-                {ownerLoading
-                  ? 'Verificando o PIN do proprietário...'
-                  : ownerStatus.configurado
-                    ? 'Somente o proprietário pode alterar nome da empresa e WhatsApp financeiro.'
-                    : 'Crie um PIN para identificar o proprietário e liberar a edição dos dados sensíveis.'}
-              </p>
-            </div>
+        <div className="flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-accent">
+            <KeyRound className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-ink">Trocar o PIN</h3>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
+              O PIN é a única chave do painel. Ele fica salvo com criptografia no
+              servidor e pode ser trocado a qualquer momento.
+            </p>
           </div>
-
-          {ownerUnlocked ? (
-            <button
-              type="button"
-              onClick={() => void bloquearProprietario()}
-              disabled={ownerEnviando}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-white/[0.09] hover:text-ink disabled:opacity-50"
-            >
-              {ownerEnviando ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Lock className="h-4 w-4" />
-              )}
-              Bloquear acesso
-            </button>
-          ) : (
-            <form
-              onSubmit={(event) => void autenticarProprietario(event)}
-              className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"
-            >
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  autoComplete="current-password"
-                  value={ownerPin}
-                  onChange={(event) => {
-                    setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 8));
-                    setOwnerErro('');
-                  }}
-                  maxLength={8}
-                  placeholder={
-                    ownerStatus.configurado
-                      ? 'Digite o PIN do proprietário'
-                      : 'Crie um PIN de 4 a 8 dígitos'
-                  }
-                  aria-label="PIN do proprietário"
-                  className="w-full rounded-xl border border-white/10 py-2.5 pl-9 pr-3 text-sm sm:w-64"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={ownerLoading || ownerEnviando}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {ownerEnviando ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : ownerStatus.configurado ? (
-                  <Unlock className="h-4 w-4" />
-                ) : (
-                  <ShieldCheck className="h-4 w-4" />
-                )}
-                {ownerStatus.configurado ? 'Desbloquear' : 'Criar PIN'}
-              </button>
-            </form>
-          )}
         </div>
 
-        {(ownerErro || ownerAviso) && (
+        <form
+          onSubmit={(event) => void alterarPin(event)}
+          className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+        >
+          <label className="block">
+            <span className="text-xs font-medium text-muted">PIN atual</span>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              value={pinAtual}
+              onChange={(event) => {
+                setPinAtual(event.target.value.replace(/\D/g, '').slice(0, 8));
+                setPinErro('');
+              }}
+              maxLength={8}
+              className="mt-1.5 w-full rounded-xl border border-white/10 px-3 py-2.5 text-sm"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Novo PIN</span>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              value={pinNovo}
+              onChange={(event) => {
+                setPinNovo(event.target.value.replace(/\D/g, '').slice(0, 8));
+                setPinErro('');
+              }}
+              maxLength={8}
+              className="mt-1.5 w-full rounded-xl border border-white/10 px-3 py-2.5 text-sm"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={pinEnviando}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pinEnviando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <KeyRound className="h-4 w-4" />
+            )}
+            Trocar PIN
+          </button>
+        </form>
+
+        {(pinErro || pinAviso) && (
           <div
-            className={`mt-4 rounded-xl border p-3 text-xs leading-relaxed ${
-              ownerErro
+            className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
+              pinErro
                 ? 'border-danger/25 bg-dangerSoft text-danger'
                 : 'border-success/25 bg-successSoft text-success'
             }`}
           >
-            {ownerErro || ownerAviso}
+            {pinErro || pinAviso}
           </div>
         )}
       </section>
 
-      {ownerUnlocked && (
         <section className="glass-panel overflow-hidden rounded-3xl p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
@@ -520,12 +359,10 @@ export default function ConfiguracoesPage({
             <div>
               <h3 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-ink">
                 Credenciais do Mercado Livre
-                {!ownerUnlocked && <Lock className="h-3.5 w-3.5 text-muted" />}
               </h3>
               <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
-                {ownerUnlocked
-                  ? 'Altere o Client ID, o Client Secret e a Redirect URI do aplicativo. As alterações valem para a próxima conexão.'
-                  : 'Somente o proprietário pode ver ou trocar as credenciais do aplicativo. Desbloqueie o acesso acima para editar.'}
+                Altere o Client ID, o Client Secret e a Redirect URI do
+                aplicativo. As alterações valem para a próxima conexão.
               </p>
 
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -592,7 +429,7 @@ export default function ConfiguracoesPage({
             <Loader2 className="h-4 w-4 animate-spin" />
             Carregando configuração do Mercado Livre...
           </div>
-        ) : ownerUnlocked ? (
+        ) : (
           <form
             onSubmit={(event) => void salvarCredenciaisMercadoLivre(event)}
             className="mt-5 grid gap-4 lg:grid-cols-2"
@@ -719,17 +556,8 @@ export default function ConfiguracoesPage({
               </p>
             )}
           </form>
-        ) : (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs leading-relaxed text-muted">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <p>
-              As credenciais estão protegidas pelo PIN do proprietário. Use o
-              campo acima para desbloquear e liberar a edição.
-            </p>
-          </div>
         )}
         </section>
-      )}
 
       <form
         onSubmit={handleSubmit}
@@ -788,11 +616,9 @@ export default function ConfiguracoesPage({
               >
                 <Building2 className="h-4 w-4 text-cyan" />
                 Nome da empresa
-                {!ownerUnlocked && <Lock className="h-3.5 w-3.5 text-muted" />}
               </label>
               <p className="mt-1 text-xs text-muted">
                 Aparece logo abaixo de DESMONTE OS, no menu lateral.
-                {!ownerUnlocked && ' Somente o proprietário pode alterar.'}
               </p>
 
               <input
@@ -804,14 +630,9 @@ export default function ConfiguracoesPage({
                   setEmpresa(event.target.value);
                   setSaved(false);
                 }}
-                disabled={!ownerUnlocked}
                 maxLength={60}
                 placeholder="Ex: Desmonte do Gabriel"
-                className={`mt-3 w-full rounded-xl border border-white/10 px-4 py-3.5 text-base shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${
-                  ownerUnlocked
-                    ? ''
-                    : 'cursor-not-allowed bg-white/[0.02] text-muted opacity-60'
-                }`}
+                className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3.5 text-base shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
               />
             </div>
           </section>
@@ -825,12 +646,10 @@ export default function ConfiguracoesPage({
                 <h3 className="flex items-center gap-2 text-xl font-semibold">
                   <Phone className="h-5 w-5 text-success" />
                   WhatsApp do financeiro
-                  {!ownerUnlocked && <Lock className="h-3.5 w-3.5 text-muted" />}
                 </h3>
                 <p className="mt-1 text-sm leading-relaxed text-muted">
                   A aba NF-e usa este número para enviar as mensagens das vendas
                   do dia.
-                  {!ownerUnlocked && ' Somente o proprietário pode alterar.'}
                 </p>
               </div>
             </div>
@@ -851,16 +670,11 @@ export default function ConfiguracoesPage({
                   setWhatsapp(event.target.value);
                   setSaved(false);
                 }}
-                disabled={!ownerUnlocked}
                 maxLength={30}
                 inputMode="tel"
                 autoComplete="tel"
                 placeholder="Ex: (31) 99999-9999"
-                className={`mt-3 w-full rounded-xl border border-white/10 px-4 py-3.5 text-base shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${
-                  ownerUnlocked
-                    ? ''
-                    : 'cursor-not-allowed bg-white/[0.02] text-muted opacity-60'
-                }`}
+                className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3.5 text-base shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
               />
               <p className="mt-2 text-xs leading-relaxed text-muted">
                 Pode digitar com máscara. O sistema adiciona o código do Brasil
@@ -904,12 +718,6 @@ export default function ConfiguracoesPage({
             )}
           </div>
 
-          {sensitiveChanges && !ownerUnlocked && (
-            <p className="rounded-xl border border-warning/20 bg-warningSoft p-3 text-xs leading-relaxed text-warning">
-              Nome da empresa e WhatsApp estão bloqueados. Desbloqueie o acesso
-              do proprietário acima para salvar essas alterações.
-            </p>
-          )}
         </div>
 
         <section className="glass-panel h-fit rounded-3xl p-6 sm:p-8">
@@ -974,8 +782,8 @@ export default function ConfiguracoesPage({
                 <ShieldCheck className="h-4 w-4" />
               </span>
               <p>
-                O PIN do proprietário é verificado no backend. Sem ele, empresa e
-                WhatsApp permanecem somente leitura.
+                Nome da empresa e WhatsApp agora podem ser alterados direto, já
+                que o PIN protege a entrada no painel.
               </p>
             </div>
           </div>

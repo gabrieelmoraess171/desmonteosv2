@@ -1,118 +1,268 @@
-import { useState, type FormEvent } from 'react';
-import { AlertCircle, ArrowRight, Eye, EyeOff, LockKeyhole, Mail, Package, UserRound } from 'lucide-react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  AlertCircle,
+  ArrowRight,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+  Package,
+  Receipt,
+  ShieldCheck,
+  Store,
+} from 'lucide-react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { DEFAULT_COMPANY_NAME, STORAGE_KEYS } from '../config/app';
+
+const TOTAL_DIGITOS = 8;
+const MINIMO_DIGITOS = 4;
+
+function lerNomeEmpresa(): string {
+  try {
+    return window.localStorage.getItem(STORAGE_KEYS.companyName) || DEFAULT_COMPANY_NAME;
+  } catch {
+    return DEFAULT_COMPANY_NAME;
+  }
+}
 
 export default function Login() {
-  const { isAuthenticated, isLoading, login, signUp } = useAuth();
-  const navigate = useNavigate();
+  const { isAuthenticated, isLoading, pinConfigurado, login, criarPin } = useAuth();
   const location = useLocation();
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const destination = { pathname: '/', search: location.search };
+  const [pin, setPin] = useState('');
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [empresa] = useState(lerNomeEmpresa);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  if (isLoading) return null;
-  if (isAuthenticated) return <Navigate to={destination} replace />;
+  const primeiroAcesso = pinConfigurado === false;
+  const destino = { pathname: '/', search: location.search };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const slots = useMemo(
+    () =>
+      Array.from({ length: TOTAL_DIGITOS }, (_, indice) => indice < pin.length),
+    [pin]
+  );
+
+  const podeEnviar = !enviando;
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-[100svh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-accent" />
+        <span className="sr-only">Carregando</span>
+      </main>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={destino} replace />;
+  }
+
+  const enviar = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError('');
-    setNotice('');
-    setSubmitting(true);
+
+    if (!podeEnviar) {
+      setErro(
+        primeiroAcesso
+          ? `Crie um PIN com ${MINIMO_DIGITOS} a ${TOTAL_DIGITOS} dígitos.`
+          : `Digite o PIN de ${MINIMO_DIGITOS} a ${TOTAL_DIGITOS} dígitos.`
+      );
+      return;
+    }
+
+    setErro('');
+    setEnviando(true);
 
     try {
-      if (isRegistering) {
-        const precisaConfirmarEmail = await signUp(name, email, password);
-        if (precisaConfirmarEmail) {
-          setNotice('Cadastro realizado. Verifique seu e-mail para confirmar a conta e depois entre.');
-          setIsRegistering(false);
-          setPassword('');
-        } else {
-          navigate(destination, { replace: true });
-        }
+      if (primeiroAcesso) {
+        await criarPin(pin);
       } else {
-        await login(email, password);
-        setPassword('');
-        navigate(destination, { replace: true });
+        await login(pin);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível concluir. Tente novamente.');
+    } catch (falha) {
+      setErro(
+        falha instanceof Error
+          ? falha.message
+          : 'Não foi possível abrir o painel agora.'
+      );
+      setPin('');
+      inputRef.current?.focus();
     } finally {
-      setSubmitting(false);
+      setEnviando(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen min-h-[100svh] items-center justify-center px-4 py-10 sm:px-6">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center justify-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent/30 bg-accentSoft text-accent">
-            <Package className="h-6 w-6" aria-hidden="true" />
-          </span>
-          <span className="text-xl font-bold tracking-tight text-ink">DESMONTE OS</span>
-        </div>
+    <main className="relative isolate flex min-h-[100svh] w-full overflow-hidden">
+      <div className="ambient-blob ambient-blob--blue -left-40 -top-48" />
+      <div className="ambient-blob ambient-blob--violet -right-40 top-1/4" />
 
-        <section className="rounded-3xl border border-white/10 bg-card/90 p-6 shadow-glass backdrop-blur-xl sm:p-9" aria-labelledby="login-title">
-          <span className="mb-5 inline-flex rounded-full border border-accent/25 bg-accentSoft px-3 py-1 text-xs font-medium text-accent">
-            {isRegistering ? 'Criar acesso' : 'Acesso ao painel'}
-          </span>
-          <h1 id="login-title" className="text-3xl font-bold text-ink">
-            {isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta'}
+      <div className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-12 px-5 py-10 lg:grid-cols-[1fr_auto] lg:gap-16 lg:py-16">
+        <section className="order-2 lg:order-1">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
+              <Store className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="font-heading text-[13px] font-bold uppercase tracking-[0.22em] text-ink">
+                Desmonte OS
+              </p>
+              <p className="text-xs text-muted">{empresa}</p>
+            </div>
+          </div>
+
+          <h1 className="mt-8 max-w-lg font-heading text-4xl font-bold leading-[1.05] tracking-[-0.035em] text-ink sm:text-5xl">
+            O painel da sua loja, atrás de uma chave só.
           </h1>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            {isRegistering ? 'Cadastre seu nome, e-mail e uma senha segura.' : 'Entre para acompanhar seu estoque, vendas e atendimento.'}
+
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
+            Estoque, anúncios, vendas e atendimento do Mercado Livre em um
+            lugar. Entre com o seu PIN para continuar de onde parou.
           </p>
 
-          <form onSubmit={handleSubmit} noValidate className="mt-7 space-y-5">
-            {isRegistering && (
-              <div>
-                <label htmlFor="login-name" className="mb-2 block text-sm font-medium text-ink">Nome completo</label>
-                <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3.5 top-3.5 h-5 w-5 text-muted" aria-hidden="true" />
-                  <input id="login-name" name="name" type="text" autoComplete="name" maxLength={80} required value={name} onChange={(event) => { setName(event.target.value); setError(''); }} placeholder="Digite seu nome completo" className="w-full rounded-xl border border-line py-3 pl-11 pr-4 text-base transition-shadow" />
-                </div>
+          <dl className="mt-10 grid max-w-md grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              { icone: Package, titulo: 'Estoque', texto: 'Cada peça com ficha' },
+              { icone: Receipt, titulo: 'Vendas', texto: 'Fechamento do dia' },
+              { icone: ShieldCheck, titulo: 'Acesso', texto: 'Somente você' },
+            ].map(({ icone: Icone, titulo, texto }) => (
+              <div
+                key={titulo}
+                className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3.5"
+              >
+                <Icone className="h-4 w-4 text-cyan" />
+                <dt className="mt-2.5 text-sm font-semibold text-ink">{titulo}</dt>
+                <dd className="mt-0.5 text-xs text-muted">{texto}</dd>
               </div>
-            )}
+            ))}
+          </dl>
+        </section>
 
-            <div>
-              <label htmlFor="login-email" className="mb-2 block text-sm font-medium text-ink">E-mail</label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3.5 top-3.5 h-5 w-5 text-muted" aria-hidden="true" />
-                <input id="login-email" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required value={email} onChange={(event) => { setEmail(event.target.value); setError(''); }} placeholder="voce@empresa.com" className="w-full rounded-xl border border-line py-3 pl-11 pr-4 text-base transition-shadow" />
+        <section className="order-1 lg:order-2">
+          <div className="glass-panel w-full rounded-[2rem] p-6 shadow-glass sm:p-8 lg:w-[26rem]">
+            <div className="flex items-center gap-3">
+              <span
+                className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
+                  primeiroAcesso
+                    ? 'border-warning/25 bg-warningSoft text-warning'
+                    : 'border-white/10 bg-white/[0.05] text-accent'
+                }`}
+              >
+                {primeiroAcesso ? (
+                  <KeyRound className="h-5 w-5" />
+                ) : (
+                  <LockKeyhole className="h-5 w-5" />
+                )}
+              </span>
+              <div>
+                <h2 className="font-heading text-xl font-bold tracking-[-0.02em] text-ink">
+                  {primeiroAcesso ? 'Crie seu PIN' : 'Entrar'}
+                </h2>
+                <p className="text-xs text-muted">
+                  {primeiroAcesso
+                    ? 'É o primeiro acesso a este painel.'
+                    : 'Digite o PIN do proprietário.'}
+                </p>
               </div>
             </div>
 
-            <div>
-              <label htmlFor="login-password" className="mb-2 block text-sm font-medium text-ink">Senha</label>
-              <div className="relative">
-                <LockKeyhole className="pointer-events-none absolute left-3.5 top-3.5 h-5 w-5 text-muted" aria-hidden="true" />
-                <input id="login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete={isRegistering ? 'new-password' : 'current-password'} minLength={8} required value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} placeholder={isRegistering ? 'Mínimo de 8 caracteres' : 'Digite sua senha'} className="w-full rounded-xl border border-line py-3 pl-11 pr-12 text-base transition-shadow" />
-                <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-1 top-1 rounded-lg p-2.5 text-muted hover:text-ink">
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            <form onSubmit={enviar} className="mt-7">
+              <label htmlFor="pin" className="sr-only">
+                PIN do proprietário
+              </label>
+              <input
+                ref={inputRef}
+                id="pin"
+                name="pin"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={TOTAL_DIGITOS}
+                value={pin}
+                onChange={(event) => {
+                  setPin(event.target.value.replace(/\D/g, '').slice(0, TOTAL_DIGITOS));
+                  setErro('');
+                }}
+                className="sr-only"
+              />
+
+              <div
+                className="flex gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition-shadow focus-within:border-accent/50 focus-within:shadow-[0_0_0_2px_rgba(76,157,255,0.35)]"
+                onClick={() => inputRef.current?.focus()}
+              >
+                {slots.map((preenchido, indice) => (
+                  <div
+                    key={indice}
+                    className={`flex h-12 flex-1 items-center justify-center rounded-xl border text-xl font-semibold transition-colors ${
+                      preenchido
+                        ? 'border-accent/40 bg-accentSoft text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]'
+                        : 'border-white/10 bg-white/[0.02] text-muted/40'
+                    }`}
+                  >
+                    {preenchido ? '•' : ''}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center justify-between text-xs text-muted">
+                <span>
+                  {pin.length < MINIMO_DIGITOS
+                    ? `Mínimo de ${MINIMO_DIGITOS} dígitos`
+                    : `${pin.length} de ${TOTAL_DIGITOS}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPin('');
+                    setErro('');
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded-lg px-2 py-1 transition-colors hover:text-ink"
+                >
+                  Limpar
                 </button>
               </div>
-            </div>
 
-            {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger/25 bg-dangerSoft p-3 text-sm text-danger"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>{error}</span></div>}
-            {notice && <div role="status" className="rounded-xl border border-accent/25 bg-accentSoft p-3 text-sm text-accent">{notice}</div>}
+              {erro && (
+                <p
+                  role="alert"
+                  className="mt-4 flex items-start gap-2 rounded-xl border border-danger/25 bg-dangerSoft px-3.5 py-3 text-sm text-danger"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {erro}
+                </p>
+              )}
 
-            <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">
-              {submitting ? 'Aguarde...' : isRegistering ? 'Criar conta' : 'Entrar'}
-              {!submitting && <ArrowRight className="h-5 w-5" aria-hidden="true" />}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={!podeEnviar}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_rgba(76,157,255,0.95)] transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
+              >
+                {enviando ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Abrindo o painel
+                  </>
+                ) : (
+                  <>
+                    {primeiroAcesso ? 'Criar PIN e abrir' : 'Abrir painel'}
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </form>
 
-          <button type="button" onClick={() => { setIsRegistering((value) => !value); setError(''); setNotice(''); }} className="mt-6 w-full text-center text-sm font-medium text-accent hover:underline">
-            {isRegistering ? 'Já tenho uma conta' : 'Ainda não tenho uma conta'}
-          </button>
+            <p className="mt-6 text-center text-xs leading-relaxed text-muted">
+              {primeiroAcesso
+                ? 'Guarde este PIN em segurança. Sem ele não é possível abrir o painel.'
+                : 'O PIN fica salvo apenas como hash, com criptografia, no servidor.'}
+            </p>
+          </div>
         </section>
-        <p className="mt-6 text-center text-xs text-muted">Desmonte OS · Gestão de peças e vendas</p>
       </div>
     </main>
   );
