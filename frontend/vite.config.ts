@@ -8,9 +8,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           react: ['react', 'react-dom', 'react-router-dom'],
-          // O SDK do Supabase fica num chunk próprio e só é baixado quando a
-          // autenticação é realmente usada.
-          supabase: ['@supabase/supabase-js'],
           icons: ['lucide-react'],
         },
       },

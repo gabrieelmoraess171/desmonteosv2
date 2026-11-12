@@ -119,7 +119,7 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 
 ## Telas
 
-- **Login local**: a rota `/login` aceita qualquer nome de usuário e senha preenchidos no modo demonstração. Campos vazios ou somente com espaços exibem erro. Apenas o nome é salvo em `localStorage` (`desmonte.authUser`), nunca a senha. Após entrar, o usuário vai para `/`; a sessão permanece ao recarregar e as demais páginas redirecionam para `/login` quando não há sessão. O login não consulta o backend e não protege a API.
+- **Login por PIN**: a rota `/login` é a única porta de entrada do painel. No primeiro acesso, o usuário cria um PIN numérico de 4 a 8 dígitos; nas visitas seguintes, entra com ele. O PIN é conferido no backend (`/api/proprietario/entrar`), fica salvo como hash `scrypt` com salt e nunca retorna ao navegador. A sessão é um token aleatório guardado em `sessionStorage` (`desmonte.ownerToken`), revalidado a cada carregamento (válido por 12 horas, renovado a cada uso). Sem sessão válida, as demais rotas redirecionam para `/login`. Após 6 tentativas erradas em 5 minutos, o backend bloqueia novas tentativas temporariamente.
 - **Dashboard**: saudação personalizada, vendas do dia, perguntas, reclamações e anúncios a revisar. O bloco de desempenho alterna entre **Hoje**, **7**, **15** e **30 dias**. Também mostra estoque do Mercado Livre, ranking por categoria e sugestões de melhoria.
 - **Nova peça**: abre direto o formulário de cadastro em tela única, com as fotos no primeiro bloco. O operador solta as fotos, clica em **Identificar com IA** e revisa o que a IA preencheu antes de completar o resto.
 - **Estoque**: lista todos os anúncios cadastrados, com busca, filtros por status e categoria, edição da ficha completa e exclusão. Clicar em uma peça abre a **ficha completa** com anúncio, aplicação, ficha técnica, peso, medidas, descrição, fotos, preço e estoque. Cada peça é um anúncio individual.
@@ -128,8 +128,8 @@ O seed é destrutivo: ele substitui peças, vendas, perguntas, reclamações e a
 - **NF-e**: mostra apenas vendas disponíveis ou agendadas para o dia, com uma mensagem por venda contendo peça, comprador, CPF, endereço e preço total. Permite enviar individualmente, enviar em lote (uma conversa a cada 3 segundos) e copiar as mensagens. Ao abrir o WhatsApp, a venda é marcada como enviada.
 - **Relatórios**: período **Hoje**, **7**, **15** ou **30 dias** com faturamento, vendas, ticket médio, itens, clientes, evolução diária, estoque, formas de pagamento e ranking de produtos. Os indicadores abrem detalhes próprios; previsões de liberação aparecem quando informadas pela API do Mercado Livre, sem estimar datas ausentes. Exporta CSV e gera impressão/PDF.
 - **Marketplaces**: conexão OAuth com o Mercado Livre, credenciais do aplicativo, sincronização por recurso (anúncios, pedidos, perguntas, reclamações e reputação), histórico de execuções e painel de reputação real. Também exibe a Redirect URI e a URL do webhook para copiar.
-- **Configurações**: nome de exibição e, com o acesso do proprietário desbloqueado por PIN, nome da empresa (`Mercadão de Peças` por padrão, exibido abaixo de `DESMONTE OS`) e WhatsApp do financeiro. Também permite criar, alterar e sair do acesso do proprietário.
-- **Logout / Sair**: disponível no header e no rodapé do menu. Após confirmação, remove a sessão local e o token local do proprietário, volta para `/login` e sincroniza a saída entre abas. Mantém as configurações da empresa e do WhatsApp. O encerramento é local, sem requisição ao backend.
+- **Configurações**: nome de exibição, nome da empresa (`Mercadão de Peças` por padrão, exibido abaixo de `DESMONTE OS`), WhatsApp do financeiro e credenciais do Mercado Livre. Como o PIN já protege a entrada no painel, todos os campos ficam editáveis. A seção **Trocar o PIN** altera a chave de acesso informando o PIN atual.
+- **Logout / Sair**: disponível no header e no rodapé do menu. Após confirmação, encerra o token no backend (`/api/proprietario/sair`), limpa a sessão local e volta para `/login`. Mantém as configurações da empresa e do WhatsApp.
 - **Importar lote**: envia fotos/ZIPs, agrupa por SKU do nome do arquivo e abre o editor de grupos.
 - **Editor de anúncios** e **Fila de aprovação**: anúncios novos só são publicados depois de aprovados; anúncios existentes recebem as alterações aprovadas. A exclusão de uma peça encerra primeiro o anúncio vinculado no Mercado Livre.
 
@@ -181,11 +181,11 @@ Os dados abaixo ficam apenas no navegador (`localStorage`):
 | `desmonte.financeWhatsApp` | Número que recebe o resumo da NF-e |
 | `desmonte.onboardingCompleted` | Marca que o primeiro acesso já foi concluído |
 
-A sessão do proprietário fica em `sessionStorage`:
+A sessão do painel fica em `sessionStorage`:
 
 | Chave | Uso |
 |---|---|
-| `desmonte.ownerToken` | Token temporário devolvido pelo backend após o PIN correto |
+| `desmonte.ownerToken` | Token devolvido pelo backend após o PIN correto; expira em 12 horas |
 
 O envio ao financeiro usa um link `wa.me` com a mensagem já preenchida. O número pode ser digitado com máscara; o código do Brasil (`+55`) é adicionado automaticamente.
 
@@ -279,17 +279,17 @@ Se `ML_WEBHOOK_SECRET` estiver definido, use `?secret=...` ou o header `x-ml-web
 - OAuth e webhook exigem URL pública HTTPS. Redirect URI com `localhost`/`127.0.0.1` é recusada pelo ML (403 do CloudFront); use um túnel (cloudflared/ngrok) e cadastre a URL pública no aplicativo.
 - A integração não tem login multiusuário: qualquer pessoa com acesso ao painel pode conectar/desconectar a conta. Proteja o painel e o backend na rede.
 
-## Proprietário e PIN
+## Acesso por PIN
 
-O nome da empresa, o WhatsApp financeiro e o salvamento das credenciais do Mercado Livre são restritos ao proprietário:
+O PIN é a única credencial do painel e protege todas as telas:
 
-1. Na primeira vez, o proprietário cria um PIN numérico de 4 a 8 dígitos em **Configurações**.
+1. Na primeira vez, o PIN numérico de 4 a 8 dígitos é criado na própria tela de login (`/api/proprietario/configurar`), que já abre a sessão.
 2. O PIN é armazenado como hash `scrypt` com salt na tabela `configuracoes` (`owner_pin_hash`); nunca é salvo em texto puro nem enviado ao frontend.
 3. O backend devolve um token de sessão válido por 12 horas, enviado pelo cabeçalho `x-owner-token`.
 4. Após 6 tentativas erradas em 5 minutos, o acesso é bloqueado temporariamente.
-5. O PIN pode ser alterado informando o PIN atual. **Sair** remove a sessão e o token do navegador.
+5. O PIN pode ser alterado em **Configurações → Trocar o PIN**, informando o PIN atual. **Sair** encerra o token no backend e limpa a sessão do navegador.
 
-Não há login multiusuário nem perfis de membros: o controle é local e single-owner. Se o PIN for perdido, pare o backend e remova a linha `owner_pin_hash` da tabela `configuracoes` no SQLite; ao abrir Configurações novamente, será possível criar um novo PIN.
+Não há login multiusuário nem perfis de membros: o controle é local e single-owner. Se o PIN for perdido, pare o backend e remova a linha `owner_pin_hash` da tabela `configuracoes` no SQLite; ao abrir o login novamente, será possível criar um novo PIN.
 
 ## NF-e por venda e envio em lote
 
@@ -483,8 +483,8 @@ As demais rotas continuam sem autenticação de funcionário. A sessão do propr
 - Vendas separa envios de hoje dos agendados para datas futuras; agendamentos vencidos não entram nos próximos envios e são identificados para reagendamento. O gráfico permite alternar entre bruto, taxa do ML, líquido e cancelamentos.
 - O Estoque identifica anúncios vinculados e abre o anúncio no Mercado Livre; os modais de cadastro e reclamação mantêm cabeçalho visível e rolagem própria.
 - NF-e com uma mensagem por venda, CPF, endereço, envio individual e envio em lote com intervalo de 3 segundos.
-- Nome da empresa e WhatsApp financeiro protegidos por PIN de proprietário com hash `scrypt` e sessão de 12 horas.
-- Login local de demonstração com React Router, hook `useAuth`, persistência no navegador, proteção de páginas e logout.
+- Painel inteiro protegido por PIN com hash `scrypt`, bloqueio por tentativas e sessão de 12 horas.
+- Login por PIN com React Router, hook `useAuth`, sessão em `sessionStorage`, proteção de páginas e logout que encerra o token no backend.
 - Datas de vendas, perguntas e reclamações são convertidas para o fuso local do computador; o “hoje” do dashboard, da NF-e e dos relatórios acompanha a data local, não UTC.
 - Cadastro completo no padrão Mercado Livre em tela única: fotos primeiro, identificação a partir das fotos por IA, revisão do que foi preenchido, aplicação, ficha oficial da categoria, preço e descrição, com contador de pendências por bloco.
 - Atributos oficiais do Mercado Livre (`BRAND`, `CAR_AND_VAN_MODEL`, `YEAR`, `POSITION`) derivados dos campos do formulário e enviados na publicação, sem sobrescrever o que o operador digitou.
@@ -492,12 +492,12 @@ As demais rotas continuam sem autenticação de funcionário. A sessão do propr
 - Navegação lateral recolhível com Dashboard, Nova peça, Importar lote, Estoque, Marketplaces, Atendimento, NF-e, Relatórios e Configurações ligados às telas existentes.
 - Interface “liquid glass” escura com animações de entrada, transições entre telas e respeito a `prefers-reduced-motion`.
 - API com persistência em SQLite (`backend/database.sqlite`), criado e migrado automaticamente na inicialização.
-- Sem autenticação de funcionários; a sessão do proprietário protege nome da empresa, WhatsApp financeiro e salvamento das credenciais do ML. O token opcional (`API_TOKEN`) protege as rotas de criação/importação de pedidos manual e em lote.
+- Sem autenticação de funcionários; o PIN protege a entrada no painel inteiro. O token opcional (`API_TOKEN`) protege as rotas de criação/importação de pedidos manual e em lote.
 
 ## Limitações conhecidas
 
 - O envio em lote pelo WhatsApp abre as conversas uma a uma, mas o usuário precisa confirmar cada envio; `wa.me` não permite envio automático.
-- O acesso do proprietário é local e single-owner, sem login multiusuário ou perfis de membros.
+- O acesso é local e single-owner, sem login multiusuário ou perfis de membros.
 - A integração real com o Gemini depende de uma `GEMINI_KEY` válida; sem FreeLLMAPI e sem Gemini, o sistema usa o fallback local.
 - A integração com o Mercado Livre exige um aplicativo próprio (Client ID/Secret) e conexão OAuth; sem isso, o painel continua funcionando com os dados locais e a reputação estimada.
 - A edição remota de fotos, categoria e atributos de anúncios existentes ainda não está implementada.

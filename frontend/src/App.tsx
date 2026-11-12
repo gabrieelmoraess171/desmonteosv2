@@ -286,7 +286,7 @@ function saveNotificationHistory(history: Set<string>) {
 }
 
 function App() {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>(initialStats);
   const [analytics, setAnalytics] = useState<AnalyticsData>(initialAnalytics);
@@ -294,7 +294,7 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [userName, setUserName] = useState(() =>
-    user?.username || readStored(STORAGE_KEYS.userName)
+    readStored(STORAGE_KEYS.userName)
   );
   const [companyName, setCompanyName] = useState(() => {
     return readStored(STORAGE_KEYS.companyName) || DEFAULT_COMPANY_NAME;
