@@ -57,7 +57,7 @@ export function completarPublicacao(corpo, peca, ficha, usuario) {
     }
   }
   corpo.sale_terms = valoresMl(config.sale_terms, ficha.termos);
-  if (!corpo.sale_terms.some((termo) => termo.id === 'WARRANTY_TIME') && peca.garantia) {
+  if (!corpo.sale_terms.some((termo) => termo.id === 'WARRANTY_TIME') && peca.garantia && !/^sem\s+garantia$/i.test(String(peca.garantia).trim())) {
     corpo.sale_terms.push({ id: 'WARRANTY_TIME', value_name: peca.garantia });
   }
   if (usuario?.tags?.includes('user_product_seller')) {

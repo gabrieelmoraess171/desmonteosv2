@@ -9,6 +9,8 @@ function substituirParametros(sql, parametros = []) {
 
 function traduzirExpressaoData(sql) {
   return String(sql)
+    .replace(/DATE\(\s*'now'\s*,\s*'-(\d+)\s+days?'\s*\)/gi, "(CURRENT_DATE - INTERVAL '$1 days')::date")
+    .replace(/DATE\(\s*'now'\s*\)/gi, 'CURRENT_DATE')
     .replace(/COALESCE\(DATE\(([^,()]+),\s*'localtime'\),\s*''\)/gi, "COALESCE(DATE($1, 'localtime'), DATE('1900-01-01'))")
     .replace(/DATE\('now',\s*'localtime',\s*'-(\d+)\s+days?'\)/gi, "(CURRENT_DATE - INTERVAL '$1 days')::date")
     .replace(/DATE\('now',\s*'localtime'\)/gi, 'CURRENT_DATE')

@@ -424,9 +424,11 @@ export default function AnaliseIaPage({ onNavigate }: AnaliseIaPageProps) {
                       className: 'text-muted',
                     },
                   ].map((item) => (
-                    <div
+                    <button
                       key={item.label}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5"
+                      type="button"
+                      onClick={() => onNavigate?.('lotes')}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-accent/35 hover:bg-white/[0.06]"
                     >
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                         {item.label}
@@ -434,7 +436,8 @@ export default function AnaliseIaPage({ onNavigate }: AnaliseIaPageProps) {
                       <p className={`mt-1 text-xl font-bold ${item.className}`}>
                         {item.valor}
                       </p>
-                    </div>
+                      <span className="mt-1 block text-[10px] font-semibold text-accent">Ver peças</span>
+                    </button>
                   ))}
                 </div>
 

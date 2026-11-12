@@ -10,6 +10,9 @@ export const CATEGORIAS_PECA = [
   'Retrovisores',
   'Faróis e Lanternas',
   'Parachoques',
+  'Almas e Absorvedores de Impacto',
+  'Acabamentos e Molduras',
+  'Maçanetas e Fechaduras',
   'Portas e Capôs',
   'Motor e Componentes',
   'Suspensão e Direção',
@@ -22,6 +25,18 @@ export const CATEGORIAS_PECA = [
   'Escapamento',
   'Transmissão',
   'Baterias',
+  'Filtros e Lubrificação',
+  'Ar-condicionado e Climatização',
+  'Carroceria e Estrutura',
+  'Acessórios e Equipamentos',
+  'Áudio, Multimídia e Navegação',
+  'Airbags e Segurança',
+  'Instrumentos e Painéis',
+  'Injeção e Alimentação',
+  'Ignição e Partida',
+  'Módulos e Computadores',
+  'Higiene e Conveniência',
+  'Peças de Motocicletas',
   'Outros',
 ] as const;
 
@@ -34,6 +49,12 @@ export const CATEGORIA_ML: Record<string, string> = {
     'Autopeças > Peças de Carros e Caminhonetes > Faróis e Lanternas',
   Parachoques:
     'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Almas e Absorvedores de Impacto':
+    'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Acabamentos e Molduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Interior',
+  'Maçanetas e Fechaduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Portas e Capôs':
     'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Motor e Componentes':
@@ -53,6 +74,30 @@ export const CATEGORIA_ML: Record<string, string> = {
   Transmissão:
     'Autopeças > Peças de Carros e Caminhonetes > Transmissão',
   Baterias: 'Autopeças > Peças de Carros e Caminhonetes > Baterias',
+  'Filtros e Lubrificação':
+    'Autopeças > Peças de Carros e Caminhonetes > Filtros e Lubrificação',
+  'Ar-condicionado e Climatização':
+    'Autopeças > Peças de Carros e Caminhonetes > Ar-condicionado e Climatização',
+  'Carroceria e Estrutura':
+    'Autopeças > Peças de Carros e Caminhonetes > Carroceria e Estrutura',
+  'Acessórios e Equipamentos':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Áudio, Multimídia e Navegação':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Airbags e Segurança':
+    'Autopeças > Peças de Carros e Caminhonetes > Segurança',
+  'Instrumentos e Painéis':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Injeção e Alimentação':
+    'Autopeças > Peças de Carros e Caminhonetes > Motor e Componentes',
+  'Ignição e Partida':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Módulos e Computadores':
+    'Autopeças > Peças de Carros e Caminhonetes > Elétrica',
+  'Higiene e Conveniência':
+    'Autopeças > Peças de Carros e Caminhonetes > Acessórios e Equipamentos',
+  'Peças de Motocicletas':
+    'Autopeças > Peças de Motos > Outros',
   Outros: 'Autopeças > Peças de Carros e Caminhonetes > Outros',
 };
 

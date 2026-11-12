@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, ChevronDown, ImageOff, Layers, Trophy } from 'lucide-react';
+import { ArrowRight, ChevronDown, ImageOff, Layers, Loader2, Trophy } from 'lucide-react';
 import { API_URL } from '../../config/api';
+import VendaDetalheModal, { type VendaDetalheRelatorio } from '../VendaDetalheModal';
 
 interface ProdutoVendido {
   vendaId: number;
@@ -57,29 +58,47 @@ function intervalo(dias: number) {
 
 export default function TopTiposPeca({
   tipos: tiposIniciais,
+  periodoLabel,
   onViewAll,
 }: TopTiposPecaProps) {
   const [aberto, setAberto] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<'7' | '14' | '30' | 'custom'>('7');
   const [datas, setDatas] = useState(() => intervalo(7));
-  const [tipos, setTipos] = useState(tiposIniciais);
+  const [tipos, setTipos] = useState(tiposIniciais.slice(0, 10));
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const [vendaDetalhe, setVendaDetalhe] = useState<VendaDetalheRelatorio | null>(null);
+  const [abrindoVendaId, setAbrindoVendaId] = useState<number | null>(null);
+  const [erroDetalhe, setErroDetalhe] = useState('');
+  const [limitesVendidos, setLimitesVendidos] = useState<Record<string, number>>({});
+  const detalhes = useRef(new Map<number, { venda: VendaDetalheRelatorio; expiraEm: number }>());
+  const consultaDetalhe = useRef<AbortController | null>(null);
+
+  useEffect(() => () => consultaDetalhe.current?.abort(), []);
 
   useEffect(() => {
-    if (!datas.inicio || !datas.fim || datas.inicio > datas.fim) return;
+    if (periodo === '7' && /\b7\b/.test(periodoLabel)) setTipos(tiposIniciais.slice(0, 10));
+  }, [tiposIniciais, periodoLabel, periodo]);
+
+  useEffect(() => {
+    if (!datas.inicio || !datas.fim || datas.inicio > datas.fim) {
+      setErro('Informe uma data inicial e final válidas.');
+      setCarregando(false);
+      return;
+    }
     const controller = new AbortController();
     setCarregando(true);
     setErro('');
-    axios.get('/api/dashboard/analytics', {
+    setAberto(null);
+    setLimitesVendidos({});
+    axios.get<TipoPecaRanking[]>('/api/dashboard/ranking', {
       params: { periodo: '7', rankingInicio: datas.inicio, rankingFim: datas.fim },
       signal: controller.signal,
       timeout: 20000,
     }).then(({ data }) => {
-      if (!controller.signal.aborted) setTipos(data.topTiposPeca || []);
+      if (!controller.signal.aborted) setTipos(Array.isArray(data) ? data.slice(0, 10) : []);
     }).catch(() => {
       if (!controller.signal.aborted) {
-        setTipos([]);
         setErro('Não foi possível atualizar o ranking. Tente novamente.');
       }
     }).finally(() => {
@@ -87,6 +106,47 @@ export default function TopTiposPeca({
     });
     return () => controller.abort();
   }, [datas.inicio, datas.fim]);
+
+  const abrirVenda = async (id: number) => {
+    consultaDetalhe.current?.abort();
+    setErroDetalhe('');
+    const salva = detalhes.current.get(id);
+    if (salva && salva.expiraEm > Date.now()) {
+      setAbrindoVendaId(null);
+      setVendaDetalhe(salva.venda);
+      return;
+    }
+    const controller = new AbortController();
+    consultaDetalhe.current = controller;
+    setAbrindoVendaId(id);
+    try {
+      const { data } = await axios.get<VendaDetalheRelatorio>(`/api/vendas/${id}`, {
+        signal: controller.signal,
+        timeout: 20000,
+      });
+      if (controller.signal.aborted) return;
+      const cancelada = data.status_grupo === 'cancelada';
+      const bruto = Number(data.valor_bruto ?? data.valor) || 0;
+      const taxa = Number(data.taxa_ml) || 0;
+      const imagem = data.peca_imagem;
+      const venda = {
+        ...data,
+        valor_bruto: bruto,
+        valor_liquido: cancelada ? 0 : Number(data.valor_liquido ?? (bruto - taxa)),
+        cancelada,
+        recebido: data.status_grupo === 'concluida',
+        is_ml: /ml|mercado\s*livre/i.test(data.plataforma || ''),
+        itens: Array.isArray(data.itens) ? data.itens : [],
+        peca_imagem: imagem?.startsWith('/') ? `${API_URL}${imagem}` : imagem,
+      };
+      detalhes.current.set(id, { venda, expiraEm: Date.now() + 30000 });
+      setVendaDetalhe(venda);
+    } catch {
+      if (!controller.signal.aborted) setErroDetalhe('Não foi possível abrir os dados desta venda. Tente novamente.');
+    } finally {
+      if (!controller.signal.aborted) setAbrindoVendaId(null);
+    }
+  };
 
   const maior = Math.max(1, ...tipos.map((item) => item.unidades));
 
@@ -102,7 +162,7 @@ export default function TopTiposPeca({
             O que mais está vendendo
           </h2>
           <p className="text-sm text-muted">
-            Peças agrupadas pelo nome, independentemente do lado
+            Agrupado pelo primeiro nome da peça, sem misturar acessórios
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-muted">
@@ -126,6 +186,7 @@ export default function TopTiposPeca({
         <label>Até <input type="date" value={datas.fim} min={datas.inicio || undefined} onChange={(event) => setDatas((atual) => ({ ...atual, fim: event.target.value }))} className="ml-1 rounded-lg border border-line px-2 py-1.5" /></label>
       </div>}
       {erro && <p role="alert" className="mb-4 text-sm text-danger">{erro}</p>}
+      {erroDetalhe && <p role="alert" className="mb-4 text-sm text-danger">{erroDetalhe}</p>}
       {carregando && <p role="status" className="mb-4 text-xs text-muted">Atualizando ranking…</p>}
 
       {tipos.length === 0 ? (
@@ -142,6 +203,8 @@ export default function TopTiposPeca({
           {tipos.map((item, indice) => {
             const percentual = Math.max(5, Math.round((item.unidades / maior) * 100));
             const expandido = aberto === item.tipo;
+            const vendidos = item.vendidos || [];
+            const limite = limitesVendidos[item.tipo] || 20;
 
             return (
               <li key={item.tipo} className="rounded-xl transition-colors hover:bg-white/[0.03]">
@@ -177,19 +240,32 @@ export default function TopTiposPeca({
                 </button>
                 {expandido && (
                   <div className="ml-12 mr-2 space-y-2 border-l border-line pb-2 pl-3">
-                    {(item.vendidos || []).map((venda, indice) => (
-                      <div key={`${venda.vendaId}-${indice}`} className="flex items-center gap-3 text-xs">
+                    {vendidos.slice(0, limite).map((venda, indice) => (
+                      <button key={`${venda.vendaId}-${indice}`} type="button" onClick={() => void abrirVenda(venda.vendaId)}
+                        aria-label={`Ver dados da venda ${venda.pedido || venda.vendaId}: ${venda.nome || item.tipo}`}
+                        aria-busy={abrindoVendaId === venda.vendaId}
+                        className="flex w-full items-center gap-3 rounded-lg p-2 text-left text-xs transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
                         <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] text-muted">
                           <ImageOff className="h-4 w-4" aria-hidden="true" />
                           {venda.imagem && <img src={venda.imagem.startsWith('/') ? `${API_URL}${venda.imagem}` : venda.imagem} alt={`Foto de ${venda.nome || item.tipo}`} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
                         </span>
                         <span className="min-w-0 flex-1 text-muted">
                           <span className="block font-medium text-ink">{venda.nome || item.tipo}</span>
-                          Pedido {venda.pedido || venda.vendaId} • {venda.cliente} • {venda.quantidade} un.
+                          <span className="block">Pedido {venda.pedido || venda.vendaId} • {venda.cliente} • {venda.quantidade} un.</span>
+                          {venda.data && <span className="mt-1 block text-[10px]">{new Date(venda.data.replace(' ', 'T')).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>}
                         </span>
-                        <span className="shrink-0 font-medium">{formatarMoeda(venda.valor)}</span>
-                      </div>
+                        <span className="flex shrink-0 flex-col items-end gap-1 font-medium">
+                          {formatarMoeda(venda.valor)}
+                          {abrindoVendaId === venda.vendaId ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <span className="inline-flex items-center gap-1 text-[10px] text-accent">Ver venda <ArrowRight className="h-3 w-3" aria-hidden="true" /></span>}
+                        </span>
+                      </button>
                     ))}
+                    {vendidos.length > limite && (
+                      <button type="button" onClick={() => setLimitesVendidos(atual => ({ ...atual, [item.tipo]: limite + 20 }))}
+                        className="py-2 text-xs font-medium text-accent hover:text-cyan">
+                        Mostrar mais vendas ({vendidos.length - limite} restante(s))
+                      </button>
+                    )}
                   </div>
                 )}
               </li>
@@ -208,6 +284,7 @@ export default function TopTiposPeca({
           <ArrowRight className="h-4 w-4" />
         </button>
       )}
+      <VendaDetalheModal venda={vendaDetalhe} onClose={() => setVendaDetalhe(null)} />
     </section>
   );
 }

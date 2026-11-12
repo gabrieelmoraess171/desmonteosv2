@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -147,12 +148,12 @@ export default function ReputacaoMl({
                 cy="50"
                 r={RAIO}
                 fill="none"
+                className="reputation-ring-in transition-all duration-700"
                 stroke={cor.hex}
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={CIRCUNFERENCIA}
                 strokeDashoffset={CIRCUNFERENCIA * (1 - score / 100)}
-                className="transition-all duration-700"
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -178,6 +179,7 @@ export default function ReputacaoMl({
                     className={`h-2 w-6 rounded-full ${
                       ativo ? cor.barra : 'bg-white/[0.08]'
                     }`}
+                    style={{ '--metric-delay': `${indice * 70}ms` } as CSSProperties}
                   />
                 );
               })}

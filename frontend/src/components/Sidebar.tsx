@@ -13,7 +13,6 @@ import {
   FileText,
   BarChart,
   Settings,
-  LogOut,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +21,7 @@ import {
   PackageCheck,
   Truck,
   X,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { getInitials } from '../utils/greeting';
@@ -87,6 +87,7 @@ interface SidebarProps {
   userName?: string;
   companyName?: string;
   badges?: Partial<Record<SidebarKey, number>>;
+  alerts?: Partial<Record<SidebarKey, 'warning' | 'danger'>>;
   vendaAba?: VendaAba;
   onNavigateVendaAba?: (aba: VendaAba) => void;
 }
@@ -102,6 +103,7 @@ export default function Sidebar({
   userName = '',
   companyName = '',
   badges = {},
+  alerts = {},
   vendaAba = 'hoje',
   onNavigateVendaAba,
 }: SidebarProps) {
@@ -118,7 +120,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-line bg-sidebar shadow-2xl shadow-black/50 transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:shadow-none lg:transition-[width] ${
+      className={`sidebar-shell fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-line bg-sidebar shadow-2xl shadow-black/50 transition-transform duration-500 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:shadow-none lg:transition-[width] ${
         mobileOpen ? 'translate-x-0' : '-translate-x-full'
       } ${collapsed ? 'w-72 lg:w-20' : 'w-72 lg:w-64'}`}
     >
@@ -130,9 +132,14 @@ export default function Sidebar({
           }`}
         >
           <div className={`min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
-            <h1 className="bg-gradient-to-r from-white via-[#dcecff] to-[#8ec6ff] bg-clip-text text-2xl font-bold leading-none tracking-tight text-transparent">
-              DESMONTE OS
-            </h1>
+            <div className="flex items-center gap-3">
+              <span className="brand-mark" aria-hidden="true">
+                <span />
+              </span>
+              <h1 className="text-base font-bold leading-none tracking-wide text-ink">
+                DESMONTE OS
+              </h1>
+            </div>
             <p className="mt-1.5 line-clamp-2 text-[10px] font-medium uppercase leading-relaxed tracking-[0.16em] text-muted">
               {companyName.trim() || DEFAULT_COMPANY_NAME}
             </p>
@@ -162,13 +169,29 @@ export default function Sidebar({
       </div>
 
       {/* Menu Principal */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV_ITEMS.map((item) => {
+      <nav aria-label="Menu principal" className="flex-1 space-y-1 overflow-y-auto p-3">
+        {NAV_ITEMS.map((item, index) => {
           const active = item.key === activeKey;
           const badge = Number(badges[item.key] || 0);
+          const alertClass = alerts[item.key] === 'danger'
+            ? 'sidebar-nav-icon-wrap--danger'
+            : alerts[item.key] === 'warning'
+              ? 'sidebar-nav-icon-wrap--warning'
+              : '';
+          const sectionLabel =
+            index === 0
+              ? 'Operação'
+              : item.key === 'ia'
+                ? 'Catálogo e inteligência'
+                : item.key === 'marketplaces'
+                  ? 'Canais e gestão'
+                  : null;
 
           return (
             <div key={item.key}>
+              {sectionLabel ? (
+                <p className="sidebar-section-label">{sectionLabel}</p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -192,20 +215,20 @@ export default function Sidebar({
                   item.key === 'vendas' ? vendasAberto : undefined
                 }
                 title={item.label}
-                className={`group relative flex w-full items-center gap-3 rounded-xl border p-3 transition-all duration-300 ${
+                className={`sidebar-nav-item group relative flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 transition-all duration-300 ${
                   collapsed ? 'lg:justify-center lg:gap-0' : ''
                 } ${
                   active
-                    ? 'border-white/10 bg-white/[0.09] text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_34px_-22px_rgba(76,157,255,0.9)]'
+                    ? 'sidebar-nav-item--active border-white/10 bg-white/[0.09] text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_34px_-22px_rgba(76,157,255,0.9)]'
                     : 'border-transparent text-muted hover:border-white/5 hover:bg-white/[0.055] hover:text-ink'
                 }`}
               >
                 {active && (
-                  <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan to-accent shadow-[0_0_14px_rgba(76,157,255,0.8)]" />
+                  <span className="sidebar-nav-indicator absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan to-accent shadow-[0_0_14px_rgba(76,157,255,0.8)]" />
                 )}
-                <span className="relative shrink-0">
+                <span className={`sidebar-nav-icon-wrap relative flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${alertClass}`}>
                   <item.icon
-                    className={`h-5 w-5 transition-transform duration-300 ${
+                    className={`sidebar-nav-icon h-4 w-4 transition-transform duration-300 ${
                       active ? 'text-accent' : 'group-hover:scale-105'
                     }`}
                   />
@@ -216,7 +239,7 @@ export default function Sidebar({
                   ) : null}
                 </span>
                 <span
-                  className={`min-w-0 flex-1 truncate text-left font-medium ${
+                  className={`min-w-0 flex-1 truncate text-left text-[13px] font-medium ${
                     collapsed ? 'lg:hidden' : ''
                   }`}
                 >
@@ -294,8 +317,8 @@ export default function Sidebar({
       {/* Footer Sidebar */}
       <div className="border-t border-line p-3">
         <div
-          className={`flex items-center ${
-            collapsed ? 'lg:flex-col lg:gap-2' : 'gap-1'
+          className={`flex items-center justify-between gap-1 ${
+            collapsed ? 'lg:flex-col lg:gap-2' : ''
           }`}
         >
           <button
@@ -328,11 +351,13 @@ export default function Sidebar({
           <button
             type="button"
             onClick={onLogout}
-            title="Sair"
-            aria-label="Sair"
-            className="rounded-xl p-2 transition-colors hover:bg-white/[0.07]"
+            title="Sair do painel"
+            aria-label="Sair do painel"
+            className={`sidebar-logout flex shrink-0 items-center rounded-xl p-2 text-muted transition-all hover:bg-dangerSoft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60 ${
+              collapsed ? 'justify-center lg:w-full' : ''
+            }`}
           >
-            <LogOut className="h-4 w-4 text-muted" />
+            <LogOut className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>

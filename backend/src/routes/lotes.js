@@ -60,7 +60,7 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 10 * 1024 * 1024,
-    files: 200
+    files: 500
   },
   fileFilter(req, file, callback) {
     const extension = path.extname(file.originalname).toLowerCase();
@@ -100,7 +100,7 @@ async function carregarLote(req, res, next) {
 }
 
 function receberArquivos(req, res, next) {
-  upload.array('fotos', 200)(req, res, (error) => {
+  upload.array('fotos', 500)(req, res, (error) => {
     if (!error) return next();
 
     const directory = path.join(LOTES_DIR, String(req.params.id));
@@ -112,7 +112,7 @@ function receberArquivos(req, res, next) {
       }
 
       if (error.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ error: 'Envie no máximo 200 arquivos por lote' });
+        return res.status(400).json({ error: 'Envie no máximo 500 arquivos por lote' });
       }
 
       return res.status(400).json({ error: error.message });

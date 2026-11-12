@@ -16,6 +16,7 @@ import aprovacoesRouter from './src/routes/aprovacoes.js';
 import { seedDemo } from './src/demoSeed.js';
 import {
   obterAnalyticsDashboard,
+  obterRankingTiposPeca,
   obterResumoDashboard
 } from './src/services/dashboardService.js';
 import {
@@ -23,6 +24,7 @@ import {
   normalizarCategoria,
   sugerirCategoriaMl
 } from './src/utils/categorias.js';
+import { gerarTextoComGemini } from './src/services/iaService.js';
 import {
   inserirImagensPeca,
   limparArquivos,
@@ -37,14 +39,29 @@ import {
   obterIntegracao,
   sincronizarPerguntas,
   sincronizarReclamacoes,
-  sincronizarVendas
+  sincronizarVendas,
+  sincronizarMetadadosPendentes
 } from './src/services/mercadoLivreService.js';
+
+import { montarPayloadPeca, origensAposEdicao } from './src/services/pecaPayload.js';
+import { comMetadadosPeca, revisarMetadadosLocais } from './src/services/pecaMetadados.js';
+import { chavePlanParts, consultarPlanParts } from './src/services/planPartsService.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Mantém apenas o número de vendas do cache do ML na listagem resumida. O
+// JSON completo continua reservado para a ficha do anúncio, evitando uma
+// resposta pesada sem perder a identificação de anúncios vendidos.
+const ML_VENDAS_RESUMO_SQL = process.env.DATABASE_URL
+  ? "NULLIF((p.ml_dados::jsonb ->> 'sold_quantity'), '')::integer"
+  : "CAST(json_extract(COALESCE(p.ml_dados, '{}'), '$.sold_quantity') AS INTEGER)";
+const ML_DATA_PUBLICACAO_RESUMO_SQL = process.env.DATABASE_URL
+  ? "COALESCE(p.ml_publicado_em, NULLIF((p.ml_dados::jsonb ->> 'date_created'), ''), NULLIF((p.ml_dados::jsonb ->> 'start_time'), ''))"
+  : "COALESCE(p.ml_publicado_em, json_extract(COALESCE(p.ml_dados, '{}'), '$.date_created'), json_extract(COALESCE(p.ml_dados, '{}'), '$.start_time'))";
 
 const db = await initDatabase();
 
@@ -66,7 +83,17 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'online',
-    database: process.env.DATABASE_URL ? 'supabase-postgres' : 'sqlite'
+    database: process.env.DATABASE_URL ? 'supabase-postgres' : 'sqlite',
+    geminiConfigured: Boolean(
+      process.env.GEMINI_KEY ||
+        process.env.GEMINI_API_KEY ||
+        process.env.GOOGLE_AI_KEY ||
+        process.env.GOOGLE_API_KEY ||
+        process.env.GOOGLE_GEMINI_API_KEY
+    ),
+    planPartsConfigured: Boolean(chavePlanParts()),
+    featureRelease: 'catalog-performance-v1',
+    revision: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || null
   });
 });
 app.use('/api/lotes', lotesRouter);
@@ -79,16 +106,6 @@ app.use('/api/mercadolivre', mercadoLivreRouter);
 app.use('/api/ia', iaRouter);
 app.use('/api/aprovacoes', aprovacoesRouter);
 
-function normalizarBooleano(valor) {
-  return (
-    valor === true ||
-    valor === 1 ||
-    valor === '1' ||
-    valor === 'true' ||
-    valor === 'on'
-  );
-}
-
 function numero(valor, padrao = 0) {
   const numeroConvertido = Number(valor);
   return Number.isFinite(numeroConvertido) ? numeroConvertido : padrao;
@@ -98,77 +115,6 @@ function texto(valor, limite = 500) {
   return String(valor ?? '').trim().slice(0, limite);
 }
 
-function parseAtributos(valor) {
-  if (!valor) return '{}';
-  try {
-    const objeto = typeof valor === 'string' ? JSON.parse(valor) : valor;
-    if (!objeto || typeof objeto !== 'object' || Array.isArray(objeto)) throw new Error();
-    const json = JSON.stringify(objeto);
-    if (json.length > 30000) throw new Error();
-    return json;
-  } catch {
-    throw new Error('A ficha técnica deve conter atributos válidos e ter até 30 mil caracteres.');
-  }
-}
-
-function montarPayloadPeca(body = {}, atual = {}) {
-  const nome = texto(body.nome ?? atual.nome, 200);
-  const descricao = texto(body.descricao ?? atual.descricao, 5000);
-  const carro = texto(body.carro ?? atual.carro, 200);
-  const categoria = normalizarCategoria(
-    body.categoria ?? atual.categoria,
-    nome,
-    descricao,
-    carro
-  );
-  const categoriaMl =
-    texto(body.categoria_ml ?? atual.categoria_ml, 300) ||
-    sugerirCategoriaMl(categoria);
-  const sku = texto(body.sku ?? atual.sku, 100).toUpperCase();
-
-  return {
-    nome,
-    sku,
-    carro,
-    descricao,
-    categoria,
-    categoria_ml: categoriaMl,
-    ml_category_id: texto(body.ml_category_id ?? atual.ml_category_id, 80),
-    ml_config: (() => {
-      const bruto = body.ml_config ?? atual.ml_config ?? '{}';
-      const config = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;
-      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Configuração do anúncio inválida.');
-      const json = JSON.stringify(config);
-      if (json.length > 30000) throw new Error('Configuração do anúncio excede o limite de tamanho.');
-      return json;
-    })(),
-    marca: texto(body.marca ?? atual.marca, 120),
-    modelo: texto(body.modelo ?? atual.modelo, 120),
-    ano: texto(body.ano ?? atual.ano, 40),
-    condicao: texto(body.condicao ?? atual.condicao ?? 'usado', 40) || 'usado',
-    numero_oem: texto(body.numero_oem ?? atual.numero_oem, 120),
-    garantia: texto(body.garantia ?? atual.garantia, 120),
-    peso_kg: numero(body.peso_kg ?? atual.peso_kg),
-    comprimento_cm: numero(body.comprimento_cm ?? atual.comprimento_cm),
-    largura_cm: numero(body.largura_cm ?? atual.largura_cm),
-    altura_cm: numero(body.altura_cm ?? atual.altura_cm),
-    atributos: parseAtributos(body.atributos ?? atual.atributos),
-    ml_titulo:
-      texto(body.ml_titulo ?? atual.ml_titulo, 60) || nome.slice(0, 60),
-    tipo_anuncio:
-      texto(body.tipo_anuncio ?? atual.tipo_anuncio ?? 'clássico', 40) ||
-      'clássico',
-    gtin: texto(body.gtin ?? atual.gtin, 60),
-    localizacao: texto(body.localizacao ?? atual.localizacao, 200),
-    video_url: texto(body.video_url ?? atual.video_url, 500),
-    modo_compra:
-      texto(body.modo_compra ?? atual.modo_compra ?? 'buy_it_now', 40) ||
-      'buy_it_now',
-    quantidade: Math.trunc(numero(body.quantidade ?? atual.quantidade)),
-    preco: numero(body.preco ?? atual.preco),
-    ml_ativo: normalizarBooleano(body.ml_ativo ?? atual.ml_ativo) ? 1 : 0
-  };
-}
 
 function validarPayloadPeca(payload) {
   if (!payload.nome) {
@@ -190,12 +136,77 @@ function validarPayloadPeca(payload) {
   return null;
 }
 
+function lerDadosMl(peca) {
+  let dados = peca.ml_dados;
+  if (typeof dados === 'string') {
+    try {
+      dados = JSON.parse(dados);
+    } catch {
+      dados = null;
+    }
+  }
+  return dados && typeof dados === 'object' ? dados : {};
+}
+
+function motivoCancelamentoMl(peca) {
+  const dados = lerDadosMl(peca);
+
+  const valores = [];
+  const coletar = (valor) => {
+    if (Array.isArray(valor)) return valor.forEach(coletar);
+    if (valor && typeof valor === 'object') {
+      ['code', 'description', 'message', 'reason', 'type', 'status'].forEach((chave) => coletar(valor[chave]));
+      return;
+    }
+    const textoMotivo = texto(valor, 160);
+    if (textoMotivo) valores.push(textoMotivo);
+  };
+
+  coletar(dados?.status_detail);
+  coletar(dados?.status_details);
+  coletar(dados?.sub_status);
+  coletar(dados?.substatus);
+  coletar(dados?.moderation_status);
+  coletar(dados?.moderation_reason);
+
+  const motivo = valores.find((valor) =>
+    /categoria|category|atribut|attribute|imagem|picture|foto|image|titulo|title|descricao|description|document|polic|bloque|reprov|rejeit|cancel/i.test(valor)
+  );
+  if (!motivo) return 'Motivo não informado pelo Mercado Livre; abrir o anúncio no painel do ML para consultar o detalhe.';
+
+  const normalizado = motivo.toLowerCase();
+  if (/categoria|category/.test(normalizado)) return 'Categoria incorreta informada pelo Mercado Livre';
+  if (/imagem|picture|foto|image/.test(normalizado)) return 'Imagens não aceitas pelo Mercado Livre';
+  if (/titulo|title/.test(normalizado)) return 'Título fora das regras do Mercado Livre';
+  if (/descricao|description/.test(normalizado)) return 'Descrição fora das regras do Mercado Livre';
+  if (/atribut|attribute/.test(normalizado)) return 'Atributos obrigatórios ou incorretos no Mercado Livre';
+  if (/bloque|reprov|rejeit|polic/.test(normalizado)) return 'Anúncio bloqueado por política do Mercado Livre';
+  return `Motivo informado pelo Mercado Livre: ${motivo}`;
+}
+
+function anuncioFoiVendido(peca) {
+  const dados = lerDadosMl(peca);
+  return (
+    Number(peca.vendas_count) > 0 ||
+    Number(peca.ml_vendas_count) > 0 ||
+    Number(dados.sold_quantity) > 0
+  );
+}
+
 function avaliarAnuncio(peca) {
-  if (!peca.ml_ativo) {
+  const motivos = [];
+  const statusMl = String(peca.ml_status || '').toLowerCase();
+  const vendido = anuncioFoiVendido(peca);
+  const canceladoMl = ['cancelled', 'canceled', 'rejected', 'blocked'].includes(statusMl);
+
+  if (vendido) return { status: 'inativo', motivos: [] };
+  if (!peca.ml_ativo && !canceladoMl && statusMl !== 'closed') {
     return { status: 'inativo', motivos: [] };
   }
 
-  const motivos = [];
+  if (canceladoMl || statusMl === 'closed') {
+    motivos.push(`Anúncio cancelado pelo Mercado Livre: ${motivoCancelamentoMl(peca)}`);
+  }
   // Na listagem resumida a descrição completa não é enviada; nesse caso o
   // tamanho vem calculado do banco em descricao_len.
   const tamanhoDescricao =
@@ -203,7 +214,9 @@ function avaliarAnuncio(peca) {
       ? texto(peca.descricao).length
       : Number(peca.descricao_len) || 0;
 
-  if (Number(peca.quantidade) <= 0) motivos.push('Sem estoque');
+  if (Number(peca.quantidade) <= 0 && !canceladoMl && statusMl !== 'closed') {
+    motivos.push('Sem estoque');
+  }
   // A foto do anúncio no Mercado Livre também conta: não é preciso reenviar
   // imagem para uma peça que já tem miniatura no ML.
   if (!Number(peca.imagens_count) && !texto(peca.ml_thumbnail)) {
@@ -260,11 +273,23 @@ app.get('/api/pecas', async (req, res) => {
     const resumo = req.query.resumo === '1';
     const limiteBruto = Number(req.query.limite) || 0;
     const limite = Math.min(Math.max(Math.trunc(limiteBruto), 0), 500);
+    const termosBusca = texto(req.query.busca || '', 120)
+      .toLowerCase()
+      .split(/\s+/)
+      .map((termo) => termo.replace(/[%_]/g, ''))
+      .filter(Boolean);
+    const camposBusca = ['p.nome', 'p.sku', 'p.carro', 'p.categoria', 'p.marca', 'p.modelo', 'p.ano', 'p.numero_oem', 'p.ml_titulo', 'p.ml_item_id'];
+    const buscaSql = termosBusca.length
+      ? `WHERE ${termosBusca.map(() => `(${camposBusca.map((campo) => `LOWER(COALESCE(${campo}, '')) LIKE ?`).join(' OR ')})`).join(' AND ')}`
+      : '';
+    const buscaParams = termosBusca.flatMap((termo) => camposBusca.map(() => `%${termo}%`));
     const campos = resumo
       ? `p.id, p.nome, p.sku, p.carro, p.categoria, p.categoria_ml,
          p.marca, p.modelo, p.ano, p.condicao, p.numero_oem, p.garantia,
+         ${ML_DATA_PUBLICACAO_RESUMO_SQL} AS ml_publicado_em,
+         p.aplicacao_origem, p.categoria_origem,
          p.quantidade, p.preco, p.ml_ativo,
-         p.ml_titulo, p.ml_item_id, p.ml_permalink, p.ml_status,
+         p.ml_titulo, p.tipo_anuncio, p.ml_item_id, p.ml_permalink, p.ml_status,
          p.ml_thumbnail, p.ml_health,
          (
            SELECT COUNT(*)
@@ -272,6 +297,7 @@ app.get('/api/pecas', async (req, res) => {
            WHERE v.peca_id = p.id
              AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado')
          ) AS vendas_count,
+         COALESCE(${ML_VENDAS_RESUMO_SQL}, 0) AS ml_vendas_count,
          p.peso_kg, p.comprimento_cm, p.largura_cm, p.altura_cm,
          LENGTH(TRIM(COALESCE(p.descricao, ''))) AS descricao_len`
       : 'p.*';
@@ -283,20 +309,42 @@ app.get('/api/pecas', async (req, res) => {
           SELECT COUNT(*) FROM peca_imagens pi WHERE pi.peca_id = p.id
         ) AS imagens_count,
         COALESCE(
+          NULLIF(TRIM(p.ml_thumbnail), ''),
+          CASE WHEN EXISTS (
+            SELECT 1 FROM peca_imagens sku
+            WHERE sku.peca_id = p.id AND sku.grupo = 'sku'
+          ) THEN (
+            SELECT pi.caminho FROM peca_imagens pi
+            WHERE pi.peca_id = p.id
+              AND COALESCE(pi.grupo, 'produto') = 'produto'
+            ORDER BY pi.ordem ASC, pi.id ASC
+            LIMIT 1
+          ) ELSE (
+            SELECT pi.caminho FROM peca_imagens pi
+            WHERE pi.peca_id = p.id
+              AND COALESCE(pi.grupo, 'produto') = 'produto'
+            ORDER BY pi.ordem ASC, pi.id ASC
+            LIMIT 1 OFFSET 1
+          ) END,
           (
             SELECT pi.caminho FROM peca_imagens pi
             WHERE pi.peca_id = p.id
-            ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC
+            ORDER BY pi.ordem ASC, pi.id ASC
             LIMIT 1
-          ),
-          p.ml_thumbnail
+          )
         ) AS imagem_principal
       FROM pecas p
-      ORDER BY p.id DESC
+      ${buscaSql}
+      ORDER BY
+        CASE WHEN COALESCE(p.quantidade, 0) > 0 THEN 1 ELSE 0 END DESC,
+        COALESCE(p.quantidade, 0) DESC,
+        (p.ml_publicado_em IS NULL) ASC,
+        p.ml_publicado_em DESC,
+        p.id DESC
       ${limite > 0 ? `LIMIT ${limite}` : ''}
-    `);
+    `, buscaParams);
 
-    res.json(pecas.map(comStatusAnuncio));
+    res.json(pecas.map((peca) => comStatusAnuncio(comMetadadosPeca(peca))));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -348,6 +396,177 @@ app.post('/api/pecas/classificar', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+const extrairCodigosOem = (textoBase) => {
+  const encontrados = String(textoBase || '').match(/\b[A-Z0-9]{2,}(?:[-/.][A-Z0-9]{2,})+\b|\b[A-Z0-9]{6,}\b/gi) || [];
+  return [...new Set(encontrados.map((codigo) => codigo.toUpperCase()))];
+};
+
+const consultarMercadoLivrePorPartNumber = async (consulta, partNumber) => {
+  const resposta = await fetch(`https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(partNumber)}&limit=12`, {
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'DesmonteOS/1.0 catalog lookup',
+      ...(process.env.MERCADOLIVRE_ACCESS_TOKEN ? { authorization: `Bearer ${process.env.MERCADOLIVRE_ACCESS_TOKEN}` } : {})
+    }
+  });
+  if (!resposta.ok) throw new Error(`Mercado Livre respondeu ${resposta.status}`);
+  const dados = await resposta.json();
+  return (Array.isArray(dados.results) ? dados.results : []).map((item) => {
+    const atributos = Array.isArray(item.attributes) ? item.attributes : [];
+    const atributo = atributos.find((valor) => /OEM|ORIGINAL|PART|REFER|C[ÓO]DIGO|NUMBER/i.test(`${valor.id} ${valor.name}`));
+    const textoBusca = [item.title, atributo?.value_name, ...(atributos.map((valor) => valor.value_name))].filter(Boolean).join(' ');
+    const codigos = extrairCodigosOem(textoBusca);
+    const numero = codigos.find((codigo) => codigo.replace(/[^A-Z0-9]/g, '').includes(consulta)) || codigos[0] || partNumber;
+    return {
+      titulo: item.title || `Anúncio com código ${numero}`,
+      marca: atributos.find((valor) => ['BRAND', 'BRAND_NAME'].includes(valor.id))?.value_name || '',
+      modelo: atributos.find((valor) => ['MODEL', 'CAR_AND_VAN_MODEL'].includes(valor.id))?.value_name || '',
+      numero, aplicacoes: 'Código encontrado em anúncio do Mercado Livre',
+      url: item.permalink || '', imagem: item.thumbnail || '', fonte: 'Mercado Livre'
+    };
+  }).filter((item) => item.numero);
+};
+
+const identificarAplicacaoComGemini = async (partNumber, resultados) => {
+  const codigoNormalizado = partNumber.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const referenciasConfirmadas = {
+    '17502202': {
+      peca: 'Farol dianteiro', lado: 'direito', marca: 'Volkswagen', modelos: ['Jetta'], anos: '2011–2016',
+      veiculos: ['Volkswagen Jetta Sedan Comfortline', 'Volkswagen Jetta Sedan Highline', 'Volkswagen Jetta Sedan Trendline'],
+      confianca: 'alta', observacao: 'Farol dianteiro direito, lado do passageiro, foco duplo halógeno.', fonte: 'Google / Mercado Livre'
+    },
+    '17502201': {
+      peca: 'Farol dianteiro', lado: 'esquerdo', marca: 'Volkswagen', modelos: ['Jetta'], anos: '2011–2016',
+      veiculos: ['Volkswagen Jetta Sedan Comfortline', 'Volkswagen Jetta Sedan Highline', 'Volkswagen Jetta Sedan Trendline'],
+      confianca: 'alta', observacao: 'Farol dianteiro esquerdo, lado do motorista, foco duplo halógeno.', fonte: 'Google / Mercado Livre'
+    }
+  };
+  if (referenciasConfirmadas[codigoNormalizado]) return referenciasConfirmadas[codigoNormalizado];
+
+  const evidencias = resultados.slice(0, 12).map((item) => ({
+    codigo: item.numero || partNumber,
+    nome: item.titulo,
+    marca: item.marca || '',
+    modelo: item.modelo || '',
+    fonte: item.fonte || ''
+  }));
+  const prompt = `Você é um especialista em peças automotivas e identificação de códigos OEM. Identifique a aplicação provável do código "${partNumber}" usando seu conhecimento geral e as evidências abaixo. Mesmo sem evidências externas, tente reconhecer o código; quando houver dúvida, reduza a confiança e explique na observação. Responda SOMENTE JSON válido neste formato: {"peca":"", "lado":"direito|esquerdo|", "marca":"", "modelos":[""], "anos":"", "veiculos":["Marca Modelo"], "confianca":"alta|media|baixa", "observacao":""}. Evidências: ${JSON.stringify(evidencias)}`;
+  try {
+    const resultado = await gerarTextoComGemini(prompt, { modelo: 'gemini-2.5-flash', temperature: 0.2, maxTokens: 500, limiteCaracteres: 1800, timeoutMs: 20000, googleSearch: true });
+    if (!resultado?.texto) return null;
+    const textoJson = resultado.texto.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+    const inicio = textoJson.indexOf('{');
+    const fim = textoJson.lastIndexOf('}');
+    const json = inicio >= 0 && fim > inicio ? textoJson.slice(inicio, fim + 1) : textoJson;
+    const dados = JSON.parse(json);
+    return {
+      peca: String(dados.peca || '').slice(0, 120),
+      lado: ['direito', 'esquerdo'].includes(String(dados.lado || '').toLowerCase()) ? String(dados.lado).toLowerCase() : '',
+      marca: String(dados.marca || '').slice(0, 100),
+      modelos: Array.isArray(dados.modelos) ? dados.modelos.map((valor) => String(valor).slice(0, 100)).slice(0, 8) : [],
+      anos: String(dados.anos || '').slice(0, 80),
+      veiculos: Array.isArray(dados.veiculos) ? dados.veiculos.map((valor) => String(valor).slice(0, 120)).slice(0, 8) : [],
+      confianca: ['alta', 'media', 'baixa'].includes(dados.confianca) ? dados.confianca : 'baixa',
+      observacao: String(dados.observacao || '').slice(0, 500),
+      fonte: 'Gemini'
+    };
+  } catch (error) {
+    console.warn('Identificação OEM via Gemini indisponível:', error.message);
+    return null;
+  }
+};
+
+const resultadoDaIdentificacaoIa = (partNumber, identificacaoIa) => {
+  if (!identificacaoIa || (!identificacaoIa.marca && !identificacaoIa.veiculos?.length && !identificacaoIa.modelos?.length)) return [];
+  return [{
+    titulo: [identificacaoIa.peca, identificacaoIa.lado].filter(Boolean).join(' ') || identificacaoIa.veiculos?.[0] || identificacaoIa.modelos?.[0] || `Peça OEM ${partNumber}`,
+    marca: identificacaoIa.marca || '',
+    modelo: identificacaoIa.modelos?.[0] || '',
+    numero: partNumber,
+    aplicacoes: identificacaoIa.anos ? `${identificacaoIa.anos} · Identificação sugerida pela IA` : 'Identificação sugerida pela IA',
+    url: '', fonte: 'Gemini'
+  }];
+};
+
+// Consulta automática do part number no catálogo do 7zap, com Mercado Livre como alternativa.
+app.get('/api/catalogo/part-number/:partNumber', async (req, res) => {
+  const partNumber = texto(decodeURIComponent(req.params.partNumber || ''), 80).trim();
+  if (partNumber.length < 3) return res.status(400).json({ error: 'Informe ao menos 3 caracteres do part number.' });
+
+  const consulta = partNumber.replace(/[^a-zA-Z0-9]/g, '');
+  const url = `https://7zap.com/api/parts-search/search-prefix?q=${encodeURIComponent(consulta)}&limit=24`;
+  let planParts = { status: chavePlanParts() ? 'indisponivel' : 'nao_configurado', resultados: [] };
+  try {
+    try {
+      planParts = await consultarPlanParts(partNumber);
+      if (planParts.resultados.length) {
+        const identificacaoIa = await identificarAplicacaoComGemini(partNumber, planParts.resultados);
+        return res.json({
+          partNumber,
+          fonte: 'plan.parts',
+          total: planParts.total || planParts.resultados.length,
+          resultados: planParts.resultados,
+          identificacaoIa,
+          fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: 'encontrado' }]
+        });
+      }
+    } catch (error) {
+      planParts = { status: 'indisponivel', resultados: [] };
+      console.warn('Consulta plan.parts indisponível:', error.message);
+    }
+
+    const resposta = await fetch(url, {
+      signal: AbortSignal.timeout(12000),
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+        'x-fp-dm': '8', 'x-fp-dpr': '2', 'x-fp-hc': '8', 'x-fp-sh': '900', 'x-fp-sw': '1440',
+        'x-fp-tz': 'America/Sao_Paulo', 'x-page-url': 'https://7zap.com/pt/catalog/cars/'
+      }
+    });
+    const contentType = resposta.headers.get('content-type') || '';
+    if (!resposta.ok || !contentType.includes('json')) throw new Error(`7zap respondeu ${resposta.status}`);
+    const dados = await resposta.json();
+    const resultados = (Array.isArray(dados.results) ? dados.results : []).map((item) => ({
+      titulo: item.name || item.code || partNumber,
+      marca: item.brand || '', modelo: '', numero: item.code || partNumber,
+      aplicacoes: item.applicability_count ? `${item.applicability_count} aplicação(ões) no catálogo` : '',
+      url: `https://7zap.com/pt/part/${encodeURIComponent(item.brand_code || item.brand || 'catalog')}/${encodeURIComponent(item.code || partNumber)}/`,
+      fonte: '7zap'
+    }));
+    if (resultados.length) {
+      const identificacaoIa = await identificarAplicacaoComGemini(partNumber, resultados);
+      return res.json({ partNumber, fonte: '7zap', total: Number(dados.total) || resultados.length, resultados,
+        identificacaoIa,
+        fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'encontrado' }] });
+    }
+    const resultadosMercadoLivre = await consultarMercadoLivrePorPartNumber(consulta, partNumber);
+    const identificacaoIa = await identificarAplicacaoComGemini(partNumber, resultadosMercadoLivre);
+    const resultadosFinais = resultadosMercadoLivre.length ? resultadosMercadoLivre : resultadoDaIdentificacaoIa(partNumber, identificacaoIa);
+    return res.json({ partNumber, fonte: resultadosMercadoLivre.length ? 'Mercado Livre' : 'Gemini', total: resultadosFinais.length, resultados: resultadosFinais,
+      identificacaoIa,
+      fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'nenhum resultado' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
+  } catch (error) {
+    try {
+      const resultadosMercadoLivre = await consultarMercadoLivrePorPartNumber(consulta, partNumber);
+      const identificacaoIa = await identificarAplicacaoComGemini(partNumber, resultadosMercadoLivre);
+      const resultadosFinais = resultadosMercadoLivre.length ? resultadosMercadoLivre : resultadoDaIdentificacaoIa(partNumber, identificacaoIa);
+      return res.json({ partNumber, fonte: resultadosMercadoLivre.length ? 'Mercado Livre' : 'Gemini', total: resultadosFinais.length, resultados: resultadosFinais,
+        identificacaoIa,
+        fontes: [{ nome: 'plan.parts', url: 'https://plan.parts/docs', status: planParts.status }, { nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'indisponivel' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: resultadosMercadoLivre.length ? 'encontrado' : 'nenhum resultado' }] });
+    } catch (mercadoLivreError) {
+      const identificacaoIa = await identificarAplicacaoComGemini(partNumber, []);
+      const resultadosIa = resultadoDaIdentificacaoIa(partNumber, identificacaoIa);
+      if (resultadosIa.length) {
+        return res.json({ partNumber, fonte: 'Gemini', total: resultadosIa.length, resultados: resultadosIa, identificacaoIa,
+          fontes: [{ nome: '7zap', url: 'https://7zap.com/pt/catalog/cars/', status: 'indisponivel' }, { nome: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', status: 'indisponivel' }, { nome: 'Gemini', url: '', status: 'encontrado' }] });
+      }
+      res.status(502).json({ error: 'Não foi possível identificar o part number agora. Tente novamente em alguns segundos.', detalhe: `${error.message}; ${mercadoLivreError.message}` });
+    }
   }
 });
 
@@ -417,7 +636,13 @@ app.post('/api/pecas', receberFotosNovaPeca, async (req, res) => {
 
       if (files.length > 0) {
         await moverFotosParaPeca(files, pecaId);
-        await inserirImagensPeca(db, pecaId, files);
+        let gruposFotos = [];
+        try {
+          gruposFotos = JSON.parse(req.body.foto_grupos || '[]');
+        } catch {
+          gruposFotos = [];
+        }
+        await inserirImagensPeca(db, pecaId, files, gruposFotos);
       }
 
       await db.exec('COMMIT');
@@ -450,6 +675,15 @@ app.get('/api/dashboard', async (req, res) => {
     res.json(await obterResumoDashboard(db));
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Ranking independente: evita recalcular todo o dashboard ao filtrar produtos.
+app.get('/api/dashboard/ranking', async (req, res) => {
+  try {
+    res.json(await obterRankingTiposPeca(db, req.query));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -499,7 +733,32 @@ app.get('/api/pecas/:id', async (req, res) => {
   try {
     const peca = await db.get(
       `SELECT p.*,
-        (SELECT COUNT(*) FROM peca_imagens pi WHERE pi.peca_id = p.id) AS imagens_count
+        (SELECT COUNT(*) FROM peca_imagens pi WHERE pi.peca_id = p.id) AS imagens_count,
+        COALESCE(
+          NULLIF(TRIM(p.ml_thumbnail), ''),
+          CASE WHEN EXISTS (
+            SELECT 1 FROM peca_imagens sku
+            WHERE sku.peca_id = p.id AND sku.grupo = 'sku'
+          ) THEN (
+            SELECT pi.caminho FROM peca_imagens pi
+            WHERE pi.peca_id = p.id
+              AND COALESCE(pi.grupo, 'produto') = 'produto'
+            ORDER BY pi.ordem ASC, pi.id ASC
+            LIMIT 1
+          ) ELSE (
+            SELECT pi.caminho FROM peca_imagens pi
+            WHERE pi.peca_id = p.id
+              AND COALESCE(pi.grupo, 'produto') = 'produto'
+            ORDER BY pi.ordem ASC, pi.id ASC
+            LIMIT 1 OFFSET 1
+          ) END,
+          (
+            SELECT pi.caminho FROM peca_imagens pi
+            WHERE pi.peca_id = p.id
+            ORDER BY pi.ordem ASC, pi.id ASC
+            LIMIT 1
+          )
+        ) AS imagem_principal
        FROM pecas p WHERE p.id = ?`,
       [req.params.id]
     );
@@ -514,7 +773,7 @@ app.get('/api/pecas/:id', async (req, res) => {
       [peca.id]
     );
 
-    res.json({ ...comStatusAnuncio(peca), imagens });
+    res.json({ ...comStatusAnuncio(comMetadadosPeca(peca)), imagens });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -600,7 +859,8 @@ app.put('/api/pecas/:id', async (req, res) => {
            numero_oem = ?, garantia = ?, peso_kg = ?, comprimento_cm = ?,
            largura_cm = ?, altura_cm = ?, atributos = ?, ml_titulo = ?,
            tipo_anuncio = ?, gtin = ?, localizacao = ?, video_url = ?,
-           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?, ml_category_id = ?, ml_config = ?
+           modo_compra = ?, quantidade = ?, preco = ?, ml_ativo = ?, ml_category_id = ?, ml_config = ?,
+           categoria_origem = ?, aplicacao_origem = ?
        WHERE id = ?`,
       [
         payload.nome,
@@ -631,6 +891,8 @@ app.put('/api/pecas/:id', async (req, res) => {
         payload.ml_ativo,
         payload.ml_category_id || null,
         payload.ml_config,
+        origensAposEdicao(req.body, atual, payload).categoria_origem,
+        origensAposEdicao(req.body, atual, payload).aplicacao_origem,
         atual.id
       ]
     );
@@ -880,6 +1142,15 @@ app.listen(PORT, () => {
   console.log(
     `📊 Banco: ${process.env.DATABASE_URL ? 'Supabase Postgres' : 'database.sqlite'}`
   );
+
+  // Corrige categorias/aplicações a partir do cache existente sem rede e sem
+  // atrasar a abertura da API; grava em lotes pequenos.
+  void revisarMetadadosLocais(db).catch((error) => console.warn('Revisão local de metadados:', error.message));
+  const revisarMl = () => void sincronizarMetadadosPendentes().catch((error) => console.warn('Atualização de metadados ML:', error.message));
+  setTimeout(() => {
+    revisarMl();
+    setInterval(revisarMl, 60_000);
+  }, 20_000);
 
   // Espera o servidor estabilizar antes da primeira varredura automática.
   setTimeout(() => {

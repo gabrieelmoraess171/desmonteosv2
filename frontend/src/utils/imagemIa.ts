@@ -11,7 +11,7 @@ interface ArquivoParaIa {
 
 const DIMENSAO_MAXIMA = 1280;
 const QUALIDADE_JPEG = 0.82;
-const TAMANHO_MAXIMO_BASE64 = 4 * 1024 * 1024;
+const TAMANHO_MAXIMO_BASE64 = 850 * 1024;
 
 function lerComoDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -39,7 +39,7 @@ function carregarImagem(file: File): Promise<HTMLImageElement> {
   });
 }
 
-async function redimensionar(file: File): Promise<string> {
+async function redimensionar(file: File, tamanhoMaximoBase64 = TAMANHO_MAXIMO_BASE64): Promise<string> {
   const imagem = await carregarImagem(file);
   const maiorLado = Math.max(imagem.naturalWidth, imagem.naturalHeight);
   const escala =
@@ -47,21 +47,35 @@ async function redimensionar(file: File): Promise<string> {
   const largura = Math.max(1, Math.round(imagem.naturalWidth * escala));
   const altura = Math.max(1, Math.round(imagem.naturalHeight * escala));
   const canvas = document.createElement('canvas');
+  let larguraAtual = largura;
+  let alturaAtual = altura;
+  let qualidade = QUALIDADE_JPEG;
 
-  canvas.width = largura;
-  canvas.height = altura;
+  for (let tentativa = 0; tentativa < 9; tentativa += 1) {
+    canvas.width = larguraAtual;
+    canvas.height = alturaAtual;
 
-  const contexto = canvas.getContext('2d');
-  if (!contexto) {
-    return lerComoDataUrl(file);
+    const contexto = canvas.getContext('2d');
+    if (!contexto) {
+      const original = await lerComoDataUrl(file);
+      if (original.length <= tamanhoMaximoBase64) return original;
+      throw new Error(`Não foi possível reduzir o tamanho de ${file.name}`);
+    }
+
+    contexto.drawImage(imagem, 0, 0, larguraAtual, alturaAtual);
+    const dataUrl = canvas.toDataURL('image/jpeg', qualidade);
+    if (dataUrl.length <= tamanhoMaximoBase64) return dataUrl;
+
+    if (qualidade > 0.58) {
+      qualidade = Math.max(0.58, qualidade - 0.12);
+    } else {
+      larguraAtual = Math.max(1, Math.round(larguraAtual * 0.8));
+      alturaAtual = Math.max(1, Math.round(alturaAtual * 0.8));
+      qualidade = 0.72;
+    }
   }
 
-  contexto.drawImage(imagem, 0, 0, largura, altura);
-
-  const dataUrl = canvas.toDataURL('image/jpeg', QUALIDADE_JPEG);
-  return dataUrl.length > TAMANHO_MAXIMO_BASE64
-    ? canvas.toDataURL('image/jpeg', 0.65)
-    : dataUrl;
+  throw new Error(`Não foi possível reduzir o tamanho de ${file.name}`);
 }
 
 /**
@@ -70,7 +84,8 @@ async function redimensionar(file: File): Promise<string> {
  */
 export async function prepararImagensParaIa(
   arquivos: ArquivoParaIa[],
-  maxImagens = 8
+  maxImagens = 8,
+  tamanhoMaximoBase64 = TAMANHO_MAXIMO_BASE64
 ): Promise<ImagemParaIa[]> {
   const selecionados = arquivos
     .filter((item) => item.file && item.file.type.startsWith('image/'))
@@ -79,7 +94,7 @@ export async function prepararImagensParaIa(
 
   for (const item of selecionados) {
     try {
-      const dataUrl = await redimensionar(item.file);
+      const dataUrl = await redimensionar(item.file, tamanhoMaximoBase64);
       const mime = dataUrl.match(/^data:([^;]+);base64,/)?.[1] || 'image/jpeg';
 
       if (dataUrl.startsWith('data:image/')) {

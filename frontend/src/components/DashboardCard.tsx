@@ -1,10 +1,20 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 
+type DashboardCardTone = 'default' | 'warning' | 'danger';
+
+const TONE_CLASSES: Record<DashboardCardTone, string> = {
+  default: '',
+  warning: 'dashboard-card--warning',
+  danger: 'dashboard-card--danger',
+};
+
 interface DashboardCardProps {
   title: string;
   value: string | number;
   icon: ReactNode;
   subtitle?: string;
+  tone?: DashboardCardTone;
+  statusLabel?: string;
   trend?: {
     value: number;
     isPositive: boolean;
@@ -17,6 +27,8 @@ export default function DashboardCard({
   value,
   icon,
   subtitle,
+  tone = 'default',
+  statusLabel,
   trend,
   onClick,
 }: DashboardCardProps) {
@@ -35,27 +47,32 @@ export default function DashboardCard({
       onKeyDown={handleKeyDown}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      className={`group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all ${
+      className={`dashboard-card ${TONE_CLASSES[tone]} group relative overflow-hidden rounded-2xl border border-line bg-card p-5 shadow-lg shadow-black/20 transition-all ${
         onClick
           ? 'cursor-pointer hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
           : ''
       }`}
     >
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-cyan to-transparent opacity-50 transition-opacity group-hover:opacity-100" />
-
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-            {title}
-          </p>
-          <p className="mt-2 font-heading text-3xl font-bold leading-none tracking-wide text-ink">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="dashboard-card__label text-xs font-medium text-muted">
+              {title}
+            </p>
+            {statusLabel && (
+              <span className="dashboard-card__status rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                {statusLabel}
+              </span>
+            )}
+          </div>
+          <p className="dashboard-card__value mt-1 font-heading text-2xl font-bold leading-tight tracking-tight text-ink">
             {value}
           </p>
           {subtitle && (
-            <p className="mt-2 text-xs text-muted leading-relaxed">{subtitle}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">{subtitle}</p>
           )}
         </div>
-        <div className="shrink-0 rounded-xl border border-line bg-secondary/80 p-2.5 transition-colors group-hover:border-accent/40">
+        <div className="dashboard-card__icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" aria-hidden="true">
           {icon}
         </div>
       </div>

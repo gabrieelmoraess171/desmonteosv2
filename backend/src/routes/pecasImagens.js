@@ -8,6 +8,7 @@ import {
   removerArquivoImagem,
   uploadFotosPeca
 } from '../services/pecaImagensService.js';
+import { atualizarAnuncioPeca } from '../services/mercadoLivreService.js';
 
 const router = express.Router();
 
@@ -130,6 +131,63 @@ router.patch(
     res.json({
       ok: true,
       message: 'Foto principal atualizada',
+      imagens: await listarImagensPeca(db, req.peca.id)
+    });
+  })
+);
+
+// Reordenar fotos locais e, quando solicitado, refletir a ordem no anúncio ML.
+router.patch(
+  '/:id/imagens/ordem',
+  carregarPeca,
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'Informe a ordem das imagens.' });
+    }
+
+    const db = getDb();
+    const imagens = await db.all(
+      'SELECT id FROM peca_imagens WHERE peca_id = ? AND id IN (' + ids.map(() => '?').join(',') + ')',
+      [req.peca.id, ...ids]
+    );
+    const permitidas = new Set(imagens.map((imagem) => Number(imagem.id)));
+    if (ids.some((id) => !permitidas.has(id))) {
+      return res.status(400).json({ error: 'Uma das imagens não pertence a esta peça.' });
+    }
+
+    await db.exec('BEGIN IMMEDIATE');
+    try {
+      for (let indice = 0; indice < ids.length; indice += 1) {
+        await db.run(
+          'UPDATE peca_imagens SET ordem = ?, is_principal = ? WHERE id = ? AND peca_id = ?',
+          [indice, indice === 0 ? 1 : 0, ids[indice], req.peca.id]
+        );
+      }
+      await db.exec('COMMIT');
+    } catch (error) {
+      await db.exec('ROLLBACK').catch(() => {});
+      throw error;
+    }
+
+    let mercado_livre = false;
+    let aviso = '';
+    if (req.body?.sincronizarMl && req.peca.ml_item_id) {
+      try {
+        await atualizarAnuncioPeca(req.peca.id, { sincronizarFotos: true });
+        mercado_livre = true;
+      } catch (error) {
+        aviso = error?.message || 'A ordem foi salva, mas não foi possível atualizar o Mercado Livre.';
+      }
+    }
+
+    res.json({
+      ok: true,
+      mercado_livre,
+      aviso,
       imagens: await listarImagensPeca(db, req.peca.id)
     });
   })

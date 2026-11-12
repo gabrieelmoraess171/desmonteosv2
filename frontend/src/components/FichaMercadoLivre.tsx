@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Loader2, Search } from 'lucide-react';
+import type { FichaMlCarregada } from '../config/atributosMl';
 
 export interface ConfigAnuncioMl {
   compatibilities?: Array<{ attributes: Record<string, string>; note?: string; positions?: Array<{ value_id: string; value_name: string }> }>;
@@ -40,11 +41,14 @@ function Campo({ campo, valor, onChange }: { campo: CampoMl; valor: string; onCh
   </label>;
 }
 
-export default function FichaMercadoLivre({ categoryId, titulo, atributos, config, onCategoria, onAtributos, onConfig }: {
+export default function FichaMercadoLivre({ categoryId, titulo, atributos, config, onCategoria, onAtributos, onConfig, onFicha }: {
   categoryId: string; titulo: string; atributos: Record<string, string>; config: ConfigAnuncioMl;
   onCategoria: (id: string, nome: string) => void;
   onAtributos: (atributos: Record<string, string>) => void;
   onConfig: (config: ConfigAnuncioMl) => void;
+  // A ficha da categoria é usada pelo modal para saber quais atributos são
+  // obrigatórios antes de publicar.
+  onFicha?: (ficha: FichaMlCarregada | null) => void;
 }) {
   const [busca, setBusca] = useState('');
   const [opcoes, setOpcoes] = useState<Array<{ category_id?: string; category_name?: string; id?: string; name?: string }>>([]);
@@ -55,14 +59,23 @@ export default function FichaMercadoLivre({ categoryId, titulo, atributos, confi
   const [mostrarAvancados, setMostrarAvancados] = useState(false);
   useEffect(() => {
     setFicha(null);
-    if (!categoryId) return;
+    if (!categoryId) {
+      onFicha?.(null);
+      return;
+    }
     const controller = new AbortController();
     setCarregando(true); setErro('');
     axios.get<FichaMl>(`/api/mercadolivre/cadastro/categorias/${categoryId}`, { signal: controller.signal })
-      .then(({ data }) => setFicha(data))
+      .then(({ data }) => {
+        setFicha(data);
+        onFicha?.(data as unknown as FichaMlCarregada);
+      })
       .catch((error) => { if (!controller.signal.aborted) setErro(error.response?.data?.error || 'Não foi possível consultar a ficha oficial.'); })
       .finally(() => { if (!controller.signal.aborted) setCarregando(false); });
     return () => controller.abort();
+    // onFicha é recriado a cada render pelo modal; incluí-lo reagendaria a
+    // consulta da ficha sem necessidade.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryId]);
   const pesquisar = async (raiz = false) => {
     setCarregando(true); setErro('');
@@ -100,9 +113,9 @@ export default function FichaMercadoLivre({ categoryId, titulo, atributos, confi
     </>}
     <h4 className="border-t border-line pt-3 text-sm font-semibold">Envio e catálogo</h4>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <label className="text-xs">Modalidade de envio<select value={config.shipping?.mode || ''} onChange={(event) => onConfig({ ...config, shipping: { ...config.shipping, mode: event.target.value } })} className="mt-1 w-full rounded-lg border border-line bg-primary p-2"><option value="">Padrão da conta / categoria</option><option value="me2">Mercado Envios</option><option value="custom">Envio personalizado</option><option value="not_specified">A combinar com o comprador</option></select></label>
-      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(config.shipping?.free_shipping)} onChange={(event) => onConfig({ ...config, shipping: { ...config.shipping, free_shipping: event.target.checked } })} />Oferecer frete grátis</label>
-      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(config.shipping?.local_pick_up)} onChange={(event) => onConfig({ ...config, shipping: { ...config.shipping, local_pick_up: event.target.checked } })} />Permitir retirada em mãos</label>
+      <label className="text-xs">Modalidade de envio<select value="not_specified" disabled className="mt-1 w-full rounded-lg border border-line bg-primary p-2 disabled:opacity-70"><option value="not_specified">Por conta do comprador</option></select></label>
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={false} disabled />Frete por conta do comprador</label>
+      <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={false} disabled />Retirada pessoalmente desativada</label>
       <label className="text-xs">Produto do catálogo (opcional)<input value={config.catalog_product_id || ''} onChange={(event) => onConfig({ ...config, catalog_product_id: event.target.value })} placeholder="MLB…" className="mt-1 w-full rounded-lg border border-line bg-primary p-2" /></label>
       <label className="text-xs">Loja oficial (se aplicável)<input value={config.official_store_id || ''} onChange={(event) => onConfig({ ...config, official_store_id: event.target.value })} inputMode="numeric" placeholder="ID da sua loja oficial" className="mt-1 w-full rounded-lg border border-line bg-primary p-2" /></label>
     </div>

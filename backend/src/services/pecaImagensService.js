@@ -117,7 +117,7 @@ export async function moverFotosParaPeca(files, pecaId) {
   }
 }
 
-export async function inserirImagensPeca(db, pecaId, files) {
+export async function inserirImagensPeca(db, pecaId, files, grupos = []) {
   const existentes = await db.get(
     'SELECT COUNT(*) AS total FROM peca_imagens WHERE peca_id = ?',
     [pecaId]
@@ -145,22 +145,24 @@ export async function inserirImagensPeca(db, pecaId, files) {
   let temPrincipal = Number(principal?.total ?? 0) > 0;
   const inseridas = [];
 
-  for (const file of files) {
-    const isPrincipal = !temPrincipal ? 1 : 0;
+  for (const [indice, file] of files.entries()) {
+    const grupo = ['sku', 'produto', 'medidas', 'codigo'].includes(grupos[indice]) ? grupos[indice] : 'produto';
+    const isPrincipal = !temPrincipal && (grupo === 'produto' || files.length === 1) ? 1 : 0;
     const caminho = `/uploads/pecas/${pecaId}/${file.filename}`;
     const nomeArquivo = file.originalname || file.filename;
 
     const resultado = await db.run(
       `INSERT INTO peca_imagens (
-        peca_id, caminho, nome_arquivo, is_principal, ordem
-      ) VALUES (?, ?, ?, ?, ?)`,
-      [pecaId, caminho, nomeArquivo, isPrincipal, ordem]
+        peca_id, caminho, nome_arquivo, grupo, is_principal, ordem
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [pecaId, caminho, nomeArquivo, grupo, isPrincipal, ordem]
     );
 
     inseridas.push({
       id: resultado.lastID,
       caminho,
       nome_arquivo: nomeArquivo,
+      grupo,
       is_principal: isPrincipal,
       ordem
     });
@@ -173,13 +175,47 @@ export async function inserirImagensPeca(db, pecaId, files) {
 }
 
 export async function listarImagensPeca(db, pecaId) {
-  return db.all(
-    `SELECT id, caminho, nome_arquivo, is_principal, ordem, created_at
-     FROM peca_imagens
-     WHERE peca_id = ?
-     ORDER BY is_principal DESC, ordem ASC, id ASC`,
+  const imagens = await db.all(
+    `SELECT id, caminho, nome_arquivo, grupo, is_principal, ordem, created_at
+     FROM peca_imagens pi
+     WHERE pi.peca_id = ?
+       AND (
+         (
+           EXISTS (
+             SELECT 1 FROM peca_imagens sku
+             WHERE sku.peca_id = pi.peca_id AND sku.grupo = 'sku'
+           )
+           AND COALESCE(pi.grupo, 'produto') = 'produto'
+         )
+         OR (
+           NOT EXISTS (
+             SELECT 1 FROM peca_imagens sku
+             WHERE sku.peca_id = pi.peca_id AND sku.grupo = 'sku'
+           )
+           AND (
+             (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) = 1
+             OR (
+               (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) <= 8
+               AND pi.ordem > (SELECT MIN(todas.ordem) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+             )
+             OR (
+               (SELECT COUNT(*) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id) > 8
+               AND pi.ordem > (SELECT MIN(todas.ordem) FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+               AND pi.ordem < (SELECT MAX(todas.ordem) - 4 FROM peca_imagens todas WHERE todas.peca_id = pi.peca_id)
+             )
+           )
+         )
+       )
+     ORDER BY pi.ordem ASC, pi.id ASC`,
     [pecaId]
   );
+
+  // Registros antigos podem ter a etiqueta SKU como is_principal. Como ela
+  // foi filtrada acima, a primeira imagem visível passa a ser a capa do anúncio.
+  return imagens.map((imagem, indice) => ({
+    ...imagem,
+    is_principal: indice === 0 ? 1 : 0
+  }));
 }
 
 export async function removerArquivoImagem(caminho) {

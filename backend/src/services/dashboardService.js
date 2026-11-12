@@ -19,6 +19,10 @@ const STATUS_CANCELADOS = [
   'reembolsada'
 ];
 
+const ML_VENDAS_SQL = process.env.DATABASE_URL
+  ? "NULLIF((ml_dados::jsonb ->> 'sold_quantity'), '')::integer"
+  : "CAST(json_extract(COALESCE(ml_dados, '{}'), '$.sold_quantity') AS INTEGER)";
+
 const PERIODOS = {
   hoje: { chave: 'hoje', dias: 1, label: 'Hoje', descricao: 'Hoje • por hora' },
   '7': { chave: '7', dias: 7, label: '7 dias', descricao: 'Últimos 7 dias' },
@@ -645,14 +649,109 @@ export async function obterResumoDashboard(db) {
   };
 }
 
-export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = null) {
-  const periodo = normalizarPeriodo(valorPeriodo);
+function dataRankingValida(valor) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+  const data = new Date(`${valor}T12:00:00Z`);
+  return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === valor;
+}
+
+export async function obterRankingTiposPeca(db, params = {}) {
+  const periodo = normalizarPeriodo(params.periodo);
   const condicoes = condicaoPeriodo(periodo);
-  const datasRanking = rankingDatas && /^\d{4}-\d{2}-\d{2}$/.test(rankingDatas.inicio || '') && /^\d{4}-\d{2}-\d{2}$/.test(rankingDatas.fim || '') && rankingDatas.inicio <= rankingDatas.fim
-    ? [rankingDatas.inicio, rankingDatas.fim, rankingDatas.inicio, rankingDatas.fim] : null;
+  const inicio = String(params.rankingInicio || params.inicio || '').trim();
+  const fim = String(params.rankingFim || params.fim || '').trim();
+  if ((inicio || fim) && (!dataRankingValida(inicio) || !dataRankingValida(fim) || inicio > fim)) {
+    const error = new Error('Informe um período válido para o ranking.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const datasRanking = inicio && fim ? [inicio, fim, inicio, fim] : null;
   const condicaoRanking = datasRanking
     ? "DATE(v.data_venda, 'localtime') BETWEEN DATE(?) AND DATE(?)"
     : condicoes.atual.replaceAll('data_venda', 'v.data_venda');
+  const itensTipo = await db.all(
+      `SELECT vi.venda_id, v.order_id,
+              COALESCE(NULLIF(TRIM(vi.descricao), ''), p.nome, 'Produto sem nome') AS nome,
+              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
+                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
+              vi.quantidade, vi.preco_unitario, v.cliente,
+              datetime(v.data_venda, 'localtime') AS data_venda
+       FROM venda_itens vi
+       INNER JOIN vendas v ON v.id = vi.venda_id
+       LEFT JOIN pecas p ON p.sku = vi.sku
+       WHERE v.status NOT IN (${STATUS_INVALIDOS})
+         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
+         AND ${condicaoRanking}
+
+       UNION ALL
+
+       SELECT v.id AS venda_id, v.order_id,
+              COALESCE(NULLIF(TRIM(p.nome), ''), 'Produto sem nome') AS nome,
+              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
+                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
+              1 AS quantidade, v.valor AS preco_unitario, v.cliente,
+              datetime(v.data_venda, 'localtime') AS data_venda
+       FROM vendas v
+       INNER JOIN pecas p ON p.id = v.peca_id
+       WHERE v.peca_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM venda_itens vi WHERE vi.venda_id = v.id
+         )
+         AND v.status NOT IN (${STATUS_INVALIDOS})
+         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
+         AND ${condicaoRanking}`,
+      datasRanking || []
+    );
+
+  const produtosMap = new Map();
+
+  for (const item of itensTipo) {
+    const produto = tipoPeca(item.nome);
+    const chave = produto.toLocaleLowerCase('pt-BR');
+    const atual = produtosMap.get(chave) || {
+      tipo: produto,
+      vendas: new Set(),
+      unidades: 0,
+      faturamento: 0,
+      vendidos: []
+    };
+    const quantidade = numero(item.quantidade);
+    const valor = quantidade * numero(item.preco_unitario);
+
+    atual.vendas.add(item.venda_id);
+    atual.unidades += quantidade;
+    atual.faturamento += valor;
+    atual.vendidos.push({
+      vendaId: item.venda_id,
+      nome: item.nome,
+      imagem: item.imagem || null,
+      pedido: item.order_id || null,
+      cliente: item.cliente || 'Comprador',
+      data: item.data_venda,
+      quantidade,
+      valor: Number(valor.toFixed(2))
+    });
+    produtosMap.set(chave, atual);
+  }
+
+  const topTiposPeca = [...produtosMap.values()]
+    .map((item) => ({
+      tipo: item.tipo,
+      vendas: item.vendas.size,
+      unidades: item.unidades,
+      faturamento: Number(item.faturamento.toFixed(2)),
+      vendidos: item.vendidos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
+    }))
+    .sort((a, b) => b.unidades - a.unidades || b.vendas - a.vendas || b.faturamento - a.faturamento)
+    .slice(0, 10);
+
+  return topTiposPeca;
+}
+
+export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = null) {
+  const periodo = normalizarPeriodo(valorPeriodo);
+  const condicoes = condicaoPeriodo(periodo);
+
 
   const [
     serieRows,
@@ -660,7 +759,7 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
     periodoAnterior,
     hoje,
     estoque,
-    itensTipo,
+    topTiposPeca,
     recentes,
     atendimento,
     qualidade,
@@ -731,20 +830,31 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
          COALESCE(SUM(CASE WHEN ml_ativo = 1 AND quantidade = 0 THEN 1 ELSE 0 END), 0) AS anuncios_esgotados,
          COALESCE(SUM(CASE WHEN ml_ativo = 0 THEN 1 ELSE 0 END), 0) AS fora_ml,
          COALESCE(SUM(CASE
-           WHEN ml_ativo = 1 AND (
-             quantidade <= 0
-             OR TRIM(COALESCE(descricao, '')) = ''
-             OR LENGTH(TRIM(COALESCE(descricao, ''))) < 40
-             OR TRIM(COALESCE(categoria, '')) = ''
-             OR TRIM(COALESCE(sku, '')) = ''
-             OR COALESCE(peso_kg, 0) <= 0
-             OR COALESCE(comprimento_cm, 0) <= 0
-             OR COALESCE(largura_cm, 0) <= 0
-             OR COALESCE(altura_cm, 0) <= 0
+           WHEN NOT EXISTS (
+             SELECT 1 FROM vendas v
+             WHERE v.peca_id = pecas.id
+               AND LOWER(COALESCE(v.status, '')) NOT IN ('cancelada', 'cancelado', 'cancelled', 'canceled', 'refunded', 'reembolsada')
+           )
+           AND COALESCE(${ML_VENDAS_SQL}, 0) <= 0
+           AND (
+             LOWER(COALESCE(ml_status, '')) IN ('cancelled', 'canceled', 'rejected', 'blocked', 'closed')
              OR (
-               TRIM(COALESCE(ml_thumbnail, '')) = ''
-               AND NOT EXISTS (
-                 SELECT 1 FROM peca_imagens pi WHERE pi.peca_id = pecas.id
+               ml_ativo = 1 AND (
+                 quantidade <= 0
+                 OR TRIM(COALESCE(descricao, '')) = ''
+                 OR LENGTH(TRIM(COALESCE(descricao, ''))) < 40
+                 OR TRIM(COALESCE(categoria, '')) = ''
+                 OR TRIM(COALESCE(sku, '')) = ''
+                 OR COALESCE(peso_kg, 0) <= 0
+                 OR COALESCE(comprimento_cm, 0) <= 0
+                 OR COALESCE(largura_cm, 0) <= 0
+                 OR COALESCE(altura_cm, 0) <= 0
+                 OR (
+                   TRIM(COALESCE(ml_thumbnail, '')) = ''
+                   AND NOT EXISTS (
+                     SELECT 1 FROM peca_imagens pi WHERE pi.peca_id = pecas.id
+                   )
+                 )
                )
              )
            ) THEN 1
@@ -752,39 +862,11 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
          END), 0) AS anuncios_revisar
        FROM pecas`
     ),
-    db.all(
-      `SELECT vi.venda_id, v.order_id,
-              COALESCE(NULLIF(TRIM(vi.descricao), ''), p.nome, 'Produto sem nome') AS nome,
-              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
-                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
-              vi.quantidade, vi.preco_unitario, v.cliente,
-              datetime(v.data_venda, 'localtime') AS data_venda
-       FROM venda_itens vi
-       INNER JOIN vendas v ON v.id = vi.venda_id
-       LEFT JOIN pecas p ON p.sku = vi.sku
-       WHERE v.status NOT IN (${STATUS_INVALIDOS})
-         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
-         AND ${condicaoRanking}
-
-       UNION ALL
-
-       SELECT v.id AS venda_id, v.order_id,
-              COALESCE(NULLIF(TRIM(p.nome), ''), 'Produto sem nome') AS nome,
-              COALESCE(NULLIF(REPLACE(p.ml_thumbnail, 'http://', 'https://'), ''),
-                (SELECT pi.caminho FROM peca_imagens pi WHERE pi.peca_id = p.id ORDER BY pi.is_principal DESC, pi.ordem ASC, pi.id ASC LIMIT 1)) AS imagem,
-              1 AS quantidade, v.valor AS preco_unitario, v.cliente,
-              datetime(v.data_venda, 'localtime') AS data_venda
-       FROM vendas v
-       INNER JOIN pecas p ON p.id = v.peca_id
-       WHERE v.peca_id IS NOT NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM venda_itens vi WHERE vi.venda_id = v.id
-         )
-         AND v.status NOT IN (${STATUS_INVALIDOS})
-         AND LOWER(COALESCE(v.plataforma, 'Mercado Livre')) = 'mercado livre'
-         AND ${condicaoRanking}`,
-      datasRanking || []
-    ),
+    obterRankingTiposPeca(db, {
+      periodo: valorPeriodo,
+      rankingInicio: rankingDatas?.inicio,
+      rankingFim: rankingDatas?.fim
+    }),
     db.all(
       `SELECT v.id, v.order_id, v.valor, v.status,
               datetime(v.data_venda, 'localtime') AS data_venda,
@@ -833,47 +915,6 @@ export async function obterAnalyticsDashboard(db, valorPeriodo, rankingDatas = n
     obterReputacaoDashboard(db)
   ]);
 
-  const produtosMap = new Map();
-
-  for (const item of itensTipo) {
-    const produto = tipoPeca(item.nome);
-    const chave = produto.toLocaleLowerCase('pt-BR');
-    const atual = produtosMap.get(chave) || {
-      tipo: produto,
-      vendas: new Set(),
-      unidades: 0,
-      faturamento: 0,
-      vendidos: []
-    };
-    const quantidade = numero(item.quantidade);
-    const valor = quantidade * numero(item.preco_unitario);
-
-    atual.vendas.add(item.venda_id);
-    atual.unidades += quantidade;
-    atual.faturamento += valor;
-    atual.vendidos.push({
-      vendaId: item.venda_id,
-      nome: item.nome,
-      imagem: item.imagem || null,
-      pedido: item.order_id || null,
-      cliente: item.cliente || 'Comprador',
-      data: item.data_venda,
-      quantidade,
-      valor: Number(valor.toFixed(2))
-    });
-    produtosMap.set(chave, atual);
-  }
-
-  const topTiposPeca = [...produtosMap.values()]
-    .map((item) => ({
-      tipo: item.tipo,
-      vendas: item.vendas.size,
-      unidades: item.unidades,
-      faturamento: Number(item.faturamento.toFixed(2)),
-      vendidos: item.vendidos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
-    }))
-    .sort((a, b) => b.unidades - a.unidades || b.vendas - a.vendas || b.faturamento - a.faturamento)
-    .slice(0, 6);
 
   const faturamentoPeriodo = numero(periodoAtual?.faturamento);
   const vendasPeriodo = numero(periodoAtual?.vendas);

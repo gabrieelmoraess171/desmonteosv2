@@ -26,6 +26,8 @@ import {
   lerAtributos,
 } from '../config/categorias';
 import { avaliarQualidadeMl } from '../utils/mlQualidade';
+import MercadoLivreDetalhes from './MercadoLivreDetalhes';
+import PecaFotosEditor from './PecaFotosEditor';
 
 interface ImagemPeca {
   id: number;
@@ -82,6 +84,13 @@ function formatarData(valor?: string | null): string {
 function formatarMedida(valor?: number | null): string {
   const numero = Number(valor) || 0;
   return numero > 0 ? `${numero.toLocaleString('pt-BR')} cm` : '—';
+}
+
+function formatarTipoAnuncio(valor?: string | null): string {
+  const tipo = String(valor || '').toLowerCase().replace(/[-\s]+/g, '_');
+  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'Premium';
+  if (['free', 'gratis', 'grátis'].includes(tipo)) return 'Grátis';
+  return 'Clássico';
 }
 
 export default function PecaDetalheModal({
@@ -418,6 +427,12 @@ export default function PecaDetalheModal({
                   </p>
                 ) : null}
 
+                <PecaFotosEditor
+                  pecaId={peca.id}
+                  mlItemId={peca.ml_item_id}
+                  onChange={() => onChange?.()}
+                />
+
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
@@ -563,7 +578,7 @@ export default function PecaDetalheModal({
                           Tipo de anúncio
                         </p>
                         <p className="mt-1 capitalize text-ink">
-                          {peca.tipo_anuncio || 'Clássico'}
+                          {formatarTipoAnuncio(peca.tipo_anuncio)}
                         </p>
                       </div>
                       <div>
@@ -623,6 +638,8 @@ export default function PecaDetalheModal({
                     </div>
                   </div>
                 </section>
+
+                {peca.ml_item_id && <MercadoLivreDetalhes pecaId={peca.id} />}
 
                 <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">

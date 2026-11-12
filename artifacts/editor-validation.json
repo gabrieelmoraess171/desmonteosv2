@@ -1,0 +1,284 @@
+{
+  "simulatedOnly": true,
+  "productionApisCalled": false,
+  "server": "http://127.0.0.1:3000",
+  "checks": [
+    {
+      "name": "YouTube removed; photos block retains existing-video fixture without an input",
+      "ok": true
+    },
+    {
+      "name": "pause holds save/delete/list operations; in-flight edits survive success",
+      "ok": true
+    },
+    {
+      "name": "reactivate sends only ml_ativo=1, updates label, and preserves title/price/description",
+      "ok": true
+    },
+    {
+      "name": "status API rejection preserves draft and current status, unlocks retry",
+      "ok": true
+    },
+    {
+      "name": "saving omits video_url and blocks pause/delete until save resolves",
+      "ok": true
+    },
+    {
+      "name": "unlinked stock item has no pause/reactivate action",
+      "ok": true
+    },
+    {
+      "name": "closed ML listing has no pause/reactivate action",
+      "ok": true
+    },
+    {
+      "name": "browser finishes without uncaught errors or unplanned writes",
+      "ok": true
+    }
+  ],
+  "statusRequests": [
+    {
+      "id": 1,
+      "body": {
+        "ml_ativo": 0
+      }
+    },
+    {
+      "id": 1,
+      "body": {
+        "ml_ativo": 1
+      }
+    },
+    {
+      "id": 1,
+      "body": {
+        "ml_ativo": 0
+      }
+    },
+    {
+      "id": 1,
+      "body": {
+        "ml_ativo": 0
+      }
+    }
+  ],
+  "saveRequests": [
+    {
+      "id": 1,
+      "body": {
+        "pecaId": 1,
+        "titulo": "Farol Gol editado durante a pausa",
+        "descricao": "Descrição editada ainda não salva.",
+        "preco": 1250.75,
+        "quantidade": 2,
+        "mlAtivo": 0,
+        "observacao": "",
+        "dados": {
+          "nome": "Farol direito Gol - teste simulado",
+          "sku": "TESTE-EDITOR-001",
+          "carro": "Volkswagen Gol 2015",
+          "categoria": "Faróis e Lanternas",
+          "categoria_ml": "Autopeças > Peças de Carros e Caminhonetes > Faróis e Lanternas",
+          "marca": "Volkswagen",
+          "modelo": "Gol",
+          "ano": "2015",
+          "condicao": "usado",
+          "numero_oem": "",
+          "garantia": "90 dias",
+          "peso_kg": 0,
+          "comprimento_cm": 0,
+          "largura_cm": 0,
+          "altura_cm": 0,
+          "atributos": {
+            "lado": "Direito"
+          },
+          "tipo_anuncio": "clássico",
+          "gtin": "",
+          "localizacao": "",
+          "modo_compra": "buy_it_now"
+        }
+      }
+    }
+  ],
+  "apiRequests": [
+    {
+      "method": "GET",
+      "path": "/api/health"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/ranking"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/analytics"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vendas/notificacoes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/imagens"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mercadolivre/pecas/1/salvar"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/1/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/2/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/3/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/3/imagens"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pecas/3"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/3/detalhes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mercadolivre/pecas/3/imagens"
+    }
+  ],
+  "browserErrors": [],
+  "fixtureSummary": [
+    {
+      "id": 1,
+      "sku": "TESTE-EDITOR-001",
+      "ml_item_id": "MLB-SIMULADO-001",
+      "ml_status": "paused",
+      "existingVideoPreserved": true
+    },
+    {
+      "id": 2,
+      "sku": "TESTE-EDITOR-002",
+      "ml_item_id": null,
+      "ml_status": null
+    },
+    {
+      "id": 3,
+      "sku": "TESTE-EDITOR-003",
+      "ml_item_id": "MLB-SIMULADO-003",
+      "ml_status": "closed"
+    }
+  ],
+  "ok": true
+}

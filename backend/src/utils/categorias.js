@@ -5,6 +5,12 @@ const CATEGORIAS_ML = {
     'Autopeças > Peças de Carros e Caminhonetes > Faróis e Lanternas',
   Parachoques:
     'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Almas e Absorvedores de Impacto':
+    'Autopeças > Peças de Carros e Caminhonetes > Parachoques',
+  'Acabamentos e Molduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Interior',
+  'Maçanetas e Fechaduras':
+    'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Portas e Capôs':
     'Autopeças > Peças de Carros e Caminhonetes > Portas e Capôs',
   'Motor e Componentes':
@@ -30,6 +36,10 @@ const CATEGORIAS_ML = {
 
 // A ordem importa: termos mais específicos vêm antes dos genéricos.
 const REGRAS_CATEGORIA = [
+  { categoria: 'Almas e Absorvedores de Impacto', termos: ['absorvedor de impacto', 'absorvedor impacto', 'absorvedor imapcto', 'absorvedor de imapcto', 'absorvedores de impacto', 'alma', 'almas', 'reforco de parachoque', 'reforco parachoque', 'travessa de parachoque', 'travessa parachoque'] },
+  { categoria: 'Maçanetas e Fechaduras', termos: ['macaneta', 'macanetas', 'fechadura', 'fechaduras', 'trinco'] },
+  { categoria: 'Acabamentos e Molduras', termos: ['acabamento', 'acabamentos', 'moldura', 'molduras', 'friso', 'frisos', 'emblema'] },
+  { categoria: 'Interior', termos: ['tampao', 'tampoes', 'carpete', 'carpetes', 'alavanca de cambio'] },
   {
     categoria: 'Retrovisores',
     termos: ['retrovisor', 'espelho retrovisor', 'espelho lateral']
@@ -168,14 +178,18 @@ export function categoriaValida(valor) {
 }
 
 export function classificarCategoria(nome, descricao = '', carro = '') {
-  const texto = normalizarTexto(`${nome} ${descricao} ${carro}`);
-
-  if (!texto) return 'Outros';
-
+  // O nome da peça define a categoria; descrição e veículo não podem
+  // transformar um absorvedor em porta ou um módulo em motor.
+  const titulo = normalizarTexto(nome || descricao)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/^(?:(?:kit|jogo|par|conjunto)\s+(?:de\s+)?)|^(?:original\s+)/, '')
+    .trim();
+  if (!titulo) return 'Outros';
   for (const regra of REGRAS_CATEGORIA) {
-    if (regra.termos.some((termo) => texto.includes(normalizarTexto(termo)))) {
-      return regra.categoria;
-    }
+    if (regra.termos.some((termo) => {
+      const prefixo = normalizarTexto(termo).replace(/[^a-z0-9]+/g, ' ');
+      return titulo === prefixo || titulo.startsWith(prefixo + ' ');
+    })) return regra.categoria;
   }
 
   return 'Outros';

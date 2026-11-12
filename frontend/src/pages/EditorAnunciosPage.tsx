@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -16,18 +17,21 @@ import {
   Loader2,
   MapPin,
   Package,
+  Pause,
+  Play,
   RefreshCw,
   Ruler,
   Search,
   Send,
   Sparkles,
   Trash2,
-  Video,
   Wand2,
 } from 'lucide-react';
 import axios from 'axios';
 import PecaFotosEditor from '../components/PecaFotosEditor';
+import MercadoLivreDetalhes from '../components/MercadoLivreDetalhes';
 import {
+  CAMPOS_CATEGORIA,
   CATEGORIAS_PECA,
   camposDaCategoria,
   categoriaMlDe,
@@ -96,9 +100,53 @@ interface FormAnuncio {
   tipoAnuncio: string;
   gtin: string;
   localizacao: string;
-  videoUrl: string;
   modoCompra: string;
   atributos: Record<string, string>;
+}
+
+interface FichaCompletaIa {
+  titulo?: string;
+  nome?: string;
+  categoria?: string;
+  categoria_ml?: string;
+  marca?: string;
+  modelo?: string;
+  ano?: string;
+  carro?: string;
+  condicao?: string;
+  numero_oem?: string;
+  garantia?: string;
+  peso_kg?: number;
+  comprimento_cm?: number;
+  largura_cm?: number;
+  altura_cm?: number;
+  descricao?: string;
+  preco_sugerido?: number;
+  quantidade_sugerida?: number;
+  gtin?: string;
+  localizacao?: string;
+  tipo_anuncio?: string;
+  modo_compra?: string;
+  atributos?: Record<string, string>;
+  estimados?: string[];
+}
+
+interface RespostaFichaCompletaIa {
+  dados: FichaCompletaIa;
+  fonte: string;
+  modelo?: string;
+  estimados?: string[];
+  aviso?: string;
+  imagensAnalisadas?: number;
+}
+
+interface ResultadoVerificadorAnuncio {
+  aprovado: boolean;
+  confianca: string;
+  problemas: Array<{ campo: string; mensagem: string }>;
+  avisos: Array<{ campo: string; mensagem: string }>;
+  confirmados: string[];
+  observacao?: string;
 }
 
 interface EditorAnunciosPageProps {
@@ -135,6 +183,23 @@ function parsePreco(value: string): number {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
+function textoPreenchido(valor: unknown, atual: string): string {
+  const texto = String(valor ?? '').trim();
+  return texto || atual;
+}
+
+function normalizarTipoAnuncio(valor?: string | null): string {
+  const tipo = String(valor || '').toLowerCase().replace(/[-\s]+/g, '_');
+  if (['gold_pro', 'gold_premium', 'premium'].includes(tipo)) return 'premium';
+  if (['free', 'gratis', 'grátis'].includes(tipo)) return 'grátis';
+  return 'clássico';
+}
+
+function numeroPreenchido(valor: unknown, atual: string): string {
+  const numero = Number(valor);
+  return Number.isFinite(numero) && numero > 0 ? String(numero) : atual;
+}
+
 function formularioDaPeca(peca: Peca): FormAnuncio {
   return {
     titulo: String(peca.ml_titulo || peca.nome || '').slice(0, 60),
@@ -158,10 +223,9 @@ function formularioDaPeca(peca: Peca): FormAnuncio {
     comprimentoCm: textoNumero(peca.comprimento_cm),
     larguraCm: textoNumero(peca.largura_cm),
     alturaCm: textoNumero(peca.altura_cm),
-    tipoAnuncio: peca.tipo_anuncio || 'clássico',
+    tipoAnuncio: normalizarTipoAnuncio(peca.tipo_anuncio),
     gtin: peca.gtin || '',
     localizacao: peca.localizacao || '',
-    videoUrl: peca.video_url || '',
     modoCompra: peca.modo_compra || 'buy_it_now',
     atributos: lerAtributos(peca.atributos),
   };
@@ -186,6 +250,13 @@ function badgeAnuncio(peca: Peca) {
     return {
       label: 'Pausado no ML',
       className: 'border-warning/20 bg-warningSoft text-warning',
+    };
+  }
+
+  if (peca.ml_status === 'closed') {
+    return {
+      label: 'Vendido',
+      className: 'border-warning/25 bg-warningSoft text-warning',
     };
   }
 
@@ -261,8 +332,19 @@ export default function EditorAnunciosPage({
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [gerando, setGerando] = useState(false);
+  const [completandoFicha, setCompletandoFicha] = useState(false);
+  const [estimadosFicha, setEstimadosFicha] = useState<string[]>([]);
+  const [verificandoAnuncio, setVerificandoAnuncio] = useState(false);
+  const [resultadoVerificacao, setResultadoVerificacao] = useState<ResultadoVerificadorAnuncio | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  const [alterandoStatus, setAlterandoStatus] = useState(false);
+  const mutacaoEmCurso = useRef(false);
+  const preservarFormularioAposStatus = useRef<{
+    id: number;
+    ativo: boolean;
+  } | null>(null);
+  const mutacaoPendente = enviando || excluindo || alterandoStatus;
 
   const carregar = async (manterSelecao = true) => {
     setLoading(true);
@@ -331,13 +413,23 @@ export default function EditorAnunciosPage({
   const pecasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    if (!termo) return pecas;
+    const filtradas = !termo
+      ? [...pecas]
+      : pecas.filter((peca) =>
+          [peca.nome, peca.sku, peca.ml_titulo, peca.ml_item_id]
+            .filter(Boolean)
+            .some((valor) => String(valor).toLowerCase().includes(termo))
+        );
 
-    return pecas.filter((peca) =>
-      [peca.nome, peca.sku, peca.ml_titulo, peca.ml_item_id]
-        .filter(Boolean)
-        .some((valor) => String(valor).toLowerCase().includes(termo))
-    );
+    return filtradas.sort((a, b) => {
+      const ativoA = a.ml_ativo && a.ml_status !== 'closed' ? 1 : 0;
+      const ativoB = b.ml_ativo && b.ml_status !== 'closed' ? 1 : 0;
+      if (ativoA !== ativoB) return ativoB - ativoA;
+      const vendidoA = a.ml_status === 'closed' || Number(a.quantidade) <= 0 ? 1 : 0;
+      const vendidoB = b.ml_status === 'closed' || Number(b.quantidade) <= 0 ? 1 : 0;
+      if (vendidoA !== vendidoB) return vendidoA - vendidoB;
+      return b.id - a.id;
+    });
   }, [busca, pecas]);
 
   const pecaSelecionada = useMemo(
@@ -355,9 +447,25 @@ export default function EditorAnunciosPage({
 
   useEffect(() => {
     if (pecaDetalheSelecionada) {
+      const statusAtualizado = preservarFormularioAposStatus.current;
+      preservarFormularioAposStatus.current = null;
+
+      if (statusAtualizado?.id === pecaDetalheSelecionada.id) {
+        // Pausar/reativar altera somente o status e mantém o rascunho atual.
+        setFormulario((atual) =>
+          atual
+            ? { ...atual, mlAtivo: statusAtualizado.ativo }
+            : formularioDaPeca(pecaDetalheSelecionada)
+        );
+        return;
+      }
+
       setFormulario(formularioDaPeca(pecaDetalheSelecionada));
       setErro('');
       setAviso('');
+      setEstimadosFicha([]);
+      setResultadoVerificacao(null);
+      setCompletandoFicha(false);
     } else if (!pecaSelecionada) {
       setFormulario(null);
     }
@@ -398,11 +506,12 @@ export default function EditorAnunciosPage({
   };
 
   const gerarComIa = async () => {
-    if (!pecaSelecionada) return;
+    if (!pecaSelecionada || mutacaoEmCurso.current) return;
 
     setGerando(true);
     setErro('');
     setAviso('');
+    setEstimadosFicha([]);
 
     try {
       const { data } = await axios.post<{
@@ -445,10 +554,185 @@ export default function EditorAnunciosPage({
     }
   };
 
+  const aplicarFichaCompleta = (dados: FichaCompletaIa) => {
+    setFormulario((atual) => {
+      if (!atual) return atual;
+
+      const categoriaInformada = String(dados.categoria || '').trim();
+      const categoriaValida = (
+        CATEGORIAS_PECA as readonly string[]
+      ).includes(categoriaInformada)
+        ? categoriaInformada
+        : atual.categoria;
+      const categoriaFinal = atual.categoria || categoriaValida;
+      const condicaoInformada = String(dados.condicao || '').toLowerCase();
+      const condicao = ['novo', 'usado', 'recondicionado'].includes(
+        condicaoInformada
+      )
+        ? condicaoInformada
+        : atual.condicao;
+      const tipoInformado = String(dados.tipo_anuncio || '').toLowerCase();
+      const modoInformado = String(dados.modo_compra || '').toLowerCase();
+      const atributosIa =
+        dados.atributos && typeof dados.atributos === 'object'
+          ? Object.fromEntries(
+              Object.entries(dados.atributos)
+                .map(([chave, valor]) => [
+                  String(chave || '').trim(),
+                  String(valor ?? '').trim(),
+                ])
+                .filter(([chave, valor]) => chave && valor)
+            )
+          : {};
+      const atributosAtuais = Object.fromEntries(
+        Object.entries(atual.atributos || {}).filter(([, valor]) =>
+          String(valor ?? '').trim()
+        )
+      );
+      const precoAtual = parsePreco(atual.preco);
+      const precoSugerido = Number(dados.preco_sugerido);
+      const quantidadeAtual = Number(atual.quantidade);
+      const quantidadeSugerida = Number(dados.quantidade_sugerida);
+      const categoriaMl =
+        atual.categoriaMl ||
+        textoPreenchido(dados.categoria_ml, '') ||
+        categoriaMlDe(categoriaFinal);
+
+      return {
+        ...atual,
+        titulo: textoPreenchido(dados.titulo, atual.titulo).slice(0, 60),
+        descricao: textoPreenchido(dados.descricao, atual.descricao),
+        nome: textoPreenchido(
+          dados.nome,
+          atual.nome || dados.titulo || atual.titulo
+        ).slice(0, 200),
+        categoria: categoriaFinal,
+        categoriaMl,
+        carro: textoPreenchido(dados.carro, atual.carro),
+        marca: textoPreenchido(dados.marca, atual.marca),
+        modelo: textoPreenchido(dados.modelo, atual.modelo),
+        ano: textoPreenchido(dados.ano, atual.ano),
+        condicao,
+        numeroOem: textoPreenchido(dados.numero_oem, atual.numeroOem),
+        garantia: textoPreenchido(dados.garantia, atual.garantia),
+        pesoKg: numeroPreenchido(dados.peso_kg, atual.pesoKg),
+        comprimentoCm: numeroPreenchido(
+          dados.comprimento_cm,
+          atual.comprimentoCm
+        ),
+        larguraCm: numeroPreenchido(dados.largura_cm, atual.larguraCm),
+        alturaCm: numeroPreenchido(dados.altura_cm, atual.alturaCm),
+        preco:
+          precoAtual > 0
+            ? atual.preco
+            : Number.isFinite(precoSugerido) && precoSugerido > 0
+              ? precoSugerido.toFixed(2)
+              : atual.preco,
+        quantidade:
+          quantidadeAtual > 0
+            ? atual.quantidade
+            : Number.isFinite(quantidadeSugerida) && quantidadeSugerida > 0
+              ? String(Math.trunc(quantidadeSugerida))
+              : atual.quantidade,
+        gtin: textoPreenchido(dados.gtin, atual.gtin),
+        localizacao: textoPreenchido(dados.localizacao, atual.localizacao),
+        tipoAnuncio:
+          atual.tipoAnuncio ||
+          (['clássico', 'premium', 'grátis'].includes(tipoInformado)
+            ? tipoInformado
+            : 'clássico'),
+        modoCompra:
+          atual.modoCompra ||
+          (['buy_it_now', 'auction'].includes(modoInformado)
+            ? modoInformado
+            : 'buy_it_now'),
+        atributos: { ...atributosIa, ...atributosAtuais },
+      };
+    });
+  };
+
+  const completarFichaComIa = async () => {
+    if (!pecaSelecionada || !formulario || completandoFicha || mutacaoEmCurso.current) return;
+
+    setCompletandoFicha(true);
+    setErro('');
+    setAviso('');
+    setEstimadosFicha([]);
+
+    try {
+      const { data } = await axios.post<RespostaFichaCompletaIa>(
+        '/api/ia/completar-ficha',
+        {
+          pecaId: pecaSelecionada.id,
+          categorias: CATEGORIAS_PECA,
+          camposPorCategoria: CAMPOS_CATEGORIA,
+          contexto: {
+            peca: {
+              nome: formulario.nome,
+              ml_titulo: formulario.titulo,
+              sku: formulario.sku,
+              carro: formulario.carro,
+              descricao: formulario.descricao,
+              categoria: formulario.categoria,
+              categoria_ml: formulario.categoriaMl,
+              marca: formulario.marca,
+              modelo: formulario.modelo,
+              ano: formulario.ano,
+              condicao: formulario.condicao,
+              numero_oem: formulario.numeroOem,
+              garantia: formulario.garantia,
+              peso_kg: Number(formulario.pesoKg) || 0,
+              comprimento_cm: Number(formulario.comprimentoCm) || 0,
+              largura_cm: Number(formulario.larguraCm) || 0,
+              altura_cm: Number(formulario.alturaCm) || 0,
+              tipo_anuncio: formulario.tipoAnuncio,
+              gtin: formulario.gtin,
+              localizacao: formulario.localizacao,
+              modo_compra: formulario.modoCompra,
+              quantidade: Number(formulario.quantidade) || 0,
+              preco: parsePreco(formulario.preco) || 0,
+              atributos: formulario.atributos,
+            },
+          },
+        },
+        { timeout: 150000 }
+      );
+
+      if (data?.dados) aplicarFichaCompleta(data.dados);
+
+      const estimados = Array.isArray(data?.estimados)
+        ? data.estimados
+        : Array.isArray(data?.dados?.estimados)
+          ? data.dados.estimados
+          : [];
+
+      setEstimadosFicha(estimados);
+      setAviso(
+        data?.aviso ||
+          `Ficha completa gerada${
+            data?.imagensAnalisadas
+              ? ` com ${data.imagensAnalisadas} foto(s)`
+              : ''
+          }. Revise os campos antes de enviar para aprovação.`
+      );
+    } catch (error) {
+      if (axios.isAxiosError<{ error?: string }>(error)) {
+        setErro(
+          error.response?.data?.error ||
+            'Não foi possível completar a ficha com IA.'
+        );
+      } else {
+        setErro('Não foi possível completar a ficha com IA.');
+      }
+    } finally {
+      setCompletandoFicha(false);
+    }
+  };
+
   const enviarParaAprovacao = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!pecaSelecionada || !formulario) return;
+    if (!pecaSelecionada || !formulario || mutacaoEmCurso.current) return;
 
     const titulo = formulario.titulo.replace(/\s+/g, ' ').trim();
     const descricao = formulario.descricao.trim();
@@ -490,52 +774,69 @@ export default function EditorAnunciosPage({
       return;
     }
 
+    mutacaoEmCurso.current = true;
     setEnviando(true);
     setErro('');
     setAviso('');
 
     try {
+      const dados = {
+        nome: formulario.nome.trim(),
+        sku: formulario.sku.trim().toUpperCase(),
+        carro: formulario.carro.trim(),
+        categoria: formulario.categoria,
+        categoria_ml:
+          formulario.categoriaMl.trim() || categoriaMlDe(formulario.categoria),
+        marca: formulario.marca.trim(),
+        modelo: formulario.modelo.trim(),
+        ano: formulario.ano.trim(),
+        condicao: formulario.condicao,
+        numero_oem: formulario.numeroOem.trim(),
+        garantia: formulario.garantia.trim(),
+        peso_kg: Number(formulario.pesoKg) || 0,
+        comprimento_cm: Number(formulario.comprimentoCm) || 0,
+        largura_cm: Number(formulario.larguraCm) || 0,
+        altura_cm: Number(formulario.alturaCm) || 0,
+        atributos: formulario.atributos,
+        tipo_anuncio: formulario.tipoAnuncio,
+        gtin: formulario.gtin.trim(),
+        localizacao: formulario.localizacao.trim(),
+        modo_compra: formulario.modoCompra,
+      };
+      const payload = {
+        pecaId: pecaSelecionada.id,
+        titulo,
+        descricao,
+        preco,
+        quantidade,
+        mlAtivo: formulario.mlAtivo ? 1 : 0,
+        observacao: formulario.observacao.trim(),
+        dados,
+      };
+
+      const existenteNoMl = Boolean(pecaSelecionada.ml_item_id);
       const { data } = await axios.post<{ mensagem?: string }>(
-        '/api/aprovacoes',
-        {
-          pecaId: pecaSelecionada.id,
-          titulo,
-          descricao,
-          preco,
-          quantidade,
-          mlAtivo: formulario.mlAtivo ? 1 : 0,
-          observacao: formulario.observacao.trim(),
-          dados: {
-            nome: formulario.nome.trim(),
-            sku: formulario.sku.trim().toUpperCase(),
-            carro: formulario.carro.trim(),
-            categoria: formulario.categoria,
-            categoria_ml:
-              formulario.categoriaMl.trim() ||
-              categoriaMlDe(formulario.categoria),
-            marca: formulario.marca.trim(),
-            modelo: formulario.modelo.trim(),
-            ano: formulario.ano.trim(),
-            condicao: formulario.condicao,
-            numero_oem: formulario.numeroOem.trim(),
-            garantia: formulario.garantia.trim(),
-            peso_kg: Number(formulario.pesoKg) || 0,
-            comprimento_cm: Number(formulario.comprimentoCm) || 0,
-            largura_cm: Number(formulario.larguraCm) || 0,
-            altura_cm: Number(formulario.alturaCm) || 0,
-            atributos: formulario.atributos,
-            tipo_anuncio: formulario.tipoAnuncio,
-            gtin: formulario.gtin.trim(),
-            localizacao: formulario.localizacao.trim(),
-            video_url: formulario.videoUrl.trim(),
-            modo_compra: formulario.modoCompra,
-          },
-        },
-        { timeout: 15000 }
+        existenteNoMl
+          ? `/api/mercadolivre/pecas/${pecaSelecionada.id}/salvar`
+          : '/api/aprovacoes',
+        payload,
+        { timeout: existenteNoMl ? 120000 : 15000 }
       );
 
+      if (existenteNoMl) {
+        await carregar(true);
+        const atualizada = await axios.get<Peca>(
+          `/api/pecas/${pecaSelecionada.id}`,
+          { timeout: 15000 }
+        );
+        setPecaDetalhe(atualizada.data);
+      }
+
       setAviso(
-        data.mensagem || 'Alterações enviadas para a fila de aprovação.'
+        data.mensagem ||
+          (existenteNoMl
+            ? 'Alterações salvas e sincronizadas com o Mercado Livre.'
+            : 'Alterações enviadas para a fila de aprovação.')
       );
       setFormulario((atual) =>
         atual ? { ...atual, observacao: '' } : atual
@@ -550,12 +851,34 @@ export default function EditorAnunciosPage({
         setErro('Não foi possível enviar as alterações para aprovação.');
       }
     } finally {
+      mutacaoEmCurso.current = false;
       setEnviando(false);
     }
   };
 
+  const verificarAnuncio = async () => {
+    if (!pecaSelecionada || verificandoAnuncio || mutacaoEmCurso.current) return;
+    setVerificandoAnuncio(true);
+    setErro('');
+    try {
+      const { data } = await axios.post<ResultadoVerificadorAnuncio>(
+        '/api/ia/verificar-anuncio',
+        { pecaId: pecaSelecionada.id },
+        { timeout: 150000 }
+      );
+      setResultadoVerificacao(data);
+      setAviso(data.aprovado ? 'Agente verificador: anúncio pronto para revisão final.' : 'Agente verificador encontrou pontos que precisam ser corrigidos.');
+    } catch (error) {
+      setErro(axios.isAxiosError<{ error?: string }>(error)
+        ? error.response?.data?.error || 'Não foi possível verificar o anúncio.'
+        : 'Não foi possível verificar o anúncio.');
+    } finally {
+      setVerificandoAnuncio(false);
+    }
+  };
+
   const excluirAnuncio = async () => {
-    if (!pecaSelecionada?.ml_item_id || excluindo) return;
+    if (!pecaSelecionada?.ml_item_id || mutacaoEmCurso.current) return;
 
     const confirmado = window.confirm(
       `Excluir o anúncio ${pecaSelecionada.ml_item_id} no Mercado Livre?\n\nA peça continuará no estoque, mas o anúncio será encerrado e desvinculado. Essa ação não pode ser desfeita pelo painel.`
@@ -563,6 +886,7 @@ export default function EditorAnunciosPage({
 
     if (!confirmado) return;
 
+    mutacaoEmCurso.current = true;
     setExcluindo(true);
     setErro('');
     setAviso('');
@@ -589,7 +913,64 @@ export default function EditorAnunciosPage({
         setErro('Não foi possível excluir o anúncio no Mercado Livre.');
       }
     } finally {
+      mutacaoEmCurso.current = false;
       setExcluindo(false);
+    }
+  };
+
+  const statusMlSelecionado = String(
+    pecaDetalheSelecionada?.ml_status || pecaSelecionada?.ml_status || ''
+  ).toLowerCase();
+  const permiteAlterarStatus = ['active', 'paused'].includes(statusMlSelecionado);
+  const anuncioPausado = statusMlSelecionado === 'paused';
+
+  const alternarStatusAnuncio = async () => {
+    if (
+      !pecaSelecionada?.ml_item_id ||
+      !pecaDetalheSelecionada ||
+      !formulario ||
+      !permiteAlterarStatus ||
+      mutacaoEmCurso.current ||
+      loading ||
+      gerando ||
+      completandoFicha ||
+      verificandoAnuncio
+    ) return;
+
+    const id = pecaSelecionada.id;
+    const ativo = anuncioPausado;
+    mutacaoEmCurso.current = true;
+    setAlterandoStatus(true);
+    setErro('');
+    setAviso('');
+
+    try {
+      await axios.put(
+        `/api/pecas/${id}`,
+        { ml_ativo: ativo ? 1 : 0 },
+        { timeout: 30000 }
+      );
+
+      // A API confirma a atualização no ML antes de gravar o status local.
+      // Atualizar só esses campos evita recarregar e apagar edições não salvas.
+      const status = { ml_ativo: ativo ? 1 : 0, ml_status: ativo ? 'active' : 'paused' };
+      preservarFormularioAposStatus.current = { id, ativo };
+      setPecas((atuais) => atuais.map((peca) => peca.id === id ? { ...peca, ...status } : peca));
+      setPecaDetalhe((atual) => atual?.id === id ? { ...atual, ...status } : atual);
+      setAviso(
+        ativo
+          ? 'Anúncio reativado no Mercado Livre. As demais edições continuam no formulário.'
+          : 'Anúncio pausado no Mercado Livre. As demais edições continuam no formulário.'
+      );
+    } catch (error) {
+      setErro(
+        axios.isAxiosError<{ error?: string }>(error)
+          ? error.response?.data?.error || 'Não foi possível alterar o status do anúncio no Mercado Livre.'
+          : 'Não foi possível alterar o status do anúncio no Mercado Livre.'
+      );
+    } finally {
+      mutacaoEmCurso.current = false;
+      setAlterandoStatus(false);
     }
   };
 
@@ -621,7 +1002,8 @@ export default function EditorAnunciosPage({
               <button
                 type="button"
                 onClick={onOpenApproval}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-white/[0.09] hover:text-ink"
+                disabled={mutacaoPendente}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-white/[0.09] hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send className="h-4 w-4" />
                 Abrir fila de aprovação
@@ -630,7 +1012,7 @@ export default function EditorAnunciosPage({
             <button
               type="button"
               onClick={() => void carregar(true)}
-              disabled={loading}
+              disabled={loading || mutacaoPendente}
               className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw
@@ -644,6 +1026,7 @@ export default function EditorAnunciosPage({
 
       {(erro || aviso) && (
         <div
+          role={erro ? 'alert' : 'status'}
           className={`flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
             erro
               ? 'border-danger/25 bg-dangerSoft text-danger'
@@ -661,7 +1044,8 @@ export default function EditorAnunciosPage({
               <button
                 type="button"
                 onClick={onOpenApproval}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-success/25 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-success transition hover:bg-white/[0.08]"
+                disabled={mutacaoPendente}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-success/25 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-success transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send className="h-3.5 w-3.5" />
                 Ver fila de aprovação
@@ -719,14 +1103,14 @@ export default function EditorAnunciosPage({
               />
             </label>
 
-            <div className="mt-3 max-h-[640px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 space-y-2 pr-1">
               {pecasFiltradas.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted">
                   Nenhuma peça encontrada para esta busca.
                 </p>
               ) : (
                 <>
-                  {pecasFiltradas.slice(0, 100).map((peca) => {
+                  {pecasFiltradas.map((peca) => {
                     const badge = badgeAnuncio(peca);
                     const ativa = peca.id === pecaId;
 
@@ -735,7 +1119,8 @@ export default function EditorAnunciosPage({
                       key={peca.id}
                       type="button"
                       onClick={() => setPecaId(peca.id)}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                      disabled={mutacaoPendente}
+                      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
                         ativa
                           ? 'border-accent/50 bg-accentSoft'
                           : 'border-white/10 bg-white/[0.03] hover:border-accent/30 hover:bg-white/[0.06]'
@@ -778,12 +1163,6 @@ export default function EditorAnunciosPage({
                     </button>
                   );
                 })}
-                  {pecasFiltradas.length > 100 && (
-                    <p className="rounded-xl border border-dashed border-line p-3 text-center text-[11px] leading-relaxed text-muted">
-                      Mostrando 100 de {pecasFiltradas.length} peças. Use a busca
-                      para encontrar as demais.
-                    </p>
-                  )}
                 </>
               )}
             </div>
@@ -820,11 +1199,31 @@ export default function EditorAnunciosPage({
                       </a>
                     )}
 
+                    {pecaSelecionada.ml_item_id && permiteAlterarStatus && (
+                      <button
+                        type="button"
+                        onClick={() => void alternarStatusAnuncio()}
+                        disabled={mutacaoPendente || !pecaDetalheSelecionada || gerando || completandoFicha || verificandoAnuncio}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accentSoft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {alterandoStatus ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : anuncioPausado ? (
+                          <Play className="h-3.5 w-3.5" />
+                        ) : (
+                          <Pause className="h-3.5 w-3.5" />
+                        )}
+                        {alterandoStatus
+                          ? anuncioPausado ? 'Reativando...' : 'Pausando...'
+                          : anuncioPausado ? 'Reativar anúncio' : 'Pausar anúncio'}
+                      </button>
+                    )}
+
                     {pecaSelecionada.ml_item_id && (
                       <button
                         type="button"
                         onClick={() => void excluirAnuncio()}
-                        disabled={excluindo}
+                        disabled={mutacaoPendente}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-danger/25 bg-dangerSoft px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {excluindo ? (
@@ -848,6 +1247,12 @@ export default function EditorAnunciosPage({
                     </div>
                   )}
 
+                {pecaSelecionada.ml_item_id && (
+                  <div className="mt-4">
+                    <MercadoLivreDetalhes pecaId={pecaSelecionada.id} compact />
+                  </div>
+                )}
+
                 <form
                   onSubmit={(event) => void enviarParaAprovacao(event)}
                   className="mt-5 space-y-5"
@@ -859,22 +1264,89 @@ export default function EditorAnunciosPage({
                   >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[11px] text-muted">
-                        Gere uma sugestão com IA e revise antes de enviar.
+                        Complete a ficha com IA e revise antes de enviar.
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => void gerarComIa()}
-                        disabled={gerando}
-                        className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {gerando ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        {gerando ? 'Gerando...' : 'Gerar com IA'}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void completarFichaComIa()}
+                          disabled={completandoFicha || gerando || mutacaoPendente}
+                          className="inline-flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {completandoFicha ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3.5 w-3.5" />
+                          )}
+                          {completandoFicha
+                            ? 'Completando ficha...'
+                            : 'Completar ficha com IA'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void gerarComIa()}
+                          disabled={gerando || completandoFicha || mutacaoPendente}
+                          className="inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accentSoft px-3.5 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {gerando ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          {gerando ? 'Gerando...' : 'Gerar com IA'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void verificarAnuncio()}
+                          disabled={verificandoAnuncio || gerando || completandoFicha || mutacaoPendente}
+                          className="inline-flex items-center gap-2 rounded-xl border border-success/30 bg-successSoft px-3.5 py-2 text-xs font-semibold text-success transition hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {verificandoAnuncio ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                          {verificandoAnuncio ? 'Verificando...' : 'Verificar anúncio'}
+                        </button>
+                      </div>
                     </div>
+
+                    {estimadosFicha.length > 0 && (
+                      <div className="mb-3 flex items-start gap-2 rounded-xl border border-warning/25 bg-warningSoft px-3.5 py-2.5 text-xs leading-relaxed text-warning">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <div>
+                          <p className="font-semibold">
+                            Campos preenchidos por estimativa
+                          </p>
+                          <p className="mt-1">{estimadosFicha.join(', ')}.</p>
+                          <p className="mt-1">
+                            A IA não confirmou esses dados nas fotos ou no
+                            título. Revise antes de salvar.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {resultadoVerificacao && (
+                      <div className={`mb-3 rounded-xl border px-3.5 py-3 text-xs leading-relaxed ${resultadoVerificacao.aprovado ? 'border-success/25 bg-successSoft text-success' : 'border-warning/25 bg-warningSoft text-warning'}`}>
+                        <p className="font-semibold">
+                          Agente verificador • confiança {resultadoVerificacao.confianca}
+                        </p>
+                        {resultadoVerificacao.problemas.length > 0 && (
+                          <ul className="mt-1 list-disc pl-4">
+                            {resultadoVerificacao.problemas.map((item, indice) => <li key={`problema-${indice}`}>{item.mensagem}</li>)}
+                          </ul>
+                        )}
+                        {resultadoVerificacao.avisos.length > 0 && (
+                          <ul className="mt-1 list-disc pl-4 opacity-90">
+                            {resultadoVerificacao.avisos.map((item, indice) => <li key={`aviso-${indice}`}>{item.mensagem}</li>)}
+                          </ul>
+                        )}
+                        {resultadoVerificacao.confirmados.length > 0 && (
+                          <p className="mt-1">Confirmado: {resultadoVerificacao.confirmados.join(' • ')}</p>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <Campo label="Título do anúncio">
@@ -1246,30 +1718,21 @@ export default function EditorAnunciosPage({
                   </Bloco>
 
                   <Bloco
-                    titulo="Vídeo e fotos"
-                    descricao="Até 20 fotos com capa definida. O vídeo do YouTube é opcional e aumenta a conversão."
-                    icone={<Video className="h-4 w-4" />}
+                    titulo="Fotos do cadastro"
+                    descricao="Organize até 20 fotos e escolha a imagem de capa da peça."
+                    icone={<ImageIcon className="h-4 w-4" />}
                   >
-                    <Campo label="Vídeo do anúncio (YouTube)">
-                      <input
-                        value={formulario.videoUrl}
-                        onChange={(event) =>
-                          atualizarCampo('videoUrl', event.target.value)
-                        }
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        className="mt-1 w-full rounded-xl border border-white/10 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-accent/50"
-                      />
-                    </Campo>
-
-                    <div className="mt-4">
-                      <PecaFotosEditor pecaId={pecaSelecionada.id} />
-                    </div>
+                    <PecaFotosEditor
+                      pecaId={pecaSelecionada.id}
+                      mlItemId={pecaSelecionada.ml_item_id}
+                    />
                   </Bloco>
 
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
                     <input
                       type="checkbox"
                       checked={formulario.mlAtivo}
+                      disabled={mutacaoPendente}
                       onChange={(event) =>
                         atualizarCampo('mlAtivo', event.target.checked)
                       }
@@ -1280,7 +1743,9 @@ export default function EditorAnunciosPage({
                         Anúncio ativo no Mercado Livre
                       </span>
                       <span className="block text-[11px] text-muted">
-                        Ao aprovar, o status será alterado para ativo ou pausado.
+                        {pecaSelecionada.ml_item_id
+                          ? 'Ao salvar, o status será atualizado no Mercado Livre.'
+                          : 'Ao aprovar, o anúncio será publicado com esse status.'}
                       </span>
                     </span>
                   </label>
@@ -1300,16 +1765,16 @@ export default function EditorAnunciosPage({
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[11px] leading-relaxed text-muted">
                     <p className="flex items-start gap-2">
                       <Barcode className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                      Título, descrição, preço, quantidade e status são aplicados
-                      ao anúncio na aprovação. Os demais dados da ficha são
-                      salvos no estoque e usados nas próximas publicações.
+                      {pecaSelecionada.ml_item_id
+                        ? 'Título, descrição, preço, estoque, atributos, condição, ficha técnica e fotos são sincronizados com o anúncio ao salvar.'
+                        : 'Anúncios novos entram na fila de aprovação; depois da aprovação, os dados da ficha e as fotos são publicados no Mercado Livre.'}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
                     <button
                       type="submit"
-                      disabled={enviando}
+                      disabled={mutacaoPendente}
                       className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {enviando ? (
@@ -1317,14 +1782,18 @@ export default function EditorAnunciosPage({
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      {enviando ? 'Enviando...' : 'Enviar para aprovação'}
+                      {enviando
+                        ? 'Salvando...'
+                        : pecaSelecionada.ml_item_id
+                          ? 'Salvar e aplicar no Mercado Livre'
+                          : 'Enviar para aprovação'}
                     </button>
 
                     {pecaSelecionada.ml_item_id && (
                       <button
                         type="button"
                         onClick={() => void excluirAnuncio()}
-                        disabled={excluindo}
+                        disabled={mutacaoPendente}
                         className="inline-flex items-center gap-2 rounded-xl border border-danger/25 bg-dangerSoft px-4 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {excluindo ? (
@@ -1337,8 +1806,9 @@ export default function EditorAnunciosPage({
                     )}
 
                     <p className="text-[11px] leading-relaxed text-muted">
-                      Salvar aqui não publica diretamente. A aprovação aplica
-                      as alterações ou publica o anúncio novo no Mercado Livre.
+                      {pecaSelecionada.ml_item_id
+                        ? 'As alterações são aplicadas imediatamente no anúncio existente.'
+                        : 'O anúncio novo será publicado após a aprovação na fila.'}
                     </p>
                   </div>
                 </form>

@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  AlertTriangle,
   DollarSign,
   ExternalLink,
   ImagePlus,
@@ -9,22 +8,23 @@ import {
   MessageSquare,
   Package,
   RefreshCw,
+  Search,
   ShoppingBag,
-  Sparkles,
   Store,
+  Sparkles,
 } from 'lucide-react';
-import PecasTable from './components/PecasTable';
-import ImportLotPage from './pages/ImportLotPage';
-import ConfiguracoesPage from './pages/ConfiguracoesPage';
-import NFePage from './pages/NFePage';
-import AtendimentoPage from './pages/AtendimentoPage';
-import NovaPecaPage from './pages/NovaPecaPage';
-import RelatoriosPage from './pages/RelatoriosPage';
-import MarketplacesPage from './pages/MarketplacesPage';
-import AnaliseIaPage from './pages/AnaliseIaPage';
-import EditorAnunciosPage from './pages/EditorAnunciosPage';
-import FilaAprovacaoPage from './pages/FilaAprovacaoPage';
-import VendasPage from './pages/VendasPage';
+const PecasTable = lazy(() => import('./components/PecasTable'));
+const ImportLotPage = lazy(() => import('./pages/ImportLotPage'));
+const ConfiguracoesPage = lazy(() => import('./pages/ConfiguracoesPage'));
+const NFePage = lazy(() => import('./pages/NFePage'));
+const AtendimentoPage = lazy(() => import('./pages/AtendimentoPage'));
+const NovaPecaPage = lazy(() => import('./pages/NovaPecaPage'));
+const RelatoriosPage = lazy(() => import('./pages/RelatoriosPage'));
+const MarketplacesPage = lazy(() => import('./pages/MarketplacesPage'));
+const AnaliseIaPage = lazy(() => import('./pages/AnaliseIaPage'));
+const EditorAnunciosPage = lazy(() => import('./pages/EditorAnunciosPage'));
+const FilaAprovacaoPage = lazy(() => import('./pages/FilaAprovacaoPage'));
+const VendasPage = lazy(() => import('./pages/VendasPage'));
 import type { VendaAba } from './types/vendas';
 import ConnectionMonitor from './components/ConnectionMonitor';
 import NotificacoesBell, {
@@ -34,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import DashboardCard from './components/DashboardCard';
 import DashboardGreeting from './components/DashboardGreeting';
+import DeferredSection from './components/DeferredSection';
 import RevenueChart, {
   type PeriodoDashboard,
   type SeriePonto,
@@ -76,6 +77,15 @@ interface DashboardStats {
   perguntasHoje: number;
   reclamacoesAbertas: number;
   reclamacoesHoje: number;
+}
+
+interface SugestaoBusca {
+  id: number;
+  nome: string;
+  sku?: string | null;
+  carro?: string | null;
+  imagem_principal?: string | null;
+  ml_item_id?: string | null;
 }
 
 const initialStats: DashboardStats = {
@@ -293,6 +303,11 @@ function App() {
     readStored(STORAGE_KEYS.financeWhatsApp)
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [sugestoesBusca, setSugestoesBusca] = useState<SugestaoBusca[]>([]);
+  const [buscaAberta, setBuscaAberta] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockSearchRevision, setStockSearchRevision] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarKey>('dashboard');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -301,6 +316,9 @@ function App() {
   >(null);
   const [statusInicialRelatorios, setStatusInicialRelatorios] = useState<
     'todas' | 'concluidas' | 'andamento' | 'canceladas' | null
+  >(null);
+  const [statusInicialEstoque, setStatusInicialEstoque] = useState<
+    'revisar' | null
   >(null);
   const [vendaFocoId, setVendaFocoId] = useState<number | null>(null);
   const [vendaAba, setVendaAba] = useState<VendaAba>('hoje');
@@ -342,56 +360,53 @@ function App() {
 
   const activeItem =
     NAV_ITEMS.find((item) => item.key === activeView) ?? NAV_ITEMS[0];
+  const atendimentoTone = stats.reclamacoesAbertas > 0
+    ? 'danger'
+    : stats.perguntasPendentes > 0
+      ? 'warning'
+      : 'default';
   const ActiveIcon = activeItem.icon;
   const headerInfo = TITULOS[activeView];
 
+  const dashboardRequest = useRef<AbortController | null>(null);
   const fetchDashboard = useCallback(async () => {
+    dashboardRequest.current?.abort();
+    const controller = new AbortController();
+    dashboardRequest.current = controller;
     try {
       const [dashboardRes, analyticsRes] = await Promise.all([
-        axios.get<DashboardStats>('/api/dashboard', { timeout: 12000 }),
+        axios.get<DashboardStats>('/api/dashboard', { timeout: 12000, signal: controller.signal }),
         axios.get<AnalyticsData>(
           `/api/dashboard/analytics?periodo=${periodo}`,
-          { timeout: 12000 }
+          { timeout: 12000, signal: controller.signal }
         ),
       ]);
 
+      if (controller.signal.aborted) return;
       setStats({ ...initialStats, ...dashboardRes.data });
       setAnalytics({ ...initialAnalytics, ...analyticsRes.data });
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('Erro ao buscar dashboard:', error);
+      if (!axios.isCancel(error)) console.error('Erro ao buscar dashboard:', error);
     }
   }, [periodo]);
 
   useEffect(() => {
     void fetchDashboard();
+    return () => dashboardRequest.current?.abort();
   }, [fetchDashboard]);
 
-  // Atualiza o painel sozinho enquanto ele está aberto, para refletir venda,
-  // pergunta ou reclamação nova sem precisar clicar em Atualizar.
-  useEffect(() => {
-    let ativo = true;
-
-    const atualizar = () => {
-      if (!ativo || document.visibilityState !== 'visible') return;
-      if (activeView !== 'dashboard') return;
-      void fetchDashboard();
-    };
-
-    const intervalo = window.setInterval(atualizar, 20000);
-    document.addEventListener('visibilitychange', atualizar);
-
-    return () => {
-      ativo = false;
-      window.clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', atualizar);
-    };
+  // O painel e o sino andam no mesmo ciclo de 30s: um único intervalo evita
+  // duas rodadas de requisições simultâneas a cada meio minuto.
+  const atualizarPainel = useCallback(() => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (activeView !== 'dashboard') return;
+    void fetchDashboard();
   }, [activeView, fetchDashboard]);
 
   useEffect(() => {
     let ativo = true;
     let verificando = false;
-    let sincronizandoMercadoLivre = false;
     // Cada tipo tem seu próprio marco inicial. Se apenas uma categoria já
     // tiver sido lida, as outras não podem despejar registros antigos como
     // se fossem novas.
@@ -431,15 +446,8 @@ function App() {
       verificando = true;
 
       try {
-        if (!sincronizandoMercadoLivre) {
-          sincronizandoMercadoLivre = true;
-          void axios
-            .post('/api/mercadolivre/sincronizar-leve', {}, { timeout: 15000 })
-            .finally(() => {
-              sincronizandoMercadoLivre = false;
-            });
-        }
-
+        // A sincronização com o ML já roda no servidor a cada minuto.
+        // Cada navegador consulta somente notificações locais, sem disparar outra varredura.
         const depoisVenda = Number(readStored(STORAGE_KEYS.lastSeenVendaId) || 0);
         const depoisReclamacao = Number(
           readStored(STORAGE_KEYS.lastSeenReclamacaoId) || 0
@@ -584,8 +592,14 @@ function App() {
     };
 
     void checar();
-    const intervalo = window.setInterval(() => void checar(), 20000);
-    const aoVisivel = () => void checar();
+    const intervalo = window.setInterval(() => {
+      void checar();
+      atualizarPainel();
+    }, 30000);
+    const aoVisivel = () => {
+      void checar();
+      atualizarPainel();
+    };
     document.addEventListener('visibilitychange', aoVisivel);
 
     return () => {
@@ -593,7 +607,7 @@ function App() {
       window.clearInterval(intervalo);
       document.removeEventListener('visibilitychange', aoVisivel);
     };
-  }, []);
+  }, [atualizarPainel]);
 
   // O callback OAuth do Mercado Livre volta para a raiz com ?ml=...
   // A página de Marketplaces lê a mensagem e limpa a URL.
@@ -607,10 +621,16 @@ function App() {
   const handleNavigate = (key: SidebarKey) => {
     setFocoAtendimento(null);
     setStatusInicialRelatorios(null);
+    if (key !== 'lotes') setStatusInicialEstoque(null);
     if (key !== 'vendas') setVendaFocoId(null);
     setActiveView(key);
     setMobileMenuOpen(false);
     window.scrollTo(0, 0);
+  };
+
+  const handleOpenReviewStock = () => {
+    setStatusInicialEstoque('revisar');
+    handleNavigate('lotes');
   };
 
   const handleNavigateVendaAba = (aba: VendaAba) => {
@@ -629,6 +649,7 @@ function App() {
       : 'lotes';
     setFocoAtendimento(null);
     setStatusInicialRelatorios(null);
+    setStatusInicialEstoque(null);
     setActiveView(chave);
     window.scrollTo(0, 0);
   };
@@ -698,17 +719,56 @@ function App() {
     void fetchDashboard();
   };
 
+  const handleGlobalSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const termo = globalSearch.trim();
+    if (!termo) return;
+    setStockSearch(termo);
+    setStockSearchRevision((value) => value + 1);
+    setStatusInicialEstoque(null);
+    handleNavigate('lotes');
+    setBuscaAberta(false);
+  };
+
+  useEffect(() => {
+    const termo = globalSearch.trim();
+    if (termo.length < 2) {
+      setSugestoesBusca([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void axios
+        .get<SugestaoBusca[]>('/api/pecas', {
+          params: { resumo: '1', limite: 4, busca: termo },
+          signal: controller.signal,
+          timeout: 8000,
+        })
+        .then(({ data }) => setSugestoesBusca(Array.isArray(data) ? data.slice(0, 4) : []))
+        .catch(() => {
+          if (!controller.signal.aborted) setSugestoesBusca([]);
+        });
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [globalSearch]);
+
+  const escolherSugestaoBusca = (sugestao: SugestaoBusca) => {
+    const termo = sugestao.sku || sugestao.nome;
+    setGlobalSearch(termo);
+    setStockSearch(termo);
+    setStockSearchRevision((value) => value + 1);
+    setStatusInicialEstoque(null);
+    setBuscaAberta(false);
+    handleNavigate('lotes');
+  };
+
   return (
     <div className="app-shell relative isolate flex min-h-screen">
-      <div
-        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-        aria-hidden="true"
-      >
-        <div className="ambient-blob ambient-blob--blue" />
-        <div className="ambient-blob ambient-blob--violet" />
-        <div className="ambient-blob ambient-blob--teal" />
-      </div>
-
       {mobileMenuOpen && (
         <button
           type="button"
@@ -734,12 +794,20 @@ function App() {
             contadoresAlerta.reclamacoesAbertas +
             contadoresAlerta.perguntasPendentes,
         }}
+        alerts={{
+          atendimento: contadoresAlerta.reclamacoesAbertas > 0
+            ? 'danger'
+            : contadoresAlerta.perguntasPendentes > 0
+              ? 'warning'
+              : undefined,
+          lotes: stats.anunciosRevisar > 0 ? 'warning' : undefined,
+        }}
         vendaAba={vendaAba}
         onNavigateVendaAba={handleNavigateVendaAba}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-line bg-sidebar shadow-[0_1px_0_rgba(255,255,255,0.04),0_18px_50px_-30px_rgba(0,0,0,0.9)]">
+        <header className="app-header sticky top-0 z-30 border-b border-line bg-sidebar shadow-[0_1px_0_rgba(255,255,255,0.04),0_18px_50px_-30px_rgba(0,0,0,0.9)]">
           <div className="px-5 py-4 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex min-w-0 items-center space-x-3">
@@ -751,10 +819,13 @@ function App() {
                 >
                   <Menu className="h-6 w-6" />
                 </button>
-                <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.06] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                <div className="app-page-icon shrink-0 rounded-xl border border-white/10 bg-white/[0.06] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                   <ActiveIcon className="h-6 w-6 text-accent" />
                 </div>
                 <div className="min-w-0">
+                  <p className="app-breadcrumb">
+                    Desmonte OS <span>/</span> {activeItem.label}
+                  </p>
                   <h1 className="truncate text-2xl font-bold text-ink">
                     {headerInfo?.titulo || activeItem.label}
                   </h1>
@@ -767,7 +838,54 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="app-header-actions flex flex-wrap items-center justify-end gap-2">
+                <div className="relative">
+                <form
+                  id="busca-global"
+                  className="global-search flex"
+                  onSubmit={handleGlobalSearch}
+                  role="search"
+                >
+                  <input
+                    value={globalSearch}
+                    onFocus={() => setBuscaAberta(true)}
+                    onChange={(event) => {
+                      setGlobalSearch(event.target.value);
+                      setBuscaAberta(true);
+                    }}
+                    placeholder="Pesquisar peças: SKU, nome, OEM..."
+                    aria-label="Pesquisar peças por SKU, nome, OEM ou aplicação"
+                  />
+                  <button type="submit" aria-label="Pesquisar peças" className="global-search__submit">
+                    <Search className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </form>
+                {buscaAberta && globalSearch.trim().length >= 2 && (
+                  <div className="absolute right-0 top-full z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-card p-2 shadow-2xl">
+                    {sugestoesBusca.length > 0 ? sugestoesBusca.map((sugestao) => (
+                      <button
+                        key={sugestao.id}
+                        type="button"
+                        onClick={() => escolherSugestaoBusca(sugestao)}
+                        className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-white/[0.06]"
+                      >
+                        <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-secondary">
+                          {sugestao.imagem_principal ? <img src={sugestao.imagem_principal} alt="" className="h-full w-full object-cover" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-semibold text-ink">{sugestao.nome}</span>
+                          <span className="block truncate text-[10px] text-muted">{sugestao.sku || 'Sem SKU'}{sugestao.carro ? ` • ${sugestao.carro}` : ''}</span>
+                        </span>
+                      </button>
+                    )) : (
+                      <p className="px-3 py-4 text-xs text-muted">Nenhuma peça encontrada.</p>
+                    )}
+                    <button type="submit" form="busca-global" className="mt-1 w-full border-t border-line px-3 pt-2 text-center text-xs font-semibold text-accent hover:text-cyan">
+                      Ver todos os resultados
+                    </button>
+                  </div>
+                )}
+                </div>
                 <NotificacoesBell
                   itens={notificacoes}
                   naoLidas={naoLidas}
@@ -803,111 +921,110 @@ function App() {
         </header>
 
         <main className="relative mx-auto w-full max-w-7xl flex-1 p-5 sm:p-6">
+          <Suspense fallback={<div role="status" className="rounded-2xl border border-line bg-card p-6 text-sm text-muted">Carregando tela…</div>}>
           <div key={activeView} className="view-enter">
             {activeView === 'dashboard' && (
               <div className="dashboard-stack space-y-6">
-                <section className="glass-panel relative overflow-hidden rounded-3xl p-6 sm:p-8">
-                  <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
-                  <div className="pointer-events-none absolute -bottom-24 right-1/3 h-56 w-56 rounded-full bg-cyan/10 blur-3xl" />
+                <div className="dashboard-section-heading">
+                  <div>
+                    <p>Painel operacional</p>
+                    <h2>Visão geral</h2>
+                  </div>
+                  <span className="dashboard-updated" role="status">
+                    <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-success' : 'bg-muted'}`} />
+                    {lastUpdated
+                      ? `Atualizado às ${lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Aguardando atualização'}
+                  </span>
+                </div>
 
-                  <div className="relative flex flex-col justify-between gap-8 xl:flex-row xl:items-center">
-                    <div className="max-w-2xl">
-                      <DashboardGreeting userName={userName} />
-
-                      <div className="mt-6 flex flex-wrap gap-2 text-xs">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-successSoft px-3 py-1.5 font-medium text-success shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                          {stats.vendasHoje} venda(s) hoje •{' '}
-                          {formatCurrency(stats.faturamentoHoje)}
-                        </span>
-                        <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accentSoft px-3 py-1.5 font-medium text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          {analytics.estoque.anuncios} anúncio(s) ML ativo(s)
-                        </span>
-                        {companyName && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-muted">
-                            <Store className="h-3.5 w-3.5" />
-                            {companyName}
-                          </span>
-                        )}
-                      </div>
+                <section className="dashboard-welcome-panel glass-panel" aria-label="Resumo da operação">
+                  <div className="dashboard-welcome-copy">
+                    <DashboardGreeting key={userName} userName={userName} />
+                    <div className="dashboard-welcome-summary">
+                      <span className="welcome-chip welcome-chip--success">
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        {stats.vendasHoje} venda(s) hoje · {formatCurrency(stats.faturamentoHoje)}
+                      </span>
+                      <span className="welcome-chip welcome-chip--accent">
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        {analytics.estoque.anuncios} anúncio(s) ML ativo(s)
+                      </span>
+                      {companyName && <span className="welcome-chip"><Store className="h-3.5 w-3.5" aria-hidden="true" />{companyName}</span>}
                     </div>
-
-                    <div className="grid w-full max-w-lg grid-cols-2 gap-3 xl:w-[420px] xl:shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('nova')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <Package className="h-4 w-4 text-accent transition-transform group-hover:scale-110" />
-                        Cadastrar peça
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('pedidos')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <ShoppingBag className="h-4 w-4 text-success transition-transform group-hover:scale-110" />
-                        Fechar NF-e
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('importar')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <ImagePlus className="h-4 w-4 text-cyan transition-transform group-hover:scale-110" />
-                        Importar lote
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleNavigate('atendimento')}
-                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:bg-white/[0.09]"
-                      >
-                        <MessageSquare className="h-4 w-4 text-warning transition-transform group-hover:scale-110" />
-                        Atendimento
-                      </button>
-                    </div>
+                  </div>
+                  <div className="dashboard-welcome-actions">
+                    <button type="button" onClick={() => handleNavigate('nova')} className="welcome-shortcut">
+                      <Package className="h-4 w-4 text-accent" aria-hidden="true" />Cadastrar peça
+                    </button>
+                    <button type="button" onClick={() => handleNavigate('pedidos')} className="welcome-shortcut">
+                      <ShoppingBag className="h-4 w-4 text-success" aria-hidden="true" />Fechar NF-e
+                    </button>
+                    <button type="button" onClick={() => handleNavigate('importar')} className="welcome-shortcut">
+                      <ImagePlus className="h-4 w-4 text-cyan" aria-hidden="true" />Importar lote
+                    </button>
+                    <button type="button" data-tone={atendimentoTone} onClick={() => handleNavigate('atendimento')} className="welcome-shortcut">
+                      <MessageSquare className="h-4 w-4" aria-hidden="true" />Atendimento
+                    </button>
                   </div>
                 </section>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="dashboard-stat-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <DashboardCard
-                    title="Vendas do dia"
-                    value={stats.vendasHoje}
+                    title="Faturamento"
+                    value={formatCurrency(analytics.totais.faturamentoPeriodo)}
                     icon={<DollarSign className="h-5 w-5 text-success" />}
-                    subtitle={`${formatCurrency(
-                      stats.faturamentoHoje
-                    )} faturados hoje`}
+                    subtitle={`${analytics.totais.vendasPeriodo} venda(s) nos últimos ${analytics.periodoDias} dias`}
+                    onClick={() => handleNavigate('relatorios')}
+                  />
+
+                  <DashboardCard
+                    title="Vendas hoje"
+                    value={stats.vendasHoje}
+                    icon={<ShoppingBag className="h-5 w-5 text-accent" />}
+                    subtitle={`${formatCurrency(stats.faturamentoHoje)} faturados hoje`}
                     onClick={() => handleNavigate('vendas')}
                   />
 
                   <DashboardCard
-                    title="Perguntas"
-                    value={stats.perguntasPendentes}
-                    icon={<MessageSquare className="h-5 w-5 text-accent" />}
-                    subtitle={`${stats.perguntasHoje} pergunta(s) hoje • responda rápido`}
-                    onClick={() => handleNavigate('atendimento')}
-                  />
-
-                  <DashboardCard
-                    title="Reclamações"
-                    value={stats.reclamacoesAbertas}
-                    icon={<AlertTriangle className="h-5 w-5 text-danger" />}
-                    subtitle={`${stats.reclamacoesHoje} aberta(s) hoje • proteja a reputação`}
-                    onClick={() => handleNavigate('atendimento')}
-                  />
-
-                  <DashboardCard
-                    title="Anúncios a revisar"
-                    value={stats.anunciosRevisar}
-                    icon={<ExternalLink className="h-5 w-5 text-warning" />}
-                    subtitle={`${stats.anunciosAtivos} anúncio(s) ML ativo(s)`}
+                    title="Anúncios ativos"
+                    tone={stats.anunciosRevisar > 0 ? 'warning' : 'default'}
+                    statusLabel={stats.anunciosRevisar > 0 ? 'Revisar' : undefined}
+                    value={stats.anunciosAtivos}
+                    icon={<ExternalLink className="h-5 w-5 text-cyan" />}
+                    subtitle={`${stats.anunciosRevisar} anúncio(s) aguardando revisão`}
                     onClick={() => handleNavigate('lotes')}
+                  />
+
+                  <DashboardCard
+                    title="Atendimento pendente"
+                    tone={atendimentoTone}
+                    statusLabel={atendimentoTone === 'danger' ? 'Urgente' : atendimentoTone === 'warning' ? 'Responder' : undefined}
+                    value={stats.perguntasPendentes + stats.reclamacoesAbertas}
+                    icon={<MessageSquare className="h-5 w-5 text-warning" />}
+                    subtitle={`${stats.perguntasPendentes} pergunta(s) • ${stats.reclamacoesAbertas} reclamação(ões)`}
+                    onClick={() => handleNavigate('atendimento')}
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                  <div className="xl:col-span-2">
+                <div className="dashboard-quick-actions" aria-label="Atalhos da operação">
+                  <span className="dashboard-quick-actions__label">Sua operação</span>
+                  <button type="button" onClick={() => handleNavigate('lotes')}>
+                    <Store className="h-4 w-4" aria-hidden="true" />
+                    {analytics.estoque.anuncios} anúncio(s) ML
+                  </button>
+                  <button type="button" onClick={() => handleNavigate('pedidos')}>
+                    <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+                    Fechar NF-e
+                  </button>
+                  <button type="button" data-tone={atendimentoTone} onClick={() => handleNavigate('atendimento')}>
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    Atendimento
+                  </button>
+                </div>
+
+                <div className="dashboard-main-grid grid grid-cols-1 gap-6 xl:grid-cols-3">
+                  <div className="min-w-0 xl:col-span-2">
                     <RevenueChart
                       serie={analytics.serie}
                       periodoDias={analytics.periodoDias}
@@ -918,22 +1035,21 @@ function App() {
                   <StockHealth
                     estoque={analytics.estoque}
                     vendasHojeML={stats.vendasHojeML}
+                    onOpenReview={handleOpenReviewStock}
                   />
                 </div>
 
-                <ReputacaoMl
-                  reputacao={analytics.reputacao}
-                  onMetricClick={handleReputacaoMetric}
-                />
+                <div className="dashboard-reputation-panel">
+                  <ReputacaoMl
+                    reputacao={analytics.reputacao}
+                    onMetricClick={handleReputacaoMetric}
+                  />
+                </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="dashboard-secondary-grid grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <TopTiposPeca
                     tipos={analytics.topTiposPeca}
-                    periodoLabel={
-                      periodo === 'hoje'
-                        ? 'Hoje'
-                        : `Últimos ${analytics.periodoDias} dias`
-                    }
+                    periodoLabel={periodo === 'hoje' ? 'Hoje' : `Últimos ${analytics.periodoDias} dias`}
                     onViewAll={() => handleNavigate('lotes')}
                   />
                   <InsightsPanel
@@ -942,18 +1058,28 @@ function App() {
                   />
                 </div>
 
-                <PecasTable
-                  limit={5}
-                  onChange={handlePecasChanged}
-                  onViewAll={() => handleNavigate('lotes')}
-                />
+                <div className="dashboard-stock-panel">
+                  <DeferredSection>
+                  <PecasTable
+                    limit={5}
+                    variarAoAbrir
+                    onChange={handlePecasChanged}
+                    onViewAll={() => handleNavigate('lotes')}
+                  />
+                  </DeferredSection>
+                </div>
               </div>
             )}
 
             {activeView === 'importar' && <ImportLotPage />}
 
             {activeView === 'lotes' && (
-              <PecasTable onChange={handlePecasChanged} />
+              <PecasTable
+                onChange={handlePecasChanged}
+                initialStatusFiltro={statusInicialEstoque || undefined}
+                initialSearch={stockSearch}
+                searchRequestId={stockSearchRevision}
+              />
             )}
 
             {activeView === 'vendas' && (
@@ -1023,6 +1149,7 @@ function App() {
               />
             )}
           </div>
+          </Suspense>
         </main>
 
         <footer className="mt-auto border-t border-line bg-white/[0.015] backdrop-blur-xl">

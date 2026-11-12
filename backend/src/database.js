@@ -75,7 +75,12 @@ export async function initDatabase() {
     ml_category_id: "TEXT DEFAULT ''",
     ml_thumbnail: 'TEXT',
     ml_health: 'REAL',
-    ml_sincronizado_em: 'TEXT'
+    ml_sincronizado_em: 'TEXT',
+    categoria_origem: 'TEXT',
+    aplicacao_origem: 'TEXT',
+    ml_publicado_em: 'TEXT',
+    ml_metadados_em: 'TEXT',
+    ml_dados: "TEXT DEFAULT '{}'"
   };
 
   for (const [nome, definicao] of Object.entries(novasColunasPecas)) {
@@ -131,12 +136,17 @@ export async function initDatabase() {
       peca_id INTEGER NOT NULL,
       caminho TEXT NOT NULL,
       nome_arquivo TEXT,
+      grupo TEXT DEFAULT 'produto',
       is_principal INTEGER DEFAULT 0,
       ordem INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (peca_id) REFERENCES pecas(id) ON DELETE CASCADE
     )
   `);
+  const colunasImagens = await db.all('PRAGMA table_info(peca_imagens)');
+  if (!colunasImagens.some((coluna) => coluna.name === 'grupo')) {
+    await db.exec("ALTER TABLE peca_imagens ADD COLUMN grupo TEXT DEFAULT 'produto'");
+  }
 
   // Perguntas do Mercado Livre
   await db.exec(`
@@ -171,6 +181,7 @@ export async function initDatabase() {
   const novasColunasPerguntas = {
     ml_question_id: 'TEXT',
     ml_item_id: 'TEXT',
+    ml_buyer_id: 'TEXT',
     ml_status: "TEXT DEFAULT ''",
     data_resposta: 'TEXT',
     atualizado_em: 'TEXT'
@@ -382,9 +393,12 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id);
     CREATE INDEX IF NOT EXISTS idx_venda_itens_sku ON venda_itens(sku);
     CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_venda);
+    CREATE INDEX IF NOT EXISTS idx_vendas_peca_status ON vendas(peca_id, status);
     CREATE INDEX IF NOT EXISTS idx_vendas_plataforma ON vendas(plataforma);
     CREATE INDEX IF NOT EXISTS idx_pecas_ml ON pecas(ml_ativo);
     CREATE INDEX IF NOT EXISTS idx_pecas_categoria ON pecas(categoria);
+    CREATE INDEX IF NOT EXISTS idx_pecas_publicacao ON pecas(ml_publicado_em);
+    CREATE INDEX IF NOT EXISTS idx_pecas_revisao_metadados ON pecas(ml_metadados_em);
     CREATE INDEX IF NOT EXISTS idx_perguntas_respondida ON perguntas_ml(respondida);
     CREATE INDEX IF NOT EXISTS idx_reclamacoes_status ON reclamacoes_ml(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_pecas_sku
